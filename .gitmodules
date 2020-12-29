@@ -12,15 +12,7 @@
 	path = suitesparse-vnv
 	url = https://gitlab.rnet-tech.net/vnv/suitesparse-vnv.git
 	branch = master
-[submodule "petsc-vnv"]
-	path = petsc-vnv
-	url = https://gitlab.rnet-tech.net/vnv/petsc-vnv.git
-	branch = master
 [submodule "hypre-vnv"]
 	path = hypre-vnv
 	url = https://gitlab.rnet-tech.net/vnv/hypre-vnv.git
-	branch = master
-[submodule "libmesh-vnv"]
-	path = libmesh-vnv
-	url = https://gitlab.rnet-tech.net/vnv/libmesh-vnv.git
 	branch = master
