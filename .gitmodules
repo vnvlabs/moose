@@ -1,10 +1,26 @@
 [submodule "libmesh"]
     path = libmesh
-    url = ../../libMesh/libmesh
+    url = ../libmesh-vnv
     ignore = dirty
 [submodule "large_media"]
     path = large_media
-    url = ../../idaholab/large_media
+    url = https://github.com/idaholab/large_media
 [submodule "petsc"]
     path = petsc
-    url = https://gitlab.com/petsc/petsc.git
+    url = ../petsc-vnv
+[submodule "suitesparse-vnv"]
+	path = suitesparse-vnv
+	url = https://gitlab.rnet-tech.net/vnv/suitesparse-vnv.git
+	branch = master
+[submodule "petsc-vnv"]
+	path = petsc-vnv
+	url = https://gitlab.rnet-tech.net/vnv/petsc-vnv.git
+	branch = master
+[submodule "hypre-vnv"]
+	path = hypre-vnv
+	url = https://gitlab.rnet-tech.net/vnv/hypre-vnv.git
+	branch = master
+[submodule "libmesh-vnv"]
+	path = libmesh-vnv
+	url = https://gitlab.rnet-tech.net/vnv/libmesh-vnv.git
+	branch = master
