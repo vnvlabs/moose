@@ -154,9 +154,11 @@ if [ -z "$go_fast" ]; then
                                    --enable-silent-rules \
                                    --enable-unique-id \
                                    --disable-warnings \
-                                   --enable-glibcxx-debugging \
                                    --with-thread-model=openmp \
-                                   --disable-maintainer-mode \
+                                   --with-vnv=/home/ben/software/vnv/ \
+			           --with-metis=PETSc \
+				   --with-parmetis=PETSc \
+				   --disable-maintainer-mode \
                                    --enable-petsc-hypre-required \
                                    --enable-metaphysicl-required \
                                    $DISABLE_TIMESTAMPS $VTK_OPTIONS $* | tee -a "$SCRIPT_DIR/$DIAGNOSTIC_LOG" || exit 1
@@ -178,9 +180,9 @@ fi
 LIBMESH_JOBS=${MOOSE_JOBS:-1}
 
 if [ -z "${MOOSE_MAKE}" ]; then
-  (make -j ${JOBS:-$LIBMESH_JOBS} && make install) || exit 1
+  (bear make -j ${JOBS:-$LIBMESH_JOBS} && make install) || exit 1
 else
-  (${MOOSE_MAKE} && ${MOOSE_MAKE} install) || exit 1
+  (bear ${MOOSE_MAKE} && ${MOOSE_MAKE} install) || exit 1
 fi
 
 # Local Variables:

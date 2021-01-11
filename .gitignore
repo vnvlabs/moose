@@ -116,6 +116,9 @@ MooseRevision.h
 # Precompiled headers
 moose/include/base/Precompiled.h.gch
 
+# vnv garbage 
+*.__cache__
+
 # test garbagge
 *.FAILED.txt
 

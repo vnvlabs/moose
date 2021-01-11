@@ -102,7 +102,8 @@ if [ -z "$go_fast" ]; then
   rm -rf $SCRIPT_DIR/../petsc/$PETSC_ARCH
 
   ./configure $(echo $PFX_STR) $(echo $MAKE_NP_STR) \
-      --download-hypre=1 \
+      --with-hypre-dir=/home/ben/software/hypre \
+      --with-vnv-dir=/home/ben/software/vnv \
       --with-debugging=no \
       --with-shared-libraries=1 \
       --download-fblaslapack=1 \

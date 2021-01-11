@@ -1,0 +1,16 @@
+
+Steps:
+
+1. Add a vnv.C file that is compiled into the library
+2. Add a empty vnv_<PACKAGENAME>.C file. This ensures the file is added to the build
+3. run bear make  -> this generates the compile commands
+4. .../vnv-matcher --package <PACKAGE_NAME> --output src/vnv ./compile_commands.json
+5. make 
+
+6. In future:
+    a) if you add a source file, you need to regenerate the compile commands.
+    b) if you edit an existing source file you should run vnv matcher again
+    c) after running matcher, you need to rebuild
+    d) users just run make as normal. 
+
+

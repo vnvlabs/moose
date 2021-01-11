@@ -50,6 +50,11 @@ ifneq ($(GPERF_DIR), )
     libmesh_LDFLAGS := -L$(GPERF_DIR)/lib -ltcmalloc_and_profiler $(libmesh_LDFLAGS)
 endif
 
+ifneq (x${MOOSE_VNV_DIR},x)
+  libmesh_CXXFLAGS += -DMOOSE_WITH_VNV -I${MOOSE_VNV_DIR}/include
+  libmesh_LDFLAGS += -Wl,-rpath=${MOOSE_VNV_DIR}/lib -L${MOOSE_VNV_DIR}/lib -linjection 
+endif 
+
 # Make.common used to provide an obj-suffix which was related to the
 # machine in question (from config.guess, i.e. @host@ in
 # contrib/utils/Make.common.in) and the $(METHOD).
