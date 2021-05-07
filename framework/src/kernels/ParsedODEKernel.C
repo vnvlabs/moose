@@ -26,7 +26,8 @@ ParsedODEKernel::validParams()
   params += FunctionParserUtils<false>::validParams();
   params.addClassDescription("Parsed ODE function kernel.");
 
-  params.addRequiredParam<std::string>("function", "function expression");
+  params.addRequiredCustomTypeParam<std::string>(
+      "function", "FunctionExpression", "function expression");
   params.addCoupledVar("args", "additional coupled variables");
   params.addParam<std::vector<std::string>>(
       "constant_names", "Vector of constants used in the parsed function (use this for kB etc.)");
@@ -43,7 +44,7 @@ ParsedODEKernel::ParsedODEKernel(const InputParameters & parameters)
   : ODEKernel(parameters),
     FunctionParserUtils(parameters),
     _function(getParam<std::string>("function")),
-    _nargs(coupledScalarComponents("args")),
+    _nargs(isCoupledScalar("args") ? coupledScalarComponents("args") : 0),
     _args(_nargs),
     _arg_names(_nargs),
     _func_dFdarg(_nargs),

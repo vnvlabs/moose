@@ -93,6 +93,7 @@ public:
    */
   virtual void
   segmentSubdomainSetup(const SubdomainID subdomain, const THREAD_ID tid, const RayID ray_id);
+
   /**
    * Reinitialize objects for a Ray segment for ray tracing
    * @param elem The elem the segment is in
@@ -110,6 +111,13 @@ public:
    * @param ray The ray
    */
   virtual void postOnSegment(const THREAD_ID tid, const std::shared_ptr<Ray> & ray);
+
+  /**
+   * Called at the beginning of a trace for a ray
+   * @param tid Thread id
+   * @param ray The ray
+   */
+  virtual void preTrace(const THREAD_ID /* tid */, const std::shared_ptr<Ray> & /* ray */) {}
 
   /**
    * Method for executing the study so that it can be called out of the standard UO execute()
@@ -507,6 +515,11 @@ public:
   MeshBase & meshBase() const { return _mesh; }
 
   /**
+   * @returns A reference to the MooseMesh associated with this study.
+   */
+  MooseMesh & mesh() { return _mesh; }
+
+  /**
    * Get the outward normal for a given element side.
    */
   virtual const Point &
@@ -682,9 +695,9 @@ public:
   bool warnNonPlanar() const { return _warn_non_planar; }
 
   /**
-   * Gets the error prefix (type() + " '" + name() "'")
+   * The underlying parallel study: used for the context for calling the packed range routines.
    */
-  const std::string & errorPrefix() const { return _error_prefix; }
+  ParallelStudy<std::shared_ptr<Ray>, Ray> * parallelStudy() { return _parallel_ray_study.get(); }
 
 protected:
   /**
@@ -868,8 +881,6 @@ protected:
   const Parallel::Communicator & _comm;
   /// The rank of this processor (this actually takes time to lookup - so just do it once)
   const processor_id_type _pid;
-  /// Prefix used in errors (type() 'name()':)
-  const std::string _error_prefix;
 
   /// Whether or not to perform coverage checks on RayKernels
   const bool _ray_kernel_coverage_check;
@@ -957,9 +968,11 @@ private:
   void localElemIndexSetup();
 
   /**
-   * Sets up the maps from Ray to associated RayTracingObjects if _use_ray_registration
+   * Sets up the maps from Ray to associated RayTracingObjects if _use_ray_registration.
+   *
+   * If ray registration is disabled, this makes sure no RayTracingObjects provided rays.
    */
-  void associateRegisteredRays();
+  void registeredRaySetup();
 
   /**
    * Zero the AuxVariables that the registered AuxRayKernels contribute to.
@@ -1135,12 +1148,6 @@ private:
 
   /// Whether or not we've called initial setup - used to stop from late registration
   bool _called_initial_setup;
-  /// Whether or not we need to call associateRegisteredRays(); this is true when
-  /// new registered Rays are added via registerRay()
-  bool _need_to_associate_registered_rays;
-
-  /// Default prefix for errors when calling verifyRay()
-  const std::string _verify_ray_error_prefix;
 
   /// Helper for defining a local contiguous index for each element
   ElemIndexHelper _elem_index_helper;

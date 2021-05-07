@@ -341,6 +341,7 @@ public:
 
   virtual void addResidual(THREAD_ID tid) = 0;
   virtual void addResidualNeighbor(THREAD_ID tid) = 0;
+  virtual void addResidualLower(THREAD_ID tid) = 0;
 
   virtual void cacheResidual(THREAD_ID tid) = 0;
   virtual void cacheResidualNeighbor(THREAD_ID tid) = 0;
@@ -351,6 +352,8 @@ public:
 
   virtual void addJacobian(THREAD_ID tid) = 0;
   virtual void addJacobianNeighbor(THREAD_ID tid) = 0;
+  virtual void addJacobianNeighborLowerD(THREAD_ID tid) = 0;
+  virtual void addJacobianLowerD(THREAD_ID tid) = 0;
   virtual void addJacobianBlock(SparseMatrix<Number> & jacobian,
                                 unsigned int ivar,
                                 unsigned int jvar,
@@ -387,8 +390,7 @@ public:
   virtual void reinitElem(const Elem * elem, THREAD_ID tid) = 0;
   virtual void reinitElemPhys(const Elem * elem,
                               const std::vector<Point> & phys_points_in_elem,
-                              THREAD_ID tid,
-                              bool suppress_displaced_init = false) = 0;
+                              THREAD_ID tid) = 0;
   virtual void
   reinitElemFace(const Elem * elem, unsigned int side, BoundaryID bnd_id, THREAD_ID tid) = 0;
   virtual void reinitLowerDElem(const Elem * lower_d_elem,
@@ -407,6 +409,7 @@ public:
   virtual void reinitNeighborPhys(const Elem * neighbor,
                                   const std::vector<Point> & physical_points,
                                   THREAD_ID tid) = 0;
+  virtual void reinitElemNeighborAndLowerD(const Elem * elem, unsigned int side, THREAD_ID tid) = 0;
   /**
    * fills the VariableValue arrays for scalar variables from the solution vector
    * @param tid The thread id
@@ -719,6 +722,19 @@ public:
    */
   virtual const CouplingMatrix * couplingMatrix() const = 0;
 
+private:
+  /**
+   * Creates (n_sys - 1) clones of the provided algebraic ghosting functor (corresponding to the
+   * nonlinear system algebraic ghosting functor), initializes the clone with the appropriate
+   * DofMap, and then adds the clone to said DofMap
+   * @param algebraic_gf the (nonlinear system's) algebraic ghosting functor to clone
+   * @param to_mesh whether the clone should be added to the corresponding DofMap's underyling
+   * MeshBase (the underlying MeshBase will be the same for every system held by this object's
+   * EquationSystems object)
+   */
+  void cloneAlgebraicGhostingFunctor(GhostingFunctor & algebraic_gf, bool to_mesh = true);
+
+public:
   /**
    * Add an algebraic ghosting functor to this problem's DofMaps
    */
@@ -729,6 +745,11 @@ public:
    */
   void addAlgebraicGhostingFunctor(std::shared_ptr<GhostingFunctor> algebraic_gf,
                                    bool to_mesh = true);
+
+  /**
+   * Remove an algebraic ghosting functor from this problem's DofMaps
+   */
+  void removeAlgebraicGhostingFunctor(GhostingFunctor & algebraic_gf);
 
   /**
    * Automatic scaling setter
@@ -753,6 +774,21 @@ public:
    * Whether we have a displaced problem in our simulation
    */
   virtual bool haveDisplaced() const = 0;
+
+  /**
+   * Getter for whether we're computing the scaling jacobian
+   */
+  virtual bool computingScalingJacobian() const = 0;
+
+  /**
+   * Getter for whether we're computing the scaling residual
+   */
+  virtual bool computingScalingResidual() const = 0;
+
+  /**
+   * Clear dof indices from variables in nl and aux systems
+   */
+  void clearAllDofIndices();
 
 protected:
   /**
@@ -881,6 +917,12 @@ private:
 
   // Contains properties consumed by objects, see addConsumedPropertyName
   std::map<MooseObjectName, std::set<std::string>> _consumed_material_properties;
+
+  /// A map from a root algebraic ghosting functor, e.g. the ghosting functor passed into \p
+  /// removeAlgebraicGhostingFunctor, to its clones in other systems, e.g. systems other than system
+  /// 0
+  std::unordered_map<GhostingFunctor *, std::vector<std::shared_ptr<GhostingFunctor>>>
+      _root_alg_gf_to_sys_clones;
 
   friend class Restartable;
 };

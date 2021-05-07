@@ -11,6 +11,7 @@
 #include "MaterialPropertyInterface.h"
 #include "MooseApp.h"
 #include "MaterialBase.h"
+#include "FEProblemBase.h"
 
 defineLegacyParams(MaterialPropertyInterface);
 
@@ -76,7 +77,7 @@ MaterialPropertyInterface::defaultMaterialProperty(const std::string & name)
     auto & default_property = _default_real_properties.back();
 
     // resize to accommodate maximum number of qpoints
-    auto nqp = _mi_feproblem.getMaxQps();
+    auto nqp = Moose::constMaxQpsPerElem;
     default_property->resize(nqp);
 
     // set values for all qpoints to the given default
@@ -104,7 +105,7 @@ MaterialPropertyInterface::defaultADMaterialProperty(const std::string & name)
     auto & default_property = _default_ad_real_properties.back();
 
     // resize to accommodate maximum number of qpoints
-    auto nqp = _mi_feproblem.getMaxQps();
+    auto nqp = Moose::constMaxQpsPerElem;
     default_property->resize(nqp);
 
     // set values for all qpoints to the given default
@@ -138,7 +139,7 @@ MaterialPropertyInterface::defaultMaterialProperty(const std::string & name)
     auto & default_property = _default_real_vector_properties.back();
 
     // resize to accomodate maximum number obf qpoints
-    auto nqp = _mi_feproblem.getMaxQps();
+    auto nqp = Moose::constMaxQpsPerElem;
     default_property->resize(nqp);
 
     // set values for all qpoints to the given default
@@ -167,7 +168,7 @@ MaterialPropertyInterface::defaultADMaterialProperty(const std::string & name)
     auto & default_property = _default_ad_real_vector_properties.back();
 
     // resize to accomodate maximum number obf qpoints
-    auto nqp = _mi_feproblem.getMaxQps();
+    auto nqp = Moose::constMaxQpsPerElem;
     default_property->resize(nqp);
 
     // set values for all qpoints to the given default
@@ -203,6 +204,19 @@ std::vector<BoundaryName>
 MaterialPropertyInterface::getMaterialPropertyBoundaryNames(const std::string & name)
 {
   return _mi_feproblem.getMaterialPropertyBoundaryNames(name);
+}
+
+unsigned int
+MaterialPropertyInterface::getMaxQps() const
+{
+  return _mi_feproblem.getMaxQps();
+}
+
+void
+MaterialPropertyInterface::addConsumedPropertyName(const MooseObjectName & obj_name,
+                                                   const std::string & prop_name)
+{
+  return _mi_feproblem.addConsumedPropertyName(obj_name, prop_name);
 }
 
 void

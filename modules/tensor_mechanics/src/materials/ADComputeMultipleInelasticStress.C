@@ -76,7 +76,7 @@ ADComputeMultipleInelasticStress::ADComputeMultipleInelasticStress(
                            ? getParam<std::vector<Real>>("combined_inelastic_strain_weights")
                            : std::vector<Real>(_num_models, true)),
     _cycle_models(getParam<bool>("cycle_models")),
-    _matl_timestep_limit(declareProperty<Real>("matl_timestep_limit"))
+    _material_timestep_limit(declareProperty<Real>(_base_name + "material_timestep_limit"))
 {
   if (_inelastic_weights.size() != _num_models)
     paramError("combined_inelastic_strain_weights",
@@ -89,7 +89,7 @@ ADComputeMultipleInelasticStress::ADComputeMultipleInelasticStress(
 void
 ADComputeMultipleInelasticStress::initQpStatefulProperties()
 {
-  ADComputeStressBase::initQpStatefulProperties();
+  ADComputeFiniteStrainElasticStress::initQpStatefulProperties();
   _inelastic_strain[_qp].zero();
 }
 
@@ -142,7 +142,16 @@ ADComputeMultipleInelasticStress::computeQpStressIntermediateConfiguration()
     if (_is_elasticity_tensor_guaranteed_isotropic || !_perform_finite_strain_rotations)
       _stress[_qp] = _elasticity_tensor[_qp] * (_elastic_strain_old[_qp] + _strain_increment[_qp]);
     else
-      _stress[_qp] = _stress_old[_qp] + _elasticity_tensor[_qp] * _strain_increment[_qp];
+    {
+      ADRankFourTensor elasticity_tensor_rotated = _elasticity_tensor[_qp];
+      elasticity_tensor_rotated.rotate(_rotation_total_old[_qp]);
+
+      _stress[_qp] =
+          elasticity_tensor_rotated * (_elastic_strain_old[_qp] + elastic_strain_increment);
+
+      // Update current total rotation matrix to be used in next step
+      _rotation_total[_qp] = _rotation_increment[_qp] * _rotation_total_old[_qp];
+    }
   }
   else
   {
@@ -210,8 +219,16 @@ ADComputeMultipleInelasticStress::updateQpState(
         _stress[_qp] =
             _elasticity_tensor[_qp] * (_elastic_strain_old[_qp] + elastic_strain_increment);
       else
-        _stress[_qp] = _stress_old[_qp] + _elasticity_tensor[_qp] * elastic_strain_increment;
+      {
+        ADRankFourTensor elasticity_tensor_rotated = _elasticity_tensor[_qp];
+        elasticity_tensor_rotated.rotate(_rotation_total_old[_qp]);
 
+        _stress[_qp] =
+            elasticity_tensor_rotated * (_elastic_strain_old[_qp] + elastic_strain_increment);
+
+        // Update current total rotation matrix to be used in next step
+        _rotation_total[_qp] = _rotation_increment[_qp] * _rotation_total_old[_qp];
+      }
       // given a trial stress (_stress[_qp]) and a strain increment (elastic_strain_increment)
       // let the i^th model produce an admissible stress (as _stress[_qp]), and decompose
       // the strain increment into an elastic part (elastic_strain_increment) and an
@@ -257,6 +274,7 @@ ADComputeMultipleInelasticStress::updateQpState(
                << " stress convergence absolute tolerance = " << _absolute_tolerance << std::endl;
     }
     ++counter;
+
   } while (counter < _max_iterations && l2norm_delta_stress > _absolute_tolerance &&
            (l2norm_delta_stress / first_l2norm_delta_stress) > _relative_tolerance &&
            _num_models != 1);
@@ -271,14 +289,14 @@ ADComputeMultipleInelasticStress::updateQpState(
     combined_inelastic_strain_increment +=
         _inelastic_weights[i_rmm] * inelastic_strain_increment[i_rmm];
 
-  _matl_timestep_limit[_qp] = 0.0;
+  _material_timestep_limit[_qp] = 0.0;
   for (unsigned i_rmm = 0; i_rmm < _num_models; ++i_rmm)
-    _matl_timestep_limit[_qp] += 1.0 / _models[i_rmm]->computeTimeStepLimit();
+    _material_timestep_limit[_qp] += 1.0 / _models[i_rmm]->computeTimeStepLimit();
 
-  if (MooseUtils::absoluteFuzzyEqual(_matl_timestep_limit[_qp], 0.0))
-    _matl_timestep_limit[_qp] = std::numeric_limits<Real>::max();
+  if (MooseUtils::absoluteFuzzyEqual(_material_timestep_limit[_qp], 0.0))
+    _material_timestep_limit[_qp] = std::numeric_limits<Real>::max();
   else
-    _matl_timestep_limit[_qp] = 1.0 / _matl_timestep_limit[_qp];
+    _material_timestep_limit[_qp] = 1.0 / _material_timestep_limit[_qp];
 }
 
 void
@@ -297,12 +315,21 @@ ADComputeMultipleInelasticStress::updateQpStateSingleModel(
   if (_is_elasticity_tensor_guaranteed_isotropic || !_perform_finite_strain_rotations)
     _stress[_qp] = _elasticity_tensor[_qp] * (_elastic_strain_old[_qp] + elastic_strain_increment);
   else
-    _stress[_qp] = _stress_old[_qp] + _elasticity_tensor[_qp] * elastic_strain_increment;
+  {
+    ADRankFourTensor elasticity_tensor_rotated = _elasticity_tensor[_qp];
+    elasticity_tensor_rotated.rotate(_rotation_total_old[_qp]);
+
+    _stress[_qp] =
+        elasticity_tensor_rotated * (_elastic_strain_old[_qp] + elastic_strain_increment);
+
+    // Update current total rotation matrix to be used in next step
+    _rotation_total[_qp] = _rotation_increment[_qp] * _rotation_total_old[_qp];
+  }
 
   computeAdmissibleState(
       model_number, elastic_strain_increment, combined_inelastic_strain_increment);
 
-  _matl_timestep_limit[_qp] = _models[0]->computeTimeStepLimit();
+  _material_timestep_limit[_qp] = _models[0]->computeTimeStepLimit();
 
   /* propagate internal variables, etc, to this timestep for those inelastic models where
    * "updateState" is not called */

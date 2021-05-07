@@ -56,3 +56,38 @@ protected:
   const dof_id_type & _scatter_value;
   const std::vector<dof_id_type> & _gather_value;
 };
+
+class TestDeclareInitialSetupReporter : public GeneralReporter
+{
+public:
+  static InputParameters validParams();
+  TestDeclareInitialSetupReporter(const InputParameters & parameters);
+  virtual void initialSetup() override;
+  virtual void initialize() override {}
+  virtual void finalize() override {}
+  virtual void execute() override {}
+};
+
+class TestGetReporterDeclaredInInitialSetupReporter : public GeneralReporter
+{
+public:
+  static InputParameters validParams();
+  TestGetReporterDeclaredInInitialSetupReporter(const InputParameters & parameters);
+  virtual void initialize() override {}
+  virtual void finalize() override {}
+  virtual void execute() override;
+
+protected:
+  const Real & _value_declared_in_initial_setup;
+  Real & _the_value_of_the_reporter;
+};
+
+class TestDeclareErrorsReporter : public GeneralReporter
+{
+public:
+  static InputParameters validParams();
+  TestDeclareErrorsReporter(const InputParameters & parameters);
+  virtual void initialize() override {}
+  virtual void finalize() override {}
+  virtual void execute() override {}
+};

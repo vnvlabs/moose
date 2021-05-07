@@ -73,6 +73,26 @@ protected:
    */
   virtual Real computeQpOffDiagJacobian(Moose::DGJacobianType type, unsigned int jvar);
 
+  /**
+   * Insertion point for evaluations that depend on qp but are independent of the test functions.
+   */
+  virtual void precalculateQpResidual(Moose::DGResidualType /*type*/) {}
+
+  /**
+   * Insertion point for evaluations that depend on qp but are independent of the test and shape
+   * functions.
+   */
+  virtual void precalculateQpJacobian(Moose::DGJacobianType /*type*/) {}
+
+  /**
+   * Insertion point for evaluations that depend on qp but are independent of the test and shape
+   * functions for off-diagonal Jacobian assembly.
+   */
+  virtual void precalculateQpOffDiagJacobian(Moose::DGJacobianType /*type*/,
+                                             const MooseVariableFEBase & /*jvar*/)
+  {
+  }
+
   /// Variable this kernel operates on
   MooseVariable & _var;
   /// Holds the current solution at the current quadrature point on the face.

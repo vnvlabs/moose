@@ -143,14 +143,9 @@ public:
     mooseError("phiLowerSize not supported by MooseVariableFVBase");
   }
 
-  virtual void computeElemValuesFace() override final
-  {
-    // mooseError("computeElemValuesFace not supported by MooseVariableFVBase");
-  }
-  virtual void computeNeighborValuesFace() override final
-  {
-    // mooseError("computeNeighborValuesFace not supported by MooseVariableFVBase");
-  }
+  virtual void computeElemValuesFace() override final;
+  virtual void computeNeighborValuesFace() override final;
+
   virtual void computeNeighborValues() override final
   {
     // mooseError("computeNeighborValues not supported by MooseVariableFVBase");
@@ -214,6 +209,8 @@ public:
     return _neighbor_data->dofIndices();
   }
 
+  void clearAllDofIndices() final;
+
   const FieldVariableValue & vectorTagValue(TagID tag)
   {
     return _element_data->vectorTagValue(tag);
@@ -276,12 +273,14 @@ public:
     return _element_data->adGradSln();
   }
 
-#ifdef MOOSE_GLOBAL_AD_INDEXING
   /**
-   * Retrieve (or potentially compute) the gradient on the provided element
+   * Retrieve (or potentially compute) the gradient on the provided element. Overriders of this
+   * method *cannot* call \p getBoundaryFaceValue because that method itself may lead to a call to
+   * \p adGradSln(const Elem * const) resulting in infinite recursion
    * @param elem The element for which to retrieve the gradient
+   * @return The gradient at the element centroid
    */
-  const VectorValue<ADReal> & adGradSln(const Elem * const elem) const;
+  virtual const VectorValue<ADReal> & adGradSln(const Elem * const elem) const;
 
   /**
    * Retrieve (or potentially compute) a cross-diffusion-corrected gradient on the provided face.
@@ -303,7 +302,13 @@ public:
    */
   const VectorValue<ADReal> & uncorrectedAdGradSln(const FaceInfo & fi) const;
 
-#endif
+  /**
+   * Retrieve the solution value at a boundary face. If we're using a one term Taylor series
+   * expansion we'll simply return the ajacent element centroid value. If we're doing two terms,
+   * then we will compute the gradient if necessary to help us interpolate from the element centroid
+   * value to the face
+   */
+  const ADReal & getBoundaryFaceValue(const FaceInfo & fi) const;
 
   const ADTemplateVariableSecond<OutputType> & adSecondSln() const override
   {
@@ -421,7 +426,6 @@ public:
   void residualSetup() override;
   void jacobianSetup() override;
 
-#ifdef MOOSE_GLOBAL_AD_INDEXING
   /**
    * Get the solution value for the provided element and seed the derivative for the corresponding
    * dof index
@@ -445,22 +449,47 @@ public:
                           const FaceInfo & fi,
                           const ADReal & elem_value) const;
 
+  /**
+   * Compute or retrieve from cache the solution value on an internal face, using linear
+   * interpolation or interpolating from vertex values, depending on the stencil.
+   * @param neighbor The \p neighbor element that is on the other side of the FaceInfo
+   * @param fi The face information object
+   * @param elem_value The solution value on the "element". This value may be used for computing the
+   * neighbor value if the neighbor is null or this variable doesn't exist on the neighbor subdomain
+   * @return the face value on the internal face associated with \p fi
+   */
+  const ADReal & getInternalFaceValue(const Elem * const neighbor,
+                                      const FaceInfo & fi,
+                                      const ADReal & elem_value) const;
+
+protected:
+  /**
+   * @return whether \p fi is an internal face for this variable
+   */
+  bool isInternalFace(const FaceInfo & fi) const;
+
+  /**
+   * @return whether \p fi is a Dirichlet boundary face for this variable
+   */
+  virtual bool isDirichletBoundaryFace(const FaceInfo & fi) const;
+
+  /**
+   * @return the Dirichlet value on the boundary face associated with \p fi
+   */
+  virtual const ADReal & getDirichletBoundaryFaceValue(const FaceInfo & fi) const;
+
+  /**
+   * Returns whether this is an extrapolated boundary face. An extrapolated boundary face is
+   * boundary face for which is not a corresponding Dirichlet condition, e.g. we need to compute
+   * some approximation for the boundary face value using the adjacent cell centroid information
+   */
+  bool isExtrapolatedBoundaryFace(const FaceInfo & fi) const;
+
 private:
   /**
-   * get the finite volume solution interpolated to the face associated with \p fi.  If the
-   * neighbor is null or this variable doesn't exist on the neighbor element's subdomain, then we
-   * compute a face value based on any Dirichlet boundary conditions associated with the face
-   * information, or absent that we assume a zero gradient and simply return the \p elem_value
-   * @param neighbor The \p neighbor element which will help us compute the face interpolation
-   * @param fi The face information object
-   * @param elem_value The solution value on the "element". This value will be returned as the face
-   * value if there is no associated neighbor value and there is no Dirichlet boundary condition on
-   * the face associated with \p fi. If there is an associated neighbor, then \p elem_value will be
-   * used as part of a linear interpolation
-   * @return The interpolated face value
+   * @return the extrapolated value on the boundary face associated with \p fi
    */
-  ADReal
-  getFaceValue(const Elem * const neighbor, const FaceInfo & fi, const ADReal & elem_value) const;
+  const ADReal & getExtrapolatedBoundaryFaceValue(const FaceInfo & fi) const;
 
   /**
    * Get the finite volume solution interpolated to \p vertex. This interpolation is done doing a
@@ -472,8 +501,6 @@ private:
   const ADReal & getVertexValue(const Node & vertex) const;
 
 public:
-#endif
-
   const MooseArray<OutputType> & nodalValueArray() const override
   {
     mooseError("Finite volume variables do not have defined values at nodes.");
@@ -532,6 +559,8 @@ public:
     mooseError("We don't currently implement second derivatives for FV");
   }
 
+  unsigned int oldestSolutionStateRequested() const override final;
+
 protected:
   /**
    * clear finite volume caches
@@ -562,13 +591,20 @@ private:
   const FieldVariablePhiValue & _phi_neighbor;
   const FieldVariablePhiGradient & _grad_phi_neighbor;
 
-#ifdef MOOSE_GLOBAL_AD_INDEXING
+protected:
   /// A cache for storing gradients on elements
   mutable std::unordered_map<const Elem *, VectorValue<ADReal>> _elem_to_grad;
 
   /// A cache for storing uncorrected gradients on faces
   mutable std::unordered_map<const FaceInfo *, VectorValue<ADReal>> _face_to_unc_grad;
 
+  /// A cache that maps from faces to face values
+  mutable std::unordered_map<const FaceInfo *, ADReal> _face_to_value;
+
+  /// Whether to use a two term expansion for computing boundary face values
+  const bool _two_term_boundary_expansion;
+
+private:
   /// A cache for storing gradients on faces
   mutable std::unordered_map<const FaceInfo *, VectorValue<ADReal>> _face_to_grad;
 
@@ -580,7 +616,6 @@ private:
   /// is false, then the face center value is simply a linear interpolation betweeh the two
   /// neighboring cell center values
   const bool _use_extended_stencil;
-#endif
 };
 
 template <typename OutputType>

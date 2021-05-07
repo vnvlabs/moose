@@ -1,3 +1,7 @@
+!content pagination previous=tutorial01_app_development/step04_weak_form.md
+                    next=tutorial01_app_development/step06_input_params.md
+                    margin-bottom=0px
+
 # Step 5: Develop a Kernel Object
 
 In this step, the basic components of [#kernels] will be presented. To demonstrate their use, a new `Kernel` will be created to solve Darcy's Pressure equation, whose weak form was derived in the [previous step](tutorial01_app_development/step04_weak_form.md#demo). The concept of class *inheritance* shall also be demonstrated, as the object to solve Darcy's equation will inherit from the `ADKernel` class.
@@ -84,10 +88,7 @@ Here, the header file for this object was included. Next, the `registerMooseObje
 
 Since the source code has been modified, the executable must be recompiled:
 
-```bash
-cd ~/projects/babbler
-make -j4
-```
+!include commands/make.md
 
 ### Input File id=input-demo
 
@@ -106,7 +107,7 @@ cd ~/projects/babbler/problems
 
 ### Results id=result-demo
 
-Visualize the solution with PEACOCK and verify that it resembles that which is shown in [results]:
+Visualize the solution with PEACOCK and confirm that it resembles that which is shown in [results]:
 
 ```bash
 cd ~/projects/babbler/problems
@@ -134,7 +135,7 @@ git add include/kernels/ src/kernels/ problems/pressure_diffusion.i
 Now, commit and push the changes to the remote repository:
 
 ```bash
-git commit -m "Created kernel to solve Darcy pressure and updated the problem input file"
+git commit -m "developed kernel to solve Darcy pressure and updated the problem input file"
 git push
 ```
 

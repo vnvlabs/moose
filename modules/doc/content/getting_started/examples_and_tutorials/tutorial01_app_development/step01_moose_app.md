@@ -1,11 +1,15 @@
+!content pagination previous=tutorial01_app_development/problem_statement.md
+                    next=tutorial01_app_development/step02_input_file.md
+                    margin-bottom=0px
+
 # Step 1: Create a Custom MOOSE Application
 
 The first step of this tutorial is to create a custom MOOSE application. The application will contain the customized C++ objects created as part of this tutorial for solving the desired problem.
 
 ## Create a GitHub Account
 
-Development of [!ac](MOOSE) is facilitated by [GitHub](https://github.com). It is recommend that applications
-also use GitHub if possible. Thus, the reader is encourgaged to [open an account](#account) and [create a *repository*](#repo) to store and track the progress of the new application that will be created. Following the completion of each tutorial step, for which new files have been created and tested, the additions and changes shall be saved (*commit*) and uploaded (*push*) to a remote repository.
+Development of [!ac](MOOSE) is facilitated by [GitHub]. It is recommend that applications
+also use GitHub if possible. Thus, the reader is encouraged to [open an account](#account) and [create a *repository*](#repo) to store and track the progress of the new application that will be created. Following the completion of each tutorial step, for which new files have been created and tested, the additions and changes shall be saved (*commit*) and uploaded (*push*) to a remote repository.
 
 ## Run the Stork Script and Initialize the New Application id=stork
 
@@ -26,16 +30,13 @@ cd ~/projects
 ./moose/scripts/stork.sh Babbler # substitute "Babbler" for some other name, if desired
 ```
 
-This will create directory, `~/projects/babbler`, that contains a new MOOSE application. The terminal will also prompt the user to initialize the new application as a GitHub repository, which will be discussed in the [#git] section.
+This will create a directory, `~/projects/babbler`, that contains a new MOOSE application. The terminal will also prompt the user to initialize the new application as a GitHub repository, which will be discussed in the [#git] section.
 
 ### Compile the Application Executable id=make
 
 C++ is a compiled language. Therefore, the application code must be first transcribed into a single binary file. During this transcription, the code will be optimized for speed and data allocation. To compile the new application, run the following commands in a terminal (the number following "`make -j`" should be less than, or equal to, the number of CPUs available):
 
-```bash
-cd ~/projects/babbler
-make -j4
-```
+!include commands/make.md
 
 This will create an executable (binary) file called `babbler-opt` in the application root directory that can be used to run simulations. In addition to the application code, the above command will also compile code available from [`moose/framework`](https://github.com/idaholab/moose/tree/master/framework). A MOOSE-based application always has the full power of MOOSE plus its own.
 
@@ -48,14 +49,11 @@ Each time a change is made to a C++ file, the application will need to be recomp
 
 MOOSE applications have a testing system to quickly verify that the executable was built properly and that the source code is performing as expected. It works by running a simulation and comparing the output to expected results. Once the `babbler-opt` executable exists, a simple test can be ran:
 
-```bash
-cd ~/projects/babbler
-./run_tests -j4
-```
+!include commands/run_tests.md
 
 If the test passed, the terminal output should look something like that shown below.
 
-```bash
+```
 test:kernels/simple_diffusion.test ...................... OK
 ------------------------------------------------------------
 Ran 1 tests in 0.3 seconds.
@@ -92,6 +90,11 @@ As changes to the application are made, and more `push` commands are ran, it may
 
 ```bash
 ssh-keygen -t rsa -C YourEmail
+```
+
+When the terminal prompts about where to save the key, just hit enter to use the default file (`~/.ssh/id_rsa.pub`). When it asks whether to overwrite the file, enter "`y`" and when it asks for a passphrase, leave it blank or else the key will require it every time it is used, which defeats its purpose here. Finally, the SSH key is setup and can be printed to the terminal:
+
+```bash
 cat ~/.ssh/id_rsa.pub
 ```
 

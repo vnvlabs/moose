@@ -178,7 +178,14 @@ public:
   /// Set custom coupling matrix for variables requiring nonlocal contribution
   void setNonlocalCouplingMatrix();
 
-  bool areCoupled(unsigned int ivar, unsigned int jvar);
+  bool areCoupled(unsigned int ivar, unsigned int jvar) const;
+
+  /**
+   * Whether to trust the user coupling matrix even if we want to do things like be paranoid and
+   * create a full coupling matrix. See https://github.com/idaholab/moose/issues/16395 for detailed
+   * background
+   */
+  void trustUserCouplingMatrix();
 
   std::vector<std::pair<MooseVariableFEBase *, MooseVariableFEBase *>> &
   couplingEntries(THREAD_ID tid);
@@ -214,7 +221,6 @@ public:
                             const Real abstol,
                             const PetscInt nfuncs,
                             const PetscInt max_funcs,
-                            const PetscBool force_iteration,
                             const Real initial_residual_before_preset_bcs,
                             const Real div_threshold);
 
@@ -308,6 +314,8 @@ public:
    */
   void bumpVolumeQRuleOrder(Order order, SubdomainID block);
 
+  void bumpAllQRuleOrder(Order order, SubdomainID block);
+
   /**
    * @return The maximum number of quadrature points in use on any element in this problem.
    */
@@ -352,10 +360,6 @@ public:
    */
   virtual std::vector<VariableName> getVariableNames();
 
-  /**
-   * A place to add extra vectors to the simulation. It is called early during initialSetup.
-   */
-  virtual void addExtraVectors();
   virtual void initialSetup();
   virtual void timestepSetup();
 
@@ -382,8 +386,7 @@ public:
   virtual void reinitElem(const Elem * elem, THREAD_ID tid) override;
   virtual void reinitElemPhys(const Elem * elem,
                               const std::vector<Point> & phys_points_in_elem,
-                              THREAD_ID tid,
-                              bool suppress_displaced_init = false) override;
+                              THREAD_ID tid) override;
   virtual void
   reinitElemFace(const Elem * elem, unsigned int side, BoundaryID bnd_id, THREAD_ID tid) override;
   virtual void reinitLowerDElem(const Elem * lower_d_elem,
@@ -402,6 +405,8 @@ public:
   virtual void reinitNeighborPhys(const Elem * neighbor,
                                   const std::vector<Point> & physical_points,
                                   THREAD_ID tid) override;
+  virtual void
+  reinitElemNeighborAndLowerD(const Elem * elem, unsigned int side, THREAD_ID tid) override;
   virtual void reinitScalars(THREAD_ID tid, bool reinit_for_derivative_reordering = false) override;
   virtual void reinitOffDiagScalars(THREAD_ID tid) override;
 
@@ -418,6 +423,15 @@ public:
   virtual void init() override;
   virtual void solve() override;
 
+  /**
+   * In general, {evaluable elements} >= {local elements} U {algebraic ghosting elements}. That is,
+   * the number of evaluable elements does NOT necessarily equal to the number of local and
+   * algebraic ghosting elements. For example, if using a Lagrange basis for all variables,
+   * if a non-local, non-algebraically-ghosted element is surrounded by neighbors which are
+   * local or algebraically ghosted, then all the nodal (Lagrange) degrees of freedom associated
+   * with the non-local, non-algebraically-ghosted element will be evaluable, and hence that
+   * element will be considered evaluable.
+   */
   const ConstElemRange & getEvaluableElementRange();
 
   /**
@@ -682,6 +696,9 @@ public:
 
   virtual void
   addFVBC(const std::string & fv_bc_name, const std::string & name, InputParameters & parameters);
+  void addFVInterfaceKernel(const std::string & fv_ik_name,
+                            const std::string & name,
+                            InputParameters & parameters);
 
   // Interface /////
   virtual void addInterfaceKernel(const std::string & kernel_name,
@@ -866,9 +883,10 @@ public:
   /**
    * Get the user object by its name
    * @param name The name of the user object being retrieved
+   * @param tid The thread of the user object (defaults to 0)
    * @return Const reference to the user object
    */
-  const UserObject & getUserObjectBase(const std::string & name) const;
+  const UserObject & getUserObjectBase(const std::string & name, const THREAD_ID tid = 0) const;
 
   /**
    * Check if there if a user object of given name
@@ -878,17 +896,24 @@ public:
   bool hasUserObject(const std::string & name) const;
 
   /**
-   * Initializes the postprocessor data
-   *
-   * This is needed to correctly handle the default values
-   * @see SetupPostprocessorDataAction, PostprocessorInterface
+   * No longer used. To be removed after application patching
    */
-  void initPostprocessorData(const std::string & name);
+  void initPostprocessorData(const std::string &) {}
+
+  /**
+   * Whether or not a Postprocessor value exists by a given name.
+   * @param name The name of the Postprocessor
+   * @return True if a Postprocessor value exists
+   *
+   * Note: You should prioritize the use of PostprocessorInterface::hasPostprocessor
+   * and PostprocessorInterface::hasPostprocessorByName over this method when possible.
+   */
+  bool hasPostprocessorValueByName(const PostprocessorName & name) const;
 
   /**
    * Get a read-only reference to the value associated with a Postprocessor that exists.
    * @param name The name of the post-processor
-   * @partm t_index Flag for getting current (0), old (1), or older (2) values
+   * @param t_index Flag for getting current (0), old (1), or older (2) values
    * @return The reference to the value at the given time index
    *
    * Note: This method is only for retrieving values that already exist, the Postprocessor and
@@ -915,17 +940,11 @@ public:
   void setPostprocessorValueByName(const PostprocessorName & name,
                                    const PostprocessorValue & value,
                                    std::size_t t_index = 0);
-  ///@}
 
-  ///@{
   /**
-   * Deprecated
+   * Deprecated. Use hasPostprocessorValueByName
    */
   bool hasPostprocessor(const std::string & name) const;
-  PostprocessorValue & getPostprocessorValue(const PostprocessorName & name);
-  PostprocessorValue & getPostprocessorValueOld(const std::string & name);
-  PostprocessorValue & getPostprocessorValueOlder(const std::string & name);
-  ///@}
 
   /**
    * Get a read-only reference to the vector value associated with the VectorPostprocessor.
@@ -964,24 +983,6 @@ public:
    */
   const VectorPostprocessor & getVectorPostprocessorObjectByName(const std::string & object_name,
                                                                  THREAD_ID tid = 0) const;
-
-  ///@{
-  /**
-   * DEPRECATED
-   */
-  bool hasVectorPostprocessor(const std::string & name);
-  VectorPostprocessorValue & getVectorPostprocessorValue(const VectorPostprocessorName & name,
-                                                         const std::string & vector_name);
-  VectorPostprocessorValue & getVectorPostprocessorValueOld(const std::string & name,
-                                                            const std::string & vector_name);
-  VectorPostprocessorValue & getVectorPostprocessorValue(const VectorPostprocessorName & name,
-                                                         const std::string & vector_name,
-                                                         bool needs_broadcast);
-  VectorPostprocessorValue & getVectorPostprocessorValueOld(const std::string & name,
-                                                            const std::string & vector_name,
-                                                            bool needs_broadcast);
-  bool vectorPostprocessorHasVectors(const std::string & vpp_name);
-  ///@}
 
   ///@{
   /**
@@ -1279,6 +1280,7 @@ public:
 
   virtual void addResidual(THREAD_ID tid) override;
   virtual void addResidualNeighbor(THREAD_ID tid) override;
+  virtual void addResidualLower(THREAD_ID tid) override;
   virtual void addResidualScalar(THREAD_ID tid = 0);
 
   virtual void cacheResidual(THREAD_ID tid) override;
@@ -1299,6 +1301,8 @@ public:
 
   virtual void addJacobian(THREAD_ID tid) override;
   virtual void addJacobianNeighbor(THREAD_ID tid) override;
+  virtual void addJacobianNeighborLowerD(THREAD_ID tid) override;
+  virtual void addJacobianLowerD(THREAD_ID tid) override;
   virtual void addJacobianBlock(SparseMatrix<Number> & jacobian,
                                 unsigned int ivar,
                                 unsigned int jvar,
@@ -1615,7 +1619,9 @@ public:
   /**
    * Compute an user object with the given name
    */
-  virtual void computeUserObjectByName(const ExecFlagType & type, const std::string & name);
+  virtual void computeUserObjectByName(const ExecFlagType & type,
+                                       const Moose::AuxGroup & group,
+                                       const std::string & name);
 
   /**
    * Call compute methods on AuxKernels
@@ -1739,22 +1745,6 @@ public:
 #if !PETSC_RELEASE_LESS_THAN(3, 12, 0)
   PetscOptions & petscOptionsDatabase() { return _petsc_option_data_base; }
 #endif
-
-  /**
-   * Set the global automatic differentiaion (AD) flag which indicates whether any consumer has
-   * requested an AD material property or whether any suppier has declared an AD material property
-   */
-  void usingADMatProps(bool using_ad_mat_props)
-  {
-    _using_ad_mat_props = using_ad_mat_props;
-    if (_using_ad_mat_props)
-      haveADObjects(true);
-  }
-
-  /**
-   * Whether any object has requested/supplied an AD material property
-   */
-  bool usingADMatProps() const { return _using_ad_mat_props; }
 
   /// Set boolean flag to true to store solution time derivative
   virtual void setUDotRequested(const bool u_dot_requested) { _u_dot_requested = u_dot_requested; };
@@ -1915,9 +1905,47 @@ public:
     _n_max_nl_pingpong = n_max_nl_pingpong;
   }
 
+  /// method setting the minimum number of nonlinear iterations before performing divergence checks
+  void setNonlinearForcedIterations(const unsigned int nl_forced_its)
+  {
+    _nl_forced_its = nl_forced_its;
+  }
+
+  /// method returning the number of forced nonlinear iterations
+  unsigned int getNonlinearForcedIterations() const { return _nl_forced_its; };
+
+  /// method setting the absolute divergence tolerance
+  void setNonlinearAbsoluteDivergenceTolerance(const Real nl_abs_div_tol)
+  {
+    _nl_abs_div_tol = nl_abs_div_tol;
+  }
+
+  /**
+   * Setter for whether we're computing the scaling jacobian
+   */
+  void computingScalingJacobian(bool computing_scaling_jacobian)
+  {
+    _computing_scaling_jacobian = computing_scaling_jacobian;
+  }
+
+  bool computingScalingJacobian() const override final { return _computing_scaling_jacobian; }
+
+  /**
+   * Setter for whether we're computing the scaling residual
+   */
+  void computingScalingResidual(bool computing_scaling_residual)
+  {
+    _computing_scaling_residual = computing_scaling_residual;
+  }
+
+  bool computingScalingResidual() const override final { return _computing_scaling_residual; }
+
 protected:
   /// Create extra tagged vectors and matrices
   void createTagVectors();
+
+  /// Create extra tagged solution vectors
+  void createTagSolutions();
 
   MooseMesh & _mesh;
   EquationSystems _eq;
@@ -1940,6 +1968,12 @@ protected:
   /// maximum numbver
   unsigned int _n_nl_pingpong = 0;
   unsigned int _n_max_nl_pingpong = std::numeric_limits<unsigned int>::max();
+
+  /// the number of forced nonlinear iterations
+  int _nl_forced_its = 0;
+
+  /// the absolute non linear divergence tolerance
+  Real _nl_abs_div_tol = -1;
 
   std::shared_ptr<NonlinearSystemBase> _nl;
   std::shared_ptr<AuxiliarySystem> _aux;
@@ -2283,6 +2317,16 @@ private:
   /// MooseEnum describing how to obtain reference points for displaced mesh dgkernels and/or
   /// interface kernels. Options are invert_elem_phys, use_undisplaced_ref, and the default unset.
   MooseEnum _displaced_neighbor_ref_pts;
+
+  /// Whether to trust the user coupling matrix no matter what. See
+  /// https://github.com/idaholab/moose/issues/16395 for detailed background
+  bool _trust_user_coupling_matrix = false;
+
+  /// Flag used to indicate whether we are computing the scaling Jacobian
+  bool _computing_scaling_jacobian = false;
+
+  /// Flag used to indicate whether we are computing the scaling Residual
+  bool _computing_scaling_residual = false;
 };
 
 template <typename T>

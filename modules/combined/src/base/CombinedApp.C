@@ -16,6 +16,7 @@
 #include "ChemicalReactionsApp.h"
 #include "ContactApp.h"
 #include "FluidPropertiesApp.h"
+#include "FsiApp.h"
 #include "FunctionalExpansionToolsApp.h"
 #include "GeochemistryApp.h"
 #include "HeatConductionApp.h"
@@ -39,10 +40,6 @@ CombinedApp::validParams()
   InputParameters params = MooseApp::validParams();
 
   params.set<bool>("automatic_automatic_scaling") = false;
-
-  // Do not use legacy DirichletBC, that is, set DirichletBC default for preset = true
-  params.set<bool>("use_legacy_dirichlet_bc") = false;
-
   params.set<bool>("use_legacy_material_output") = false;
 
   return params;
@@ -72,6 +69,7 @@ CombinedApp::registerAll(Factory & f, ActionFactory & af, Syntax & s)
   ChemicalReactionsApp::registerAll(f, af, s);
   ContactApp::registerAll(f, af, s);
   FluidPropertiesApp::registerAll(f, af, s);
+  FsiApp::registerAll(f, af, s);
   FunctionalExpansionToolsApp::registerAll(f, af, s);
   GeochemistryApp::registerAll(f, af, s);
   HeatConductionApp::registerAll(f, af, s);

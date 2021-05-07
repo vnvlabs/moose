@@ -68,22 +68,22 @@ def git_root_dir(working_dir=os.getcwd()):
     except OSError:
         print("The supplied directory does not exist: {}".format(working_dir))
 
-def git_submodule_status(working_dir=os.getcwd()):
+def git_submodule_info(working_dir=os.getcwd(), *args):
     """
     Return the status of each of the git submodule(s).
     """
     out = dict()
-    result = check_output(['git', 'submodule', 'status'], cwd=working_dir)
+    result = check_output(['git', 'submodule', 'status', *args], cwd=working_dir)
     regex = re.compile(r'(?P<status>[\s\-\+U])(?P<sha1>[a-f0-9]{40})\s(?P<name>.*?)\s')
     for match in regex.finditer(result):
-        out[match.group('name')] = match.group('status')
+        out[match.group('name')] = (match.group('status'), match.group('sha1'))
     return out
 
 def git_init_submodule(path, working_dir=os.getcwd()):
     """Check submodule for given in path"""
-    status = git_submodule_status(working_dir)
+    status = git_submodule_info(working_dir)
     for submodule, status in status.items():
-        if (submodule == path) and (status == '-'):
+        if (submodule == path) and (status[0] == '-'):
             subprocess.call(['git', 'submodule', 'update', '--init', path], cwd=working_dir)
             break
 
@@ -150,3 +150,35 @@ def git_committers(loc=os.getcwd(), *args):
         items = line.split("\t", 1)
         counts[items[1]] = int(items[0])
     return counts
+
+def git_localpath(filename):
+    """
+    Return the path from the root of the repository.
+    """
+    root = git_root_dir(os.path.dirname(filename))
+    return os.path.relpath(filename, root)
+
+def git_repo(loc=os.getcwd(), remotes=['upstream', 'origin']):
+    """
+    Return URL to repository based on remotes
+    """
+    if not os.path.isdir(loc):
+        raise OSError("The supplied location must be a directory: {}".format(loc))
+
+    lookup = dict()
+    for remote in check_output(['git', 'remote', '-v'], encoding='utf-8', cwd=loc).strip(' \n').split('\n'):
+        name, addr = remote.split(maxsplit=1)
+        lookup[name] = addr
+
+    for remote in remotes:
+        address = lookup.get(remote, None)
+        if address is not None:
+            break
+
+    if address is None:
+        raise OSError("Unable to locate a remote with the name(s): {}".format(', '.join(remotes)))
+
+    if address.startswith('git'):
+        match = re.match(r'git@(?P<host>.*?):(?P<site>.*?)\.git', address)
+        address = 'https://{}/{}'.format(match.group('host'), match.group('site'))
+    return address

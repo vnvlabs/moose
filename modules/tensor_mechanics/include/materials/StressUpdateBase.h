@@ -80,43 +80,31 @@ public:
    * compute_full_tangent_operator=false, then tangent_operator=elasticity_tensor is an appropriate
    * choice.  tangent_operator is only computed if _fe_problem.currentlyComputingJacobian() = true
    */
-  virtual void updateState(RankTwoTensor & strain_increment,
-                           RankTwoTensor & inelastic_strain_increment,
-                           const RankTwoTensor & rotation_increment,
-                           RankTwoTensor & stress_new,
-                           const RankTwoTensor & stress_old,
-                           const RankFourTensor & elasticity_tensor,
-                           const RankTwoTensor & elastic_strain_old,
-                           bool compute_full_tangent_operator,
-                           RankFourTensor & tangent_operator);
+  virtual void
+  updateState(GenericRankTwoTensor<is_ad> & strain_increment,
+              GenericRankTwoTensor<is_ad> & inelastic_strain_increment,
+              const GenericRankTwoTensor<is_ad> & rotation_increment,
+              GenericRankTwoTensor<is_ad> & stress_new,
+              const RankTwoTensor & stress_old,
+              const GenericRankFourTensor<is_ad> & elasticity_tensor,
+              const RankTwoTensor & elastic_strain_old,
+              bool compute_full_tangent_operator = false,
+              RankFourTensor & tangent_operator = StressUpdateBaseTempl<is_ad>::_identityTensor);
 
-  virtual void updateState(ADRankTwoTensor & strain_increment,
-                           ADRankTwoTensor & inelastic_strain_increment,
-                           const ADRankTwoTensor & rotation_increment,
-                           ADRankTwoTensor & stress_new,
-                           const RankTwoTensor & stress_old,
-                           const ADRankFourTensor & elasticity_tensor,
-                           const RankTwoTensor & elastic_strain_old);
   /**
    * Similar to the updateState function, this method updates the strain and stress for one substep
    */
-  virtual void updateStateSubstep(RankTwoTensor & /*strain_increment*/,
-                                  RankTwoTensor & /*inelastic_strain_increment*/,
-                                  const RankTwoTensor & /*rotation_increment*/,
-                                  RankTwoTensor & /*stress_new*/,
-                                  const RankTwoTensor & /*stress_old*/,
-                                  const RankFourTensor & /*elasticity_tensor*/,
-                                  const RankTwoTensor & /*elastic_strain_old*/,
-                                  bool /*compute_full_tangent_operator*/,
-                                  RankFourTensor & /*tangent_operator*/);
+  virtual void updateStateSubstep(
+      GenericRankTwoTensor<is_ad> & /*strain_increment*/,
+      GenericRankTwoTensor<is_ad> & /*inelastic_strain_increment*/,
+      const GenericRankTwoTensor<is_ad> & /*rotation_increment*/,
+      GenericRankTwoTensor<is_ad> & /*stress_new*/,
+      const RankTwoTensor & /*stress_old*/,
+      const GenericRankFourTensor<is_ad> & /*elasticity_tensor*/,
+      const RankTwoTensor & /*elastic_strain_old*/,
+      bool compute_full_tangent_operator = false,
+      RankFourTensor & tangent_operator = StressUpdateBaseTempl<is_ad>::_identityTensor);
 
-  virtual void updateStateSubstep(ADRankTwoTensor & /*strain_increment*/,
-                                  ADRankTwoTensor & /*inelastic_strain_increment*/,
-                                  const ADRankTwoTensor & /*rotation_increment*/,
-                                  ADRankTwoTensor & /*stress_new*/,
-                                  const RankTwoTensor & /*stress_old*/,
-                                  const ADRankFourTensor & /*elasticity_tensor*/,
-                                  const RankTwoTensor & /*elastic_strain_old*/);
   /// Sets the value of the global variable _qp for inheriting classes
   void setQp(unsigned int qp);
 
@@ -169,10 +157,30 @@ public:
    */
   virtual void storeIncrementalMaterialProperties(){};
 
+  /**
+   * Compute the strain energy rate density for this inelastic model for the current step.
+   * @param stress The stress tensor at the end of the step
+   * @param strain_rate The strain rate at the end of the step
+   * @return The computed strain energy rate density
+   */
+  virtual Real computeStrainEnergyRateDensity(
+      const GenericMaterialProperty<RankTwoTensor, is_ad> & /*stress*/,
+      const GenericMaterialProperty<RankTwoTensor, is_ad> & /*strain_rate*/)
+  {
+    mooseError(
+        "The computation of strain energy rate density needs to be implemented by a child class");
+    return 0.0;
+  }
+
 protected:
   /// Name used as a prefix for all material properties related to the stress update model.
   const std::string _base_name;
-};
 
+  static RankFourTensor _identityTensor;
+};
 typedef StressUpdateBaseTempl<false> StressUpdateBase;
 typedef StressUpdateBaseTempl<true> ADStressUpdateBase;
+
+template <bool is_ad>
+RankFourTensor StressUpdateBaseTempl<is_ad>::_identityTensor =
+    RankFourTensor(RankFourTensor::initIdentityFour);

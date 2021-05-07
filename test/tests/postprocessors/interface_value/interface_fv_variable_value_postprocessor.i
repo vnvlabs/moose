@@ -71,14 +71,16 @@ postprocessor_type = InterfaceAverageVariableValuePostprocessor
 
 [Materials]
   [./stateful1]
-    type = StatefulMaterial
+    type = GenericConstantMaterial
     block = 0
-    initial_diffusivity = 5
+    prop_names = 'diffusivity'
+    prop_values = 10
   [../]
   [./stateful2]
-    type = StatefulMaterial
+    type = GenericConstantMaterial
     block = 1
-    initial_diffusivity = 2
+    prop_names = 'diffusivity'
+    prop_values = 4
   [../]
 []
 
@@ -155,10 +157,13 @@ postprocessor_type = InterfaceAverageVariableValuePostprocessor
     execute_on = TIMESTEP_END
     boundary = 'interface'
   [../]
-[]
-
-[Problem]
-  kernel_coverage_check = false
+  [./diffusivity_single_variable]
+    type = ${postprocessor_type}
+    interface_value_type = primary
+    variable = diffusivity_1
+    execute_on = TIMESTEP_END
+    boundary = 'interface'
+  [../]
 []
 
 [Executioner]

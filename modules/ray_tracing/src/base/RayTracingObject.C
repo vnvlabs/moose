@@ -24,8 +24,8 @@ RayTracingObject::validParams()
                                   "provided, this will default to the one study that exists.");
   params.addParam<std::vector<std::string>>(
       "rays",
-      "The name of the Rays associated with this object (only used if Ray registration is enabled "
-      "within the study)");
+      "The name of the Rays associated with this object; only used if Ray registration is enabled "
+      "within the study. If no Rays are supplied, this object will be applied to all Rays.");
 
   params.addPrivateParam<RayTracingStudy *>("_ray_tracing_study");
 
@@ -51,7 +51,6 @@ RayTracingObject::RayTracingObject(const InputParameters & params)
     _aux(_fe_problem.getAuxiliarySystem()),
     _mesh(_fe_problem.mesh()),
     _tid(params.get<THREAD_ID>("_tid")),
-    _error_prefix(type() + " '" + name() + "'"),
     _current_elem(_study.traceRay(_tid).currentElem()),
     _current_subdomain_id(_study.traceRay(_tid).currentSubdomainID()),
     _current_intersected_side(_study.traceRay(_tid).currentIntersectedSide()),

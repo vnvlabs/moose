@@ -124,6 +124,12 @@ public:
   MooseVariableField<T> * getActualFieldVariable(const std::string & var_name);
 
   /**
+   * Get a finite volume variable
+   */
+  template <typename T>
+  MooseVariableFV<T> * getFVVariable(const std::string & var_name);
+
+  /**
    * This should be called getFieldVariable, but that name is already taken
    * by a legacy function.
    */
@@ -156,6 +162,21 @@ public:
   const std::vector<MooseVariableScalar *> & scalars() const;
 
   /**
+   * Call initialSetup for all variables
+   */
+  void initialSetup();
+
+  /**
+   * Call timestepSetup for all variables
+   */
+  void timestepSetup();
+
+  /**
+   * Call subdomainSetup for all variables
+   */
+  void subdomainSetup();
+
+  /**
    * Call residualSetup for all variables
    */
   void residualSetup();
@@ -164,6 +185,11 @@ public:
    * Call jacobianSetup for all variables
    */
   void jacobianSetup();
+
+  /**
+   * Clear all dof indices from each variable
+   */
+  void clearAllDofIndices();
 
 protected:
   /// list of variable names
@@ -208,6 +234,19 @@ protected:
   /// All instances of objects (raw pointers)
   std::map<unsigned int, std::shared_ptr<MooseVariableBase>> _all_objects;
 };
+
+template <typename T>
+MooseVariableFV<T> *
+VariableWarehouse::getFVVariable(const std::string & var_name)
+{
+  auto it = _fv_vars_by_name.find(var_name);
+  if (it == _fv_vars_by_name.end())
+    mooseError("Requested variable ",
+               var_name,
+               " doesn't exist as a finite volume variable in the warehouse.");
+
+  return it->second;
+}
 
 template <>
 MooseVariableFE<RealVectorValue> *

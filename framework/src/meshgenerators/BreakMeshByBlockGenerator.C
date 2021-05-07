@@ -35,13 +35,9 @@ BreakMeshByBlockGenerator::validParams()
   params.addParam<bool>("add_transition_interface",
                         true,
                         "If true (default) and block is not empty, a special boundary named "
-                        "interface_transition is generate between listed blocks and other blocks. "
-                        "The transition boundary will not be split if split_interface=true");
-  params.addParam<bool>("split_transition_interface",
-                        false,
-                        "If true (default) and block is not empty, a special boundary named "
-                        "interface_transition is generate between listed blocks and other blocks. "
-                        "The transition boundary will not be split if split_interface=true");
+                        "interface_transition is generate between listed blocks and other blocks.");
+  params.addParam<bool>(
+      "split_transition_interface", false, "Whether to split the transition interface by blocks.");
   params.addParam<BoundaryName>(
       "interface_transition_name",
       "interface_transition",
@@ -65,7 +61,7 @@ BreakMeshByBlockGenerator::BreakMeshByBlockGenerator(const InputParameters & par
 
   if (!_add_transition_interface && _split_transition_interface)
     paramError("split_transition_interface",
-               "BreakMeshByBlockGenerator cannot split the transition interface becasue "
+               "BreakMeshByBlockGenerator cannot split the transition interface because "
                "add_transition_interface is false");
 }
 
@@ -73,10 +69,11 @@ std::unique_ptr<MeshBase>
 BreakMeshByBlockGenerator::generate()
 {
   std::unique_ptr<MeshBase> mesh = std::move(_input);
+  BoundaryInfo & boundary_info = mesh->get_boundary_info();
 
   // check that a boundary named _interface_transition_name does not already exist in the mesh
   if (_block_restricted && _add_transition_interface &&
-      mesh->boundary_info->get_id_by_name(_interface_transition_name) != Moose::INVALID_BOUNDARY_ID)
+      boundary_info.get_id_by_name(_interface_transition_name) != Moose::INVALID_BOUNDARY_ID)
     paramError("interface_transition_name",
                "BreakMeshByBlockGenerator the specified  interface transition boundary name "
                "already exits");
@@ -147,8 +144,8 @@ BreakMeshByBlockGenerator::generate()
                 mesh->add_node(new_node);
 
                 // Add boundary info to the new node
-                mesh->boundary_info->boundary_ids(current_node, node_boundary_ids);
-                mesh->boundary_info->add_node(new_node, node_boundary_ids);
+                boundary_info.boundary_ids(current_node, node_boundary_ids);
+                boundary_info.add_node(new_node, node_boundary_ids);
 
                 multiplicity_counter--; // node created, update multiplicity counter
 
@@ -224,6 +221,7 @@ BreakMeshByBlockGenerator::generate()
   }     // end nodeptr check
 
   addInterfaceBoundary(*mesh);
+  Partitioner::set_node_processor_ids(*mesh);
   return dynamic_pointer_cast<MeshBase>(mesh);
 }
 
@@ -244,7 +242,7 @@ BreakMeshByBlockGenerator::addInterfaceBoundary(MeshBase & mesh)
     if (!_block_restricted || (_block_restricted && !_add_transition_interface))
     {
       // find the appropriate boundary name and id
-      //  given primary and secondary block ID
+      // given primary and secondary block ID
       if (_split_interface)
         findBoundaryNameAndInd(mesh,
                                boundary_side_map.first.first,

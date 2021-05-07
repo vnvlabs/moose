@@ -88,6 +88,9 @@ EigenProblem::EigenProblem(const InputParameters & parameters)
 #endif
   // Create extra vectors and matrices if any
   createTagVectors();
+
+  // Create extra solution vectors if any
+  createTagSolutions();
 }
 
 #ifdef LIBMESH_HAVE_SLEPC
@@ -515,7 +518,9 @@ EigenProblem::solve()
       // guess for Newton
       if (solverParams()._free_power_iterations && _first_solve)
       {
-        _console << " Free power iteration starts" << std::endl;
+        _console << std::endl << " -------------------------------" << std::endl;
+        _console << " Free power iteration starts ..." << std::endl;
+        _console << " -------------------------------" << std::endl << std::endl;
         doFreeNonlinearPowerIterations(solverParams()._free_power_iterations);
         _first_solve = false;
       }
@@ -523,7 +528,9 @@ EigenProblem::solve()
       // Let us do extra power iterations here if necessary
       if (solverParams()._extra_power_iterations)
       {
-        _console << " Extra Free power iteration starts" << std::endl;
+        _console << std::endl << " --------------------------------------" << std::endl;
+        _console << " Extra Free power iteration starts ..." << std::endl;
+        _console << " --------------------------------------" << std::endl << std::endl;
         doFreeNonlinearPowerIterations(solverParams()._extra_power_iterations);
       }
     }
@@ -531,10 +538,14 @@ EigenProblem::solve()
     // We print this for only nonlinear solver
     if (isNonlinearEigenvalueSolver())
     {
+      _console << std::endl << " -------------------------------------" << std::endl;
+
       if (solverParams()._eigen_solve_type != Moose::EST_NONLINEAR_POWER)
-        _console << " Nonlinear Newton iteration starts" << std::endl;
+        _console << " Nonlinear Newton iteration starts ..." << std::endl;
       else
-        _console << " Nonlinear power iteration starts" << std::endl;
+        _console << " Nonlinear power iteration starts ..." << std::endl;
+
+      _console << " -------------------------------------" << std::endl << std::endl;
     }
 
     _nl->solve();

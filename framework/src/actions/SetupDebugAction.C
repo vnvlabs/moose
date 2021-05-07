@@ -15,6 +15,7 @@
 #include "MooseApp.h"
 #include "MooseObjectAction.h"
 #include "ActionFactory.h"
+#include "AddAuxVariableAction.h"
 
 registerMooseAction("MooseApp", SetupDebugAction, "add_output");
 
@@ -38,6 +39,12 @@ SetupDebugAction::validParams()
       false,
       "Print out the material properties supplied for each block, face, neighbor, and/or sideset");
   params.addParam<bool>("show_mesh_meta_data", false, "Print out the available mesh meta data");
+  params.addParam<bool>(
+      "show_reporters", false, "Print out information about the declared and requested Reporters");
+  params.addParam<bool>(
+      "pid_aux",
+      false,
+      "Add a AuxVariable named \"pid\" that shows the processors and partitioning");
 
   params.addClassDescription(
       "Adds various debugging type Output objects to the simulation system.");
@@ -87,5 +94,29 @@ SetupDebugAction::act()
       if (it->first == MooseApp::MESH_META_DATA)
         for (auto & pair : it->second.first)
           _console << " " << pair.first << std::endl;
+  }
+
+  // Print Reporter information
+  if (getParam<bool>("show_reporters"))
+  {
+    const std::string type = "ReporterDebugOutput";
+    auto params = _factory.getValidParams(type);
+    _problem->addOutput(type, "_moose_reporter_debug_output", params);
+  }
+
+  // Add pid aux
+  if (getParam<bool>("pid_aux"))
+  {
+    if (_problem->hasVariable("pid"))
+      paramError("pid_aux", "Variable with the name \"pid\" already exists");
+
+    auto fe_type = FEType(CONSTANT, MONOMIAL);
+    auto type = AddAuxVariableAction::determineType(fe_type, 1);
+    auto var_params = _factory.getValidParams(type);
+    _problem->addAuxVariable(type, "pid", var_params);
+
+    InputParameters params = _factory.getValidParams("ProcessorIDAux");
+    params.set<AuxVariableName>("variable") = "pid";
+    _problem->addAuxKernel("ProcessorIDAux", "pid_aux", params);
   }
 }

@@ -1,3 +1,7 @@
+!content pagination previous=tutorial01_app_development/step06_input_params.md
+                    next=tutorial01_app_development/step08_test_harness.md
+                    margin-bottom=0px
+
 # Step 7: Execute in Parallel
 
 A major objective of MOOSE is performance. This step briefly introduces parallel processing and demonstrates the basic commands used for running a MOOSE application in parallel. A few basic tips on how to evaluate and improve performance are given.
@@ -23,7 +27,7 @@ For example, the following runs the application with 4 threads:
 
 ```bash
 cd ~/projects/babbler
-./babbler-opt -i test/tests/kernels/simple_diffusion/simple_diffusion.i --n-threads 4
+./babbler-opt -i test/tests/kernels/simple_diffusion/simple_diffusion.i --n-threads=4
 ```
 
 It is possible to use both [!ac](MPI) and threading. This is accomplished by combining the two
@@ -65,7 +69,7 @@ MOOSE includes a tool for evaluating performance: [PerfGraphOutput.md]. This ena
 There is an entire field of science about [!ac](HPC) and massively parallel processing. Although it is a valuable one, a formal discussion cannot be made here. One concept worth mentioning is [scalable parallelism](https://en.wikipedia.org/wiki/Scalable_parallelism), which refers to software that performs at the same level for larger problems that use more processes as it does for smaller problems that use fewer processes. In MOOSE, selecting a number of processes based on the number of [!ac](DOFs) in the system is a simple way to try and achieve scalability.
 
 !alert tip title=Try to target 20,000 [!ac](DOFs)-per-process
-MOOSE developers tend to agree that 20,000 is the ideal number of [!ac](DOFs) that a single process may be responsible for. This value is reported as "`Num Local DOFs`" in the terminal printout at the beginning of every execution.
+MOOSE developers tend to agree that 20,000 is the ideal number of [!ac](DOFs) that a single process may be responsible for. This value is reported as "`Num Local DOFs`" in the terminal printout at the beginning of every execution. There are, of course, some exceptions; if a problem exhibits speedup with less than 20,000 [!ac](DOFs)/process, then just use that.
 
 *For more information about application performance, please visit the [application_development/performance_benchmarking.md] page.*
 

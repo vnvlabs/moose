@@ -17,7 +17,7 @@ import moosesqa
 from .Requirement import Requirement
 from .LogHelper import LogHelper
 
-ISSUE_RE = re.compile(r'^([0-9a-f]{6,40})$|^(\w*#[0-9]+)$', flags=re.MULTILINE)
+ISSUE_RE = re.compile(r'^([0-9a-f]{6,40})$|^(.*#[0-9]+)$', flags=re.MULTILINE)
 
 class RequirementLogHelper(LogHelper):
     COLOR_TEXT = True
@@ -34,7 +34,7 @@ class RequirementLogHelper(LogHelper):
         line = mooseutils.colorText(str(line if (line is not None) else req.line), 'CYAN', colored=RequirementLogHelper.COLOR_TEXT)
         return '{}:{}:{}\n'.format(filename, name, line)
 
-def check_requirements(requirements, file_list=None, color_text=True, allowed_collections=None, **kwargs):
+def check_requirements(requirements, file_list=None, color_text=True, allowed_collections=None, allowed_classifications=None, **kwargs):
     """
     Tool for checking Requirement for deficiencies
     """
@@ -60,7 +60,6 @@ def check_requirements(requirements, file_list=None, color_text=True, allowed_co
     kwargs.setdefault('log_top_level_detail', log_default)
     kwargs.setdefault('log_missing_detail', log_default)
     kwargs.setdefault('log_empty_detail', log_default)
-    kwargs.setdefault('log_deprecated_detail', log_default)
     kwargs.setdefault('log_extra_requirement', log_default)
     kwargs.setdefault('log_extra_design', log_default)
     kwargs.setdefault('log_extra_issues', log_default)
@@ -88,7 +87,7 @@ def check_requirements(requirements, file_list=None, color_text=True, allowed_co
 
     # Setup allowed collections
     if allowed_collections is None:
-        allowed_collections = set(moosesqa.MOOSESQA_COLLECTIONS.keys())
+        allowed_collections = set(moosesqa.MOOSESQA_COLLECTIONS)
 
     # Storage container for duplicate detection
     requirement_dict = collections.defaultdict(set)
@@ -203,7 +202,7 @@ def _check_requirement(req, logger, file_list, allowed_collections):
                 logger.log('log_extra_collections', detail, "Extra 'collections' supplied", line=detail.collections_line)
 
             if hasattr(detail, 'deprecated') and detail.deprecated:
-                logger.log('log_detail_deprecated', detail, "Sub-block with 'deprecated' supplied", line=detail.issues_line)
+                logger.log('log_deprecated_detail', detail, "Sub-block with 'deprecated' supplied", line=detail.issues_line)
 
         # Test format of 'issues'
         if req.issues is not None:
@@ -240,7 +239,8 @@ def _check_requirement(req, logger, file_list, allowed_collections):
         # Test for duplicate details
         details_dict = collections.defaultdict(set)
         for detail in req.details:
-            details_dict[detail.detail].add(detail)
+            if detail.detail is not None:
+                details_dict[detail.detail].add(detail)
         for txt, value in details_dict.items():
             if len(value) > 1:
                 msg = 'Duplicate details found:'

@@ -1,3 +1,7 @@
+!content pagination previous=tutorial01_app_development/step01_moose_app.md
+                    next=tutorial01_app_development/step03_moose_object.md
+                    margin-bottom=0px
+
 # Step 2: Write an Input File
 
 In this step, the concept of an input file is introduced. These files provide the means for controlling [!ac](FE) simulations with MOOSE. To demonstrate this concept, a steady-state diffusion of pressure from one end of the pipe, between the pressure vessels, to the other (see the [tutorial01_app_development/problem_statement.md] page) will be considered. The goal, here, is to create an input file that solves this simple [!ac](BVP). This problem is detailed in the [#demo] section, but, first, some basic information regarding input files and their execution are provided. As for many steps of this tutorial, concepts will be introduced and a hands-on demonstration will follow.
@@ -34,10 +38,7 @@ The names of blocks suggest what types of objects can be used within those block
 
 There are a several ways to execute an input file---a couple of which shall be explained here. From [Step 1](tutorial01_app_development/step01_moose_app.md), the reader should have already created an executable for their application, but, if not, be sure to run the following commands:
 
-```bash
-cd ~/projects/babbler
-make -j4
-```
+!include commands/make.md
 
 ### Execute Using the Terminal
 
@@ -186,7 +187,7 @@ git status
 
 The terminal output should read something like the following:
 
-```
+```git
 Untracked files:
   (use "git add <file>..." to include in what will be committed)
 
@@ -204,7 +205,7 @@ git status
 
 Now, the terminal output should be the following:
 
-```
+```git
 Changes to be committed:
   (use "git reset HEAD <file>..." to unstage)
 
@@ -213,7 +214,7 @@ Changes to be committed:
 
 To commit these changes, simply enter `git commit`. A user will then be prompted to enter a message describing the changes. For this change, the message added might be "created an input file to solve diffusion problem," as shown in the example below.
 
-```
+```git
 created an input file to solve diffusion problem
 # Please enter the commit message for your changes. Lines starting
 # with '#' will be ignored, and an empty message aborts the commit.

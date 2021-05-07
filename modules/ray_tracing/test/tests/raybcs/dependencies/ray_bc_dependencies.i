@@ -17,40 +17,35 @@
 
 [RayBCs]
   [add_1]
-    type = ChangeDataRayBCTest
+    type = ChangeRayRayBCTest
     boundary = right
     data_name = data
     add_value = 1
-    rays = ray
     depends_on = add_10
   []
   [scale_5]
-    type = ChangeDataRayBCTest
+    type = ChangeRayRayBCTest
     data_name = data
     boundary = right
     scale_value = 5
-    rays = ray
     depends_on = scale_9
   []
   [add_10]
-    type = ChangeDataRayBCTest
+    type = ChangeRayRayBCTest
     data_name = data
     boundary = right
     add_value = 10
-    rays = ray
   []
   [scale_9]
-    type = ChangeDataRayBCTest
+    type = ChangeRayRayBCTest
     data_name = data
     boundary = right
     scale_value = 9
-    rays = ray
     depends_on = add_1
   []
   [kill]
     type = KillRayBC
     boundary = right
-    rays = ray
   []
 []
 

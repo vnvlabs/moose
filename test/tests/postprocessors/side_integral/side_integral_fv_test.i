@@ -47,10 +47,6 @@
   [../]
 []
 
-[Problem]
-  kernel_coverage_check = false
-[]
-
 [Executioner]
   type = Steady
 

@@ -7,10 +7,8 @@
 ParallelRayStudy::ParallelRayStudy(
     RayTracingStudy & ray_tracing_study,
     const std::vector<std::shared_ptr<TraceRay>> & threaded_trace_ray)
-  : ParallelStudy<std::shared_ptr<Ray>, Ray, RayTracingStudy>(ray_tracing_study.comm(),
-                                                              &ray_tracing_study,
-                                                              ray_tracing_study.parameters(),
-                                                              "ParallelRayStudy"),
+  : ParallelStudy<std::shared_ptr<Ray>, Ray>(
+        ray_tracing_study.comm(), ray_tracing_study.parameters(), "ParallelRayStudy"),
     _ray_tracing_study(ray_tracing_study),
     _threaded_trace_ray(threaded_trace_ray)
 {
@@ -30,13 +28,10 @@ ParallelRayStudy::postExecuteChunk(const work_iterator begin, const work_iterato
       continue;
     }
 
-    // If the Ray is going to another processor - move it to the send buffer
-    const auto dest_pid = ray->currentElem()->processor_id();
-    if (dest_pid != _pid)
-      moveParallelDataToBuffer(ray, dest_pid);
-    else
-      mooseError("Continuing Ray is not going to another processor after being traced\n\n",
-                 ray->getInfo());
+    // Going to another processor
+    mooseAssert(ray->currentElem()->processor_id() != _pid,
+                "Continuing Ray not going to another processor");
+    moveParallelDataToBuffer(ray, ray->currentElem()->processor_id());
   }
 }
 
@@ -59,8 +54,7 @@ ParallelRayStudy::postReceiveParallelData(const parallel_data_iterator begin,
 void
 ParallelRayStudy::executeWork(const std::shared_ptr<Ray> & ray, const THREAD_ID tid)
 {
-  if (!ray->shouldContinue())
-    mooseError("Tracing Ray that should not continue\n\n", ray->getInfo());
+  mooseAssert(ray->shouldContinue(), "Tracing Ray that should not continue");
 
   // If this is false, it means we have a Ray that is banked to go onto another processor
   if (ray->currentElem()->processor_id() == _pid)
@@ -86,7 +80,7 @@ ParallelRayStudy::moveWorkError(const MoveWorkError error, const std::shared_ptr
   else if (error == MoveWorkError::PRE_EXECUTION_THREAD_0_ONLY)
     oss << "Rays can only be added on thread 0 during generateRays() (not thread safe)";
   else if (error == CONTINUING_DURING_EXECUTING_WORK)
-    ParallelStudy<std::shared_ptr<Ray>, Ray, RayTracingStudy>::moveWorkError(error, ray);
+    ParallelStudy<std::shared_ptr<Ray>, Ray>::moveWorkError(error, ray);
 
   if (ray)
     oss << "\n\n" << (*ray)->getInfo();

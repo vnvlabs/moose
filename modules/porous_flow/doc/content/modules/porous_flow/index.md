@@ -22,7 +22,7 @@ and geomechanics.
 - [Boundaries](porous_flow/boundaries.md)
 - [Point and line sources and sinks](porous_flow/sinks.md)
 - [Flow models](porous_flow/flow_models.md)
-- [Additional objects](porous_flow/additional_objects.md)
+- [Additional objects (actions, postprocessors, etc)](porous_flow/additional_objects.md)
 - [Full system documentation](porous_flow/systems.md)
 - [A to Z Index](porous_flow/contents.md)
 
@@ -62,5 +62,4 @@ on the [help/contact_us.md optional=True] page.
 
 All users of PorousFlow are encouraged to assist in the development of this module. There are
 a large number of possible enhancements that can be implemented, and better documentation that could
-be contributed, so consider becoming a developer yourself. Follow the MOOSE standards for [contributing code](framework_development/contributing.md optional=True) and
-[documentation](MooseDocs/generate.md optional=True).
+be contributed, so consider becoming a developer yourself. Follow the MOOSE standards for [contributing code](framework/contributing.md).

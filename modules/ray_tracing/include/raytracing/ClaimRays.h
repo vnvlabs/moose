@@ -10,13 +10,18 @@
 #pragma once
 
 // Local includes
+#include "ParallelStudy.h"
 #include "Ray.h"
+
+// MOOSE includes
+#include "MeshChangedInterface.h"
 
 // System includes
 #include <unordered_map>
 
 // libMesh includes
 #include "libmesh/bounding_box.h"
+#include "libmesh/parallel_object.h"
 #include "libmesh/point_locator_base.h"
 
 // Forward declarations
@@ -26,12 +31,13 @@ class MooseMesh;
 /**
  * Helper object for claiming Rays
  */
-class ClaimRays
+class ClaimRays : public ParallelObject, public MeshChangedInterface
 {
 public:
   /**
    * Constructor.
    * @param study The RayTracingStudy
+   * @param parallel_study The base parallel study
    * @param mesh The MooseMesh
    * @param rays The vector of Rays that need to be claimed
    * @param local_rays Insertion point for Rays that have been claimed
@@ -39,21 +45,29 @@ public:
    * filled by objects on other processors
    */
   ClaimRays(RayTracingStudy & study,
-            MooseMesh & mesh,
             const std::vector<std::shared_ptr<Ray>> & rays,
             std::vector<std::shared_ptr<Ray>> & local_rays,
             const bool do_exchange);
 
   /**
-   * Initialize the object
+   * Call on mesh changes to reinit the necessary data structures
    */
-  void init();
+  virtual void meshChanged() override;
+
   /**
    * Claim the Rays
+   *
+   * \p do_exchange sets whether or not an exchange is needed, i.e., if _rays still needs
+   * to be filled by objects on other processors
    */
   void claim();
 
 protected:
+  /**
+   * Initialize the object
+   */
+  virtual void init();
+
   /**
    * Entry point before claim()
    */
@@ -72,15 +86,6 @@ protected:
   virtual void postClaimRay(std::shared_ptr<Ray> & ray, const Elem * elem);
 
   /**
-   * Get the inflated neighbor bounding boxes
-   */
-  const std::vector<std::pair<processor_id_type, BoundingBox>> &
-  inflatedNeighborBoundingBoxes() const
-  {
-    return _inflated_neighbor_bboxes;
-  }
-
-  /**
    * Gets an ID associated with the Ray for claiming purposes. Defaults
    * to the Ray's ID.
    *
@@ -93,22 +98,30 @@ protected:
    */
   virtual RayID getID(const std::shared_ptr<Ray> & ray) const { return ray->id(); }
 
+  /**
+   * Get the inflated bounding box for rank \pid.
+   */
+  const BoundingBox & inflatedBoundingBox(const processor_id_type pid) const
+  {
+    return _inflated_bboxes[pid];
+  }
+
   /// The mesh
   MooseMesh & _mesh;
-  /// The communicator
-  const libMesh::Parallel::Communicator & _comm;
   /// This processor ID
   const processor_id_type _pid;
 
   /// Whether or not the Rays need to be initially exchanged
   const bool _do_exchange;
 
-  /// The study, used for receive context in communicating a Ray
+  /// The RayTracingStudy
   RayTracingStudy & _study;
+  /// The ParallelStudy, used as the context for communicating rays
+  ParallelStudy<std::shared_ptr<Ray>, Ray> & _parallel_study;
 
 private:
   /**
-   * Builds the bounding boxes (_bbox, _inflated_bboxes, _inflated_neighbor_bboxes).
+   * Builds the bounding boxes (_inflated_bboxes).
    */
   void buildBoundingBoxes();
 
@@ -123,6 +136,12 @@ private:
    * Possibly claim a Ray.
    */
   void possiblyClaim(const std::shared_ptr<Ray> & obj);
+
+  /**
+   * Verifies that the claiming process succeeded. That is, all Rays were claimed
+   * once and only once.
+   */
+  void verifyClaiming();
 
   /**
    * Try to claim a spatial point.
@@ -142,15 +161,12 @@ private:
   /// The point locator
   std::unique_ptr<PointLocatorBase> _point_locator = nullptr;
 
-  /// The bounding box for this processor
-  BoundingBox _bbox;
-  /// The global bounding box
-  BoundingBox _global_bbox;
-  /// The inflaed bounding boxes for all processors
+  /// The inflated bounding boxes for all processors
   std::vector<BoundingBox> _inflated_bboxes;
-  /// Inflated bounding boxes that are neighboring to this processor (pid : bbox for each entry)
-  std::vector<std::pair<processor_id_type, BoundingBox>> _inflated_neighbor_bboxes;
 
   /// Map of point neighbors for each element
   std::unordered_map<dof_id_type, std::vector<const Elem *>> _elem_point_neighbors;
+
+  /// Whether or not an init is needed (bounding boxes, neighbors)
+  bool _needs_init;
 };

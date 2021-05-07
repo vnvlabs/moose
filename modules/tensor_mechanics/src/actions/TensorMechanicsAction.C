@@ -56,7 +56,19 @@ TensorMechanicsAction::validParams()
                                   TensorMechanicsActionBase::outputPropertiesType(),
                                   "Add scalar quantity output for stress and/or strain (will be "
                                   "appended to the list in `generate_output`)");
-  params.addParamNamesToGroup("additional_generate_output", "Output");
+  params.addParam<MultiMooseEnum>(
+      "additional_material_output_order",
+      TensorMechanicsActionBase::materialOutputOrders(),
+      "Specifies the order of the FE shape function to use for this variable.");
+
+  params.addParam<MultiMooseEnum>(
+      "additional_material_output_family",
+      TensorMechanicsActionBase::materialOutputFamilies(),
+      "Specifies the family of FE shape functions to use for this variable.");
+
+  params.addParamNamesToGroup("additional_generate_output additional_material_output_order "
+                              "additional_material_output_family",
+                              "Output");
   params.addParam<std::string>(
       "strain_base_name",
       "The base name used for the strain. If not provided, it will be set equal to base_name");
@@ -96,6 +108,7 @@ TensorMechanicsAction::TensorMechanicsAction(const InputParameters & params)
     _cylindrical_axis_point1_valid(params.isParamSetByUser("cylindrical_axis_point1")),
     _cylindrical_axis_point2_valid(params.isParamSetByUser("cylindrical_axis_point2")),
     _direction_valid(params.isParamSetByUser("direction")),
+    _verbose(getParam<bool>("verbose")),
     _auto_eigenstrain(getParam<bool>("automatic_eigenstrain_names"))
 {
   // determine if incremental strains are to be used
@@ -166,6 +179,9 @@ TensorMechanicsAction::TensorMechanicsAction(const InputParameters & params)
     _generate_output.push_back(lower);
   }
 
+  if (!_generate_output.empty())
+    verifyOrderAndFamilyOutputs();
+
   // Error if volumetric locking correction is true for 1D problems
   if (_ndisp == 1 && getParam<bool>("volumetric_locking_correction"))
     mooseError("Volumetric locking correction should be set to false for 1D problems.");
@@ -218,10 +234,30 @@ TensorMechanicsAction::act()
       auto action_params = _action_factory.getValidParams(type);
       action_params.set<bool>("_built_by_moose") = true;
       action_params.set<std::string>("registered_identifier") = "(AutoBuilt)";
-      action_params.applyParameters(parameters(), {"use_displaced_mesh"});
+
+      // Skipping selected parameters in applyParameters() and then manually setting them only if
+      // they are set by the user is just to prevent both the current and deprecated variants of
+      // these parameters from both getting passed to the UserObject. Once we get rid of the
+      // deprecated versions, we can just set them all with applyParameters().
+      action_params.applyParameters(parameters(),
+                                    {"use_displaced_mesh",
+                                     "out_of_plane_pressure",
+                                     "out_of_plane_pressure_function",
+                                     "factor",
+                                     "pressure_factor"});
       action_params.set<bool>("use_displaced_mesh") = _use_displaced_mesh;
-      if (isParamValid("pressure_factor"))
-        action_params.set<Real>("factor") = getParam<Real>("pressure_factor");
+
+      if (parameters().isParamSetByUser("out_of_plane_pressure"))
+        action_params.set<FunctionName>("out_of_plane_pressure") =
+            getParam<FunctionName>("out_of_plane_pressure");
+      if (parameters().isParamSetByUser("out_of_plane_pressure_function"))
+        action_params.set<FunctionName>("out_of_plane_pressure_function") =
+            getParam<FunctionName>("out_of_plane_pressure_function");
+      if (parameters().isParamSetByUser("factor"))
+        action_params.set<Real>("factor") = getParam<Real>("factor");
+      if (parameters().isParamSetByUser("pressure_factor"))
+        action_params.set<Real>("pressure_factor") = getParam<Real>("pressure_factor");
+
       // Create and add the action to the warehouse
       auto action = MooseSharedNamespace::static_pointer_cast<MooseObjectAction>(
           _action_factory.create(type, name() + "_gps", action_params));
@@ -439,14 +475,25 @@ TensorMechanicsAction::actOutputGeneration()
   // Add variables (optional)
   if (_current_task == "add_aux_variable")
   {
-    auto params = _factory.getValidParams("MooseVariableConstMonomial");
-    params.set<MooseEnum>("order") = "CONSTANT";
-    params.set<MooseEnum>("family") = "MONOMIAL";
-    // Loop through output aux variables
+    unsigned int index = 0;
     for (auto out : _generate_output)
     {
+      std::string type;
+      if (_material_output_order[index] == "CONSTANT")
+        type = "MooseVariableConstMonomial";
+      else
+        type = "MooseVariable";
       // Create output helper aux variables
-      _problem->addAuxVariable("MooseVariableConstMonomial", _base_name + out, params);
+      auto params = _factory.getValidParams(type);
+      params.set<MooseEnum>("order") = _material_output_order[index];
+      params.set<MooseEnum>("family") = _material_output_family[index];
+
+      if (_material_output_family[index] == "MONOMIAL")
+        _problem->addAuxVariable(type, _base_name + out, params);
+      else
+        _problem->addVariable(type, _base_name + out, params);
+
+      index++;
     }
   }
 
@@ -455,17 +502,45 @@ TensorMechanicsAction::actOutputGeneration()
   {
     std::string ad_prepend = _use_ad ? "AD" : "";
     // Loop through output aux variables
+    unsigned int index = 0;
     for (auto out : _generate_output)
     {
-      InputParameters params = emptyInputParameters();
+      if (_material_output_family[index] == "MONOMIAL")
+      {
+        InputParameters params = emptyInputParameters();
 
-      params = _factory.getValidParams(ad_prepend + "MaterialRealAux");
-      params.applyParameters(parameters());
-      params.set<MaterialPropertyName>("property") = _base_name + out;
-      params.set<AuxVariableName>("variable") = _base_name + out;
-      params.set<ExecFlagEnum>("execute_on") = EXEC_TIMESTEP_END;
-      _problem->addAuxKernel(
-          ad_prepend + "MaterialRealAux", _base_name + out + '_' + name(), params);
+        params = _factory.getValidParams("MaterialRealAux");
+        params.applyParameters(parameters());
+        params.set<MaterialPropertyName>("property") = _base_name + out;
+        params.set<AuxVariableName>("variable") = _base_name + out;
+        params.set<ExecFlagEnum>("execute_on") = EXEC_TIMESTEP_END;
+
+        _problem->addAuxKernel(
+            ad_prepend + "MaterialRealAux", _base_name + out + '_' + name(), params);
+      }
+      index++;
+    }
+  }
+  else if (_current_task == "add_kernel")
+  {
+    std::string ad_prepend = _use_ad ? "AD" : "";
+    // Loop through output aux variables
+    unsigned int index = 0;
+    for (auto out : _generate_output)
+    {
+      if (_material_output_family[index] != "MONOMIAL")
+      {
+        InputParameters params = emptyInputParameters();
+
+        params = _factory.getValidParams("MaterialPropertyValue");
+        params.applyParameters(parameters());
+        params.set<MaterialPropertyName>("prop_name") = _base_name + out;
+        params.set<NonlinearVariableName>("variable") = _base_name + out;
+
+        _problem->addKernel(
+            ad_prepend + "MaterialPropertyValue", _base_name + out + '_' + name(), params);
+      }
+      index++;
     }
   }
 }
@@ -588,6 +663,62 @@ TensorMechanicsAction::actEigenstrainNames()
 }
 
 void
+TensorMechanicsAction::verifyOrderAndFamilyOutputs()
+{
+  // Ensure material output order and family vectors are same size as generate output
+  auto order_check = getParam<MultiMooseEnum>("material_output_order");
+  auto family_check = getParam<MultiMooseEnum>("material_output_family");
+
+  // Magnitude check
+  if (order_check.size() > 1 && order_check.size() < _generate_output.size())
+    mooseError("The number of orders assigned to material outputs must be: 0 to be assigned "
+               "CONSTANT; 1 to assign all outputs the same value, or the same size as the number "
+               "of generate outputs listed.");
+  if (family_check.size() > 1 && family_check.size() < _generate_output.size())
+    mooseError("The number of families assigned to material outputs must be: 0 to be assigned "
+               "MONOMIAL; 1 to assign all outputs the same value, or the same size as the number "
+               "of generate outputs listed.");
+
+  if (order_check.size() == _generate_output.size())
+  {
+    for (const auto & out : order_check)
+      _material_output_order.push_back(out);
+  }
+  else
+  {
+    if (order_check.size() == 0)
+      // Make sure all outputs are standard constant value
+      _material_output_order.assign(_generate_output.size(), "CONSTANT");
+    // For only one order, make all orders the same magnitude
+    if (order_check.size() == 1)
+      _material_output_order.assign(_generate_output.size(), _material_output_order[0]);
+    if (_verbose)
+      Moose::out << COLOR_CYAN << "*** Automatic applied material output orders ***"
+                 << "\n"
+                 << _name << ": " << Moose::stringify(_material_output_order) << "\n"
+                 << COLOR_DEFAULT;
+  }
+
+  if (family_check.size() == _generate_output.size())
+  {
+    for (const auto & out : family_check)
+      _material_output_family.push_back(out);
+  }
+  else
+  {
+    if (family_check.size() == 0)
+      _material_output_family.assign(_generate_output.size(), "MONOMIAL");
+    if (family_check.size() == 1)
+      _material_output_family.assign(_generate_output.size(), _material_output_family[0]);
+    if (_verbose)
+      Moose::out << COLOR_CYAN << "*** Automatic applied material output families ***"
+                 << "\n"
+                 << _name << ": " << Moose::stringify(_material_output_family) << "\n"
+                 << COLOR_DEFAULT;
+  }
+}
+
+void
 TensorMechanicsAction::actOutputMatProp()
 {
   std::string ad_prepend = _use_ad ? "AD" : "";
@@ -598,7 +729,7 @@ TensorMechanicsAction::actOutputMatProp()
     // Add output Materials
     for (auto out : _generate_output)
     {
-      std::string type = "";
+      std::string type;
       InputParameters params = emptyInputParameters();
 
       // RankTwoCartesianComponent
@@ -612,6 +743,7 @@ TensorMechanicsAction::actOutputMatProp()
               params.set<MaterialPropertyName>("rank_two_tensor") = _base_name + r2q.second;
               params.set<unsigned int>("index_i") = a;
               params.set<unsigned int>("index_j") = b;
+
               params.applyParameters(parameters());
               params.set<std::string>("property_name") = _base_name + out;
             }

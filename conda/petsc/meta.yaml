@@ -1,4 +1,4 @@
-{% set build = 2 %}
+{% set build = 4 %}
 {% set strbuild = "build_" + build|string %}
 {% set version = "3.14.2" %}
 
@@ -9,7 +9,7 @@ package:
   version: {{ version }}
 
 source:
-  git_url: ../../petsc
+  path: ../../petsc
 
 build:
   number: {{ build }}

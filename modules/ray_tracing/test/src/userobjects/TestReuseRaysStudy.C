@@ -20,10 +20,13 @@ TestReuseRaysStudy::validParams()
 }
 
 TestReuseRaysStudy::TestReuseRaysStudy(const InputParameters & parameters)
-  : RayTracingStudy(parameters), _executed_once(false)
+  : RayTracingStudy(parameters),
+    _executed_once(declareRestartableData<bool>("executed_once", false)),
+    _banked_rays(
+        declareRestartableDataWithContext<std::vector<std::shared_ptr<Ray>>>("banked_rays", this))
 {
   if (_mesh.dimension() != 1)
-    mooseError(_error_prefix, "Works with 1D only");
+    mooseError("Works with 1D only");
 }
 
 void

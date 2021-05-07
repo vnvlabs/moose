@@ -60,7 +60,9 @@ ArrayDGKernel::ArrayDGKernel(const InputParameters & parameters)
     _grad_u_neighbor(_is_implicit ? _var.gradSlnNeighbor() : _var.gradSlnOldNeighbor()),
 
     _array_normals(_assembly.mappedNormals()),
-    _count(_var.count())
+    _count(_var.count()),
+
+    _work_vector(_count)
 {
   addMooseVariableDependency(mooseVariable());
 
@@ -137,10 +139,12 @@ ArrayDGKernel::computeElemNeighResidual(Moose::DGResidualType type)
     initQpResidual(type);
     for (_i = 0; _i < test_space.size(); _i++)
     {
-      RealEigenVector residual = _JxW[_qp] * _coord[_qp] * computeQpResidual(type);
-      mooseAssert(residual.size() == _count,
+      _work_vector.setZero();
+      computeQpResidual(type, _work_vector);
+      mooseAssert(_work_vector.size() == _count,
                   "Size of local residual is not equal to the number of array variable compoments");
-      _assembly.saveLocalArrayResidual(_local_re, _i, test_space.size(), residual);
+      _work_vector *= _JxW[_qp] * _coord[_qp];
+      _assembly.saveLocalArrayResidual(_local_re, _i, test_space.size(), _work_vector);
     }
   }
 
@@ -206,24 +210,6 @@ ArrayDGKernel::computeElemNeighJacobian(Moose::DGJacobianType type)
         avar->addSolutionNeighbor(diag);
     }
   }
-}
-
-void
-ArrayDGKernel::computeOffDiagJacobian(const unsigned int jvar_num)
-{
-  const auto & jvar = getVariable(jvar_num);
-
-  // Compute element-element Jacobian
-  computeOffDiagElemNeighJacobian(Moose::ElementElement, jvar);
-
-  // Compute element-neighbor Jacobian
-  computeOffDiagElemNeighJacobian(Moose::ElementNeighbor, jvar);
-
-  // Compute neighbor-element Jacobian
-  computeOffDiagElemNeighJacobian(Moose::NeighborElement, jvar);
-
-  // Compute neighbor-neighbor Jacobian
-  computeOffDiagElemNeighJacobian(Moose::NeighborNeighbor, jvar);
 }
 
 void

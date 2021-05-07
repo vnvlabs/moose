@@ -51,6 +51,55 @@ std::string getLatestCheckpointFileHelper(const std::list<std::string> & checkpo
 
 namespace MooseUtils
 {
+std::string
+pathjoin(const std::string & s)
+{
+  return s;
+}
+
+std::string
+runTestsExecutable()
+{
+  auto build_loc = pathjoin(Moose::getExecutablePath(), "run_tests");
+  if (pathExists(build_loc) && checkFileReadable(build_loc))
+    return build_loc;
+  // TODO: maybe no path prefix - just moose_test_runner here?
+  return pathjoin(Moose::getExecutablePath(), "moose_test_runner");
+}
+std::string
+findTestRoot()
+{
+  std::string path = ".";
+  for (int i = 0; i < 5; i++)
+  {
+    auto testroot = pathjoin(path, "testroot");
+    if (pathExists(testroot) && checkFileReadable(testroot))
+      return testroot;
+    path += "/..";
+  }
+  return "";
+}
+
+std::string
+installedTestsDir(const std::string & app_name)
+{
+  std::string installed_path = pathjoin(Moose::getExecutablePath(), "../share", app_name, "test");
+
+  auto testroot = pathjoin(installed_path, "testroot");
+  if (pathExists(testroot) && checkFileReadable(testroot))
+    return installed_path;
+  return "";
+}
+
+std::string
+docsDir(const std::string & app_name)
+{
+  std::string installed_path = pathjoin(Moose::getExecutablePath(), "../share", app_name, "doc");
+  auto docfile = pathjoin(installed_path, "css/moose.css");
+  if (pathExists(docfile) && checkFileReadable(docfile))
+    return installed_path;
+  return "";
+}
 
 std::string
 replaceAll(std::string str, const std::string & from, const std::string & to)
@@ -166,7 +215,10 @@ pathExists(const std::string & path)
 }
 
 bool
-checkFileReadable(const std::string & filename, bool check_line_endings, bool throw_on_unreadable)
+checkFileReadable(const std::string & filename,
+                  bool check_line_endings,
+                  bool throw_on_unreadable,
+                  bool check_for_git_lfs_pointer)
 {
   std::ifstream in(filename.c_str(), std::ifstream::in);
   if (in.fail())
@@ -190,15 +242,35 @@ checkFileReadable(const std::string & filename, bool check_line_endings, bool th
         mooseError(filename + " contains Windows(DOS) line endings which are not supported.");
   }
 
+  if (check_for_git_lfs_pointer && checkForGitLFSPointer(in))
+    mooseError(filename + " appears to be a Git-LFS pointer. Make sure you have \"git-lfs\" "
+                          "installed so that you may pull this file.");
   in.close();
 
   return true;
 }
 
 bool
+checkForGitLFSPointer(std::ifstream & file)
+{
+  mooseAssert(file.is_open(), "Passed in file handle is not open");
+
+  std::string line;
+
+  // git-lfs pointer files contain several name value pairs. The specification states that the
+  // first name/value pair must be "version {url}". We'll do a simplified check for that.
+  file.seekg(0);
+  std::getline(file, line);
+  if (line.find("version https://") != std::string::npos)
+    return true;
+  else
+    return false;
+}
+
+bool
 checkFileWriteable(const std::string & filename, bool throw_on_unwritable)
 {
-  std::ofstream out(filename.c_str(), std::ofstream::out);
+  std::ofstream out(filename.c_str(), std::ios_base::app);
   if (out.fail())
   {
     if (throw_on_unwritable)
@@ -1081,6 +1153,24 @@ buildBoundingBox(const Point & p1, const Point & p2)
   bb.union_with(p1);
   bb.union_with(p2);
   return bb;
+}
+
+std::string
+prettyCppType(const std::string & cpp_type)
+{
+  // On mac many of the std:: classes are inline namespaced with __1
+  // On linux std::string can be inline namespaced with __cxx11
+  std::string s = cpp_type;
+  pcrecpp::RE("std::__\\w+::").GlobalReplace("std::", &s);
+  // It would be nice if std::string actually looked normal
+  pcrecpp::RE("\\s*std::basic_string<char, std::char_traits<char>, std::allocator<char> >\\s*")
+      .GlobalReplace("std::string", &s);
+  // It would be nice if std::vector looked normal
+  pcrecpp::RE r("std::vector<([[:print:]]+),\\s?std::allocator<\\s?\\1\\s?>\\s?>");
+  r.GlobalReplace("std::vector<\\1>", &s);
+  // Do it again for nested vectors
+  r.GlobalReplace("std::vector<\\1>", &s);
+  return s;
 }
 
 } // MooseUtils namespace
