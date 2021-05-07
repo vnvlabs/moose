@@ -10,11 +10,11 @@
     url = ../petsc-vnv
 [submodule "suitesparse-vnv"]
     path = suitesparse-vnv
-    url = https://gitlab.rnet-tech.net/vnv/suitesparse-vnv.git
+    url = ../suitesparse-vnv.git
     branch = master
 [submodule "hypre-vnv"]
     path = hypre-vnv
-    url = https://gitlab.rnet-tech.net/vnv/hypre-vnv.git
+    url =  ../hypre-vnv.git
     branch = master
 [submodule "moosetools"]
     path = moosetools
