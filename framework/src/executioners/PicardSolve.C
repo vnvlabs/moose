@@ -421,12 +421,16 @@ PicardSolve::solveStep(Real begin_norm_old,
     {
       begin_norm = _problem.computeResidualL2Norm();
 
+     
+
       _console << COLOR_MAGENTA << "Picard Norm after TIMESTEP_BEGIN MultiApps: "
                << Console::outputNorm(begin_norm_old, begin_norm) << '\n';
     }
 
   // Perform output for timestep begin
   _problem.outputStep(EXEC_TIMESTEP_BEGIN);
+
+  
 
   // Update warehouse active objects
   _problem.updateActiveObjects();
@@ -501,9 +505,17 @@ PicardSolve::solveStep(Real begin_norm_old,
     {
       end_norm = _problem.computeResidualL2Norm();
 
+      /**
+       * Picard Step Completed 
+       * ==================================
+       *
+       * A picard step was completed successfully. 
+       */
+      INJECTION_POINT(MOOSE,PicardStepSuccessfull, end_norm_old, end_norm)
+
+
       _console << COLOR_MAGENTA << "Picard Norm after TIMESTEP_END MultiApps: "
                << Console::outputNorm(end_norm_old, end_norm) << '\n';
     }
-
   return true;
 }
