@@ -27,12 +27,12 @@ INJECTION_SUBPACKAGE(MOOSE,LIBMESH)
 
 int moose_vnv_test_function(int x) {
    
-  INJECTION_LOOP_BEGIN(MOOSE, VWORLD(MOOSE), SanityCheck, x)
+  INJECTION_LOOP_BEGIN("MOOSE", VWORLD, "SanityCheck", x);
   for (int i = 0; i < 10; i++) {
     x += i;
-    INJECTION_LOOP_ITER(MOOSE,SanityCheck, inner);
+    INJECTION_LOOP_ITER("MOOSE","SanityCheck", "inner");
   }
 
-  INJECTION_LOOP_END(MOOSE,SanityCheck);
+  INJECTION_LOOP_END("MOOSE","SanityCheck");
   return x;
 }

@@ -36,13 +36,13 @@ int moose_ex01_vnv_test_function(int x) {
    * here as well. 
    *
    */      	
-  INJECTION_LOOP_BEGIN(MOOSE_EX01, VWORLD(MOOSE_EX01), SanityCheck, x)
+  INJECTION_LOOP_BEGIN("MOOSE_EX01", VWORLD, "SanityCheck", x);
   for (int i = 0; i < 10; i++) {
     x += i;
-    INJECTION_LOOP_ITER(MOOSE_EX01,SanityCheck, inner);
+    INJECTION_LOOP_ITER("MOOSE_EX01","SanityCheck","inner");
   }
 
-  INJECTION_LOOP_END(MOOSE_EX01,SanityCheck);
+  INJECTION_LOOP_END("MOOSE_EX01","SanityCheck");
   return x;
 }
 
@@ -80,7 +80,7 @@ main(int argc, char * argv[])
    * This is the conclusion.
    * 
    */ 
-  INJECTION_FINALIZE(MOOSE_EX01)
+  INJECTION_FINALIZE(MOOSE_EX01);
 
 
   return 0;

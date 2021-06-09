@@ -16,7 +16,7 @@
 #include "AllLocalDofIndicesThread.h"
 #include "Console.h"
 #include "EigenExecutionerBase.h"
-
+#include "VnV.h"
 defineLegacyParams(PicardSolve);
 
 InputParameters
@@ -522,7 +522,7 @@ PicardSolve::solveStep(Real begin_norm_old,
        *
        * A picard step was completed successfully. 
        */
-      INJECTION_POINT(MOOSE,PicardStepSuccessfull, end_norm_old, end_norm)
+      INJECTION_POINT("MOOSE", VWORLD, "PicardStepSuccessfull", end_norm_old, end_norm);
 
 
       _console << COLOR_MAGENTA << "Picard Norm after TIMESTEP_END MultiApps: "
