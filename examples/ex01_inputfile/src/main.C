@@ -22,7 +22,7 @@
 
 #include "VnV.h"
 
-INJECTION_EXECUTABLE(MOOSE_EX01, VNV, mpi) 
+INJECTION_EXECUTABLE(MOOSE_EX01) 
 INJECTION_SUBPACKAGE(MOOSE_EX01,MOOSE)
 
 int moose_ex01_vnv_test_function(int x) {

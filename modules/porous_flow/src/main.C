@@ -14,7 +14,7 @@
 #include "AppFactory.h"
 #include "VnV.h"
 
-INJECTION_EXECUTABLE(MOOSE_PF_EX, VNV, mpi) 
+INJECTION_EXECUTABLE(MOOSE_PF_EX) 
 INJECTION_SUBPACKAGE(MOOSE_PF_EX,MOOSE)
 
 int moose_pf_ex_vnv_test_function(int x) {

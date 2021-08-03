@@ -1,7 +1,7 @@
 #include <stddef.h>
 #include "VnV.h"
 
-INJECTION_EXECUTABLE(MOOSE_PF, VNV, mpi) 
+INJECTION_EXECUTABLE(MOOSE_PF) 
 
 static const char* moose_pf_vnv_schema = "{\"type\": \"object\", \"required\":[]}";
 
