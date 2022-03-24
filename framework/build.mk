@@ -54,12 +54,11 @@ else
 endif
 endif
 
-<<<<<<< HEAD
 ifneq (x${MOOSE_VNV_DIR},x)
   libmesh_CXXFLAGS += -DMOOSE_WITH_VNV -I${MOOSE_VNV_DIR}/include
   libmesh_LDFLAGS += -Wl,-rpath=${MOOSE_VNV_DIR}/lib -L${MOOSE_VNV_DIR}/lib -linjection 
 endif 
-=======
+
 # Google Test relies on static construction of objects in test
 # compilation units to register those tests, but with some Linux
 # distributions (Ubuntu 21.04 for me; others in
@@ -75,7 +74,6 @@ HAVE_NO_AS_NEEDED := $(shell echo 'int main(void){return 0;}' > as_needed_test.C
 ifeq ($(HAVE_NO_AS_NEEDED),yes)
   libmesh_LDFLAGS += $(NO_AS_NEEDED_FLAG)
 endif
->>>>>>> 71e154c564a08e6b29f64374f094721c700d8141
 
 # Make.common used to provide an obj-suffix which was related to the
 # machine in question (from config.guess, i.e. @host@ in

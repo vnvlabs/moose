@@ -1,13 +1,1 @@
-<<<<<<< HEAD
-=======
-[submodule "libmesh"]
-    path = libmesh
-    url = ../../libMesh/libmesh
-    ignore = dirty
-[submodule "large_media"]
-    path = large_media
-    url = ../../idaholab/large_media
-[submodule "petsc"]
-    path = petsc
-    url = https://gitlab.com/petsc/petsc.git
->>>>>>> 71e154c564a08e6b29f64374f094721c700d8141
+

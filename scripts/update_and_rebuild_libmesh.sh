@@ -159,27 +159,10 @@ if [ -z "$go_fast" ]; then
     export CXXFLAGS=${CXXFLAGS//-O2/}
   fi
 
-<<<<<<< HEAD
-  $SCRIPT_DIR/../libmesh/configure INSTALL="${INSTALL_BINARY}" \
-                                   --with-methods="${METHODS}" \
-                                   --prefix=$LIBMESH_DIR \
-                                   --enable-silent-rules \
-                                   --enable-unique-id \
-                                   --disable-warnings \
-                                   --with-thread-model=openmp \
-                                   --with-vnv=/home/ben/software/vnv/ \
-			           --with-metis=PETSc \
-				   --with-parmetis=PETSc \
-				   --disable-maintainer-mode \
-                                   --enable-petsc-hypre-required \
-                                   --enable-metaphysicl-required \
-                                   $DISABLE_TIMESTAMPS $VTK_OPTIONS $* | tee -a "$SCRIPT_DIR/$DIAGNOSTIC_LOG" || exit 1
-=======
   source $SCRIPT_DIR/configure_libmesh.sh
   SRC_DIR=${SCRIPT_DIR}/../libmesh configure_libmesh $DISABLE_TIMESTAMPS \
                                                      $VTK_OPTIONS \
                                                      $* | tee -a "$SCRIPT_DIR/$DIAGNOSTIC_LOG" || exit 1
->>>>>>> 71e154c564a08e6b29f64374f094721c700d8141
 else
   # The build directory must already exist: you can't do --fast for
   # an initial build.

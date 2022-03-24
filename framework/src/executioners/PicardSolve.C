@@ -14,12 +14,7 @@
 #include "NonlinearSystem.h"
 #include "AllLocalDofIndicesThread.h"
 #include "Console.h"
-<<<<<<< HEAD
-#include "EigenExecutionerBase.h"
 #include "VnV.h"
-defineLegacyParams(PicardSolve);
-=======
->>>>>>> 71e154c564a08e6b29f64374f094721c700d8141
 
 InputParameters
 PicardSolve::validParams()

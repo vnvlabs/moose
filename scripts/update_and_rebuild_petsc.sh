@@ -103,31 +103,8 @@ cd $SCRIPT_DIR/../petsc
 if [ -z "$go_fast" ]; then
   rm -rf $SCRIPT_DIR/../petsc/$PETSC_ARCH
 
-<<<<<<< HEAD
-  ./configure $(echo $PFX_STR) $(echo $MAKE_NP_STR) \
-      --with-hypre-dir=/home/ben/software/hypre \
-      --with-vnv-dir=/home/ben/software/vnv \
-      --with-debugging=no \
-      --with-shared-libraries=1 \
-      --download-fblaslapack=1 \
-      --download-metis=1 \
-      --download-ptscotch=1 \
-      --download-parmetis=1 \
-      --download-superlu_dist=1 \
-      --download-mumps=1 \
-      --download-strumpack=1 \
-      --download-scalapack=1 \
-      --download-slepc=1 \
-      --with-mpi=1 \
-      --with-cxx-dialect=C++11 \
-      --with-fortran-bindings=0 \
-      --with-sowing=0 \
-      --with-64-bit-indices \
-      $*
-=======
   source $SCRIPT_DIR/configure_petsc.sh
   configure_petsc "$PFX_STR" $*
->>>>>>> 71e154c564a08e6b29f64374f094721c700d8141
 
   exitIfExitCode $?
 fi
