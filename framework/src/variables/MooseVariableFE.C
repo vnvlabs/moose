@@ -15,19 +15,48 @@
 #include "Assembly.h"
 #include "MooseVariableData.h"
 
+template <>
+InputParameters
+MooseVariableFE<Real>::validParams()
+{
+  auto params = MooseVariableField<Real>::validParams();
+  params.addClassDescription(
+      "Represents standard field variables, e.g. Lagrange, Hermite, or non-constant Monomials");
+  return params;
+}
+
+template <>
+InputParameters
+MooseVariableFE<RealVectorValue>::validParams()
+{
+  auto params = MooseVariableField<RealVectorValue>::validParams();
+  params.addClassDescription("Represents vector field variables, e.g. Vector Lagrange or Nedelec");
+  return params;
+}
+
+template <>
+InputParameters
+MooseVariableFE<RealEigenVector>::validParams()
+{
+  auto params = MooseVariableField<RealEigenVector>::validParams();
+  params.addClassDescription(
+      "Used for grouping standard field variables with the same finite element family and order");
+  return params;
+}
+
 template <typename OutputType>
 MooseVariableFE<OutputType>::MooseVariableFE(const InputParameters & parameters)
   : MooseVariableField<OutputType>(parameters)
 {
-  _element_data = libmesh_make_unique<MooseVariableData<OutputType>>(*this,
-                                                                     _sys,
-                                                                     _tid,
-                                                                     Moose::ElementType::Element,
-                                                                     this->_assembly.qRule(),
-                                                                     this->_assembly.qRuleFace(),
-                                                                     this->_assembly.node(),
-                                                                     this->_assembly.elem());
-  _neighbor_data = libmesh_make_unique<MooseVariableData<OutputType>>(
+  _element_data = std::make_unique<MooseVariableData<OutputType>>(*this,
+                                                                  _sys,
+                                                                  _tid,
+                                                                  Moose::ElementType::Element,
+                                                                  this->_assembly.qRule(),
+                                                                  this->_assembly.qRuleFace(),
+                                                                  this->_assembly.node(),
+                                                                  this->_assembly.elem());
+  _neighbor_data = std::make_unique<MooseVariableData<OutputType>>(
       *this,
       _sys,
       _tid,
@@ -36,15 +65,15 @@ MooseVariableFE<OutputType>::MooseVariableFE(const InputParameters & parameters)
       this->_assembly.qRuleNeighbor(),
       this->_assembly.nodeNeighbor(),
       this->_assembly.neighbor());
-  _lower_data = libmesh_make_unique<MooseVariableData<OutputType>>(
-      *this,
-      _sys,
-      _tid,
-      Moose::ElementType::Lower,
-      this->_assembly.qRuleFace(),
-      this->_assembly.qRuleFace(), // Place holder
-      this->_assembly.node(),      // Place holder
-      this->_assembly.lowerDElem());
+  _lower_data =
+      std::make_unique<MooseVariableData<OutputType>>(*this,
+                                                      _sys,
+                                                      _tid,
+                                                      Moose::ElementType::Lower,
+                                                      this->_assembly.qRuleFace(),
+                                                      this->_assembly.qRuleFace(), // Place holder
+                                                      this->_assembly.node(),      // Place holder
+                                                      this->_assembly.lowerDElem());
 }
 
 template <typename OutputType>
@@ -702,6 +731,13 @@ MooseVariableFE<OutputType>::insertNodalValue(NumericVector<Number> & residual,
                                               const OutputData & v)
 {
   _element_data->insertNodalValue(residual, v);
+}
+
+template <typename OutputType>
+bool
+MooseVariableFE<OutputType>::isArray() const
+{
+  return std::is_same<OutputType, RealEigenVector>::value;
 }
 
 template <typename OutputType>

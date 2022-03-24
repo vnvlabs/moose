@@ -13,8 +13,6 @@
 
 registerMooseObject("MooseApp", SolutionAux);
 
-defineLegacyParams(SolutionAux);
-
 InputParameters
 SolutionAux::validParams()
 {
@@ -94,7 +92,7 @@ SolutionAux::computeValue()
       output = _solution_object.pointValue(_t, *_current_node, _var_name);
 
     else
-      output = _solution_object.pointValue(_t, _current_elem->centroid(), _var_name);
+      output = _solution_object.pointValue(_t, _current_elem->vertex_average(), _var_name);
   }
 
   // Apply factors and return the value

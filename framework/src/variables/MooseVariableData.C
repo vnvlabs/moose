@@ -49,6 +49,7 @@ MooseVariableData<OutputType>::MooseVariableData(const MooseVariableFE<OutputTyp
     _need_u_dot(false),
     _need_ad_u_dot(false),
     _need_u_dotdot(false),
+    _need_ad_u_dotdot(false),
     _need_u_dot_old(false),
     _need_u_dotdot_old(false),
     _need_du_dot_du(false),
@@ -68,6 +69,7 @@ MooseVariableData<OutputType>::MooseVariableData(const MooseVariableFE<OutputTyp
     _need_ad(false),
     _need_ad_u(false),
     _need_ad_grad_u(false),
+    _need_ad_grad_u_dot(false),
     _need_ad_second_u(false),
     _need_dof_values(false),
     _need_dof_values_old(false),
@@ -1412,6 +1414,14 @@ MooseVariableData<OutputType>::computeAD(const unsigned int num_dofs, const unsi
     _ad_dofs_dot.resize(num_dofs);
     _ad_u_dot.resize(nqp);
   }
+  if (_need_ad_grad_u_dot)
+    _ad_grad_u_dot.resize(nqp);
+
+  if (_need_ad_u_dotdot)
+  {
+    _ad_dofs_dotdot.resize(num_dofs);
+    _ad_u_dotdot.resize(nqp);
+  }
 
 #ifndef MOOSE_GLOBAL_AD_INDEXING
   auto ad_offset = Moose::adOffset(
@@ -1443,6 +1453,12 @@ MooseVariableData<OutputType>::computeAD(const unsigned int num_dofs, const unsi
 
     if (_need_ad_u_dot)
       _ad_u_dot[qp] = _ad_zero;
+
+    if (_need_ad_u_dotdot)
+      _ad_u_dotdot[qp] = _ad_zero;
+
+    if (_need_ad_grad_u_dot)
+      _ad_grad_u_dot[qp] = _ad_zero;
   }
 
   for (unsigned int i = 0; i < num_dofs; i++)
@@ -1450,7 +1466,7 @@ MooseVariableData<OutputType>::computeAD(const unsigned int num_dofs, const unsi
     _ad_dof_values[i] = (*_sys.currentSolution())(_dof_indices[i]);
 
     // NOTE!  You have to do this AFTER setting the value!
-    if (_var.kind() == Moose::VAR_NONLINEAR && _subproblem.currentlyComputingJacobian())
+    if (_var.kind() == Moose::VAR_NONLINEAR && ADReal::do_derivatives)
 #ifdef MOOSE_GLOBAL_AD_INDEXING
       Moose::derivInsert(_ad_dof_values[i].derivatives(), _dof_indices[i], 1.);
 #else
@@ -1460,7 +1476,10 @@ MooseVariableData<OutputType>::computeAD(const unsigned int num_dofs, const unsi
     if (_need_ad_u_dot && _time_integrator && _time_integrator->dt())
     {
       _ad_dofs_dot[i] = _ad_dof_values[i];
-      _time_integrator->computeADTimeDerivatives(_ad_dofs_dot[i], _dof_indices[i]);
+      _time_integrator->computeADTimeDerivatives(_ad_dofs_dot[i],
+                                                 _dof_indices[i],
+                                                 _need_ad_u_dotdot ? _ad_dofs_dotdot[i]
+                                                                   : _ad_real_dummy);
     }
   }
 
@@ -1489,13 +1508,36 @@ MooseVariableData<OutputType>::computeAD(const unsigned int num_dofs, const unsi
         _ad_second_u[qp] += _ad_dof_values[i] * (*_current_second_phi)[i][qp];
 
       if (_need_ad_u_dot && _time_integrator)
+      {
         _ad_u_dot[qp] += (*_current_phi)[i][qp] * _ad_dofs_dot[i];
+        if (_need_ad_u_dotdot)
+          _ad_u_dotdot[qp] += (*_current_phi)[i][qp] * _ad_dofs_dotdot[i];
+      }
+
+      if (_need_ad_grad_u_dot && _time_integrator)
+      {
+        // The latter check here is for handling the fact that we have not yet implemented
+        // calculation of ad_grad_phi for neighbor and neighbor-face, so if we are in that
+        // situation we need to default to using the non-ad grad_phi
+        if (_displaced && _current_ad_grad_phi)
+          _ad_grad_u_dot[qp] += _ad_dofs_dot[i] * (*_current_ad_grad_phi)[i][qp];
+        else
+          _ad_grad_u_dot[qp] += _ad_dofs_dot[i] * (*_current_grad_phi)[i][qp];
+      }
     }
   }
 
   if (_need_ad_u_dot && !_time_integrator)
     for (MooseIndex(nqp) qp = 0; qp < nqp; ++qp)
+    {
       _ad_u_dot[qp] = _u_dot[qp];
+      if (_need_ad_u_dotdot)
+        _ad_u_dotdot[qp] = _u_dotdot[qp];
+    }
+
+  if (_need_ad_grad_u_dot && !_time_integrator)
+    for (MooseIndex(nqp) qp = 0; qp < nqp; ++qp)
+      _ad_grad_u_dot[qp] = _grad_u_dot[qp];
 }
 
 template <>
@@ -2550,7 +2592,7 @@ MooseVariableData<OutputType>::fetchADDoFValues()
   for (decltype(n) i = 0; i < n; ++i)
   {
     _ad_dof_values[i] = _dof_values[i];
-    if (_var.kind() == Moose::VAR_NONLINEAR && _subproblem.currentlyComputingJacobian())
+    if (_var.kind() == Moose::VAR_NONLINEAR && ADReal::do_derivatives)
 #ifdef MOOSE_GLOBAL_AD_INDEXING
       Moose::derivInsert(_ad_dof_values[i].derivatives(), _dof_indices[i], 1.);
 #else
@@ -2746,10 +2788,10 @@ template <typename OutputType>
 void
 MooseVariableData<OutputType>::reinitNode()
 {
-  if (size_t n_dofs = _node->n_dofs(_sys.number(), _var_num))
+  if (std::size_t n_dofs = _node->n_dofs(_sys.number(), _var_num))
   {
     _dof_indices.resize(n_dofs);
-    for (size_t i = 0; i < n_dofs; ++i)
+    for (std::size_t i = 0; i < n_dofs; ++i)
       _dof_indices[i] = _node->dof_number(_sys.number(), _var_num, i);
     // For standard variables. _nodal_dof_index is retrieved by nodalDofIndex() which is used in
     // NodalBC for example

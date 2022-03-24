@@ -9,7 +9,6 @@
 
 #include "PetscContactLineSearch.h"
 
-#ifdef LIBMESH_HAVE_PETSC
 #if !PETSC_VERSION_LESS_THAN(3, 6, 0)
 #include "FEProblem.h"
 #include "NonlinearSystem.h"
@@ -106,7 +105,7 @@ PetscContactLineSearch::lineSearch()
     if (contact_state_stored != _old_contact_state)
     {
       KSPSetTolerances(ksp, _contact_ltol, ksp_abstol, ksp_dtol, ksp_maxits);
-      _console << "Contact set changed since previous non-linear iteration!\n";
+      _console << "Contact set changed since previous non-linear iteration!" << std::endl;
     }
     else
       KSPSetTolerances(ksp, _user_ksp_rtol, ksp_abstol, ksp_dtol, ksp_maxits);
@@ -188,5 +187,4 @@ PetscContactLineSearch::lineSearch()
   _old_contact_state = std::move(contact_state_stored);
 }
 
-#endif // !PETSC_VERSION_LESS_THAN(3, 3, 0)
-#endif // LIBMESH_HAVE_PETSC
+#endif // !PETSC_VERSION_LESS_THAN(3, 6, 0)

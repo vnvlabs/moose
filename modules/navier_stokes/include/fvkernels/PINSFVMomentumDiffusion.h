@@ -9,41 +9,20 @@
 
 #pragma once
 
-#include "FVFluxKernel.h"
+#include "INSFVMomentumDiffusion.h"
 
 /**
  * A flux kernel for diffusion of momentum in porous media across cell faces
  */
-class PINSFVMomentumDiffusion : public FVFluxKernel
+class PINSFVMomentumDiffusion : public INSFVMomentumDiffusion
 {
 public:
   static InputParameters validParams();
   PINSFVMomentumDiffusion(const InputParameters & params);
 
 protected:
-  ADReal computeQpResidual() override;
-
-  /// the current element viscosity
-  const ADMaterialProperty<Real> & _mu_elem;
-  /// the neighbor element viscosity
-  const ADMaterialProperty<Real> & _mu_neighbor;
+  ADReal computeStrongResidual() override;
 
   /// the porosity
-  const VariableValue & _eps;
-  /// the neighbor element porosity
-  const VariableValue & _eps_neighbor;
-
-  // Parameters for the gradient diffusion term
-  /// Which momentum component this kernel applies to
-  const int _index;
-
-  /// Velocity as material properties
-  const ADMaterialProperty<RealVectorValue> * _vel_elem;
-  const ADMaterialProperty<RealVectorValue> * _vel_neighbor;
-
-  /// the porosity as a variable to be able to compute a face gradient
-  const MooseVariableFVReal * const _eps_var;
-
-  /// Whether to add the porosity gradient term, only for continuous porosity
-  const bool _smooth_porosity;
+  const Moose::Functor<ADReal> & _eps;
 };

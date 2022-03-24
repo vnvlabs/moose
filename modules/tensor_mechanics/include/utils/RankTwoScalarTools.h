@@ -15,6 +15,7 @@
 #include "libmesh/point.h"
 #include "RankTwoTensor.h"
 #include "MooseError.h"
+#include "MooseUtils.h"
 
 namespace RankTwoScalarTools
 {
@@ -22,12 +23,12 @@ namespace RankTwoScalarTools
  * Return the scalar_type MooseEnum
  */
 MooseEnum scalarOptions();
-MooseEnum cylindricalOptions();
-MooseEnum invariantOptions();
-MooseEnum principalComponentOptions();
-MooseEnum mixedInvariantComponentOptions();
 
-enum class INVARIANT_TYPE
+MooseEnum invariantOptions();
+MooseEnum cylindricalOptions();
+MooseEnum sphericalOptions();
+
+enum class InvariantType
 {
   VonMisesStress,
   EffectiveStrain,
@@ -45,9 +46,15 @@ enum class INVARIANT_TYPE
   MinPrincipal
 };
 
-enum class CYLINDRICAL_COMPONENT
+enum class CylindricalComponent
 {
   AxialStress,
+  HoopStress,
+  RadialStress
+};
+
+enum class SphericalComponent
+{
   HoopStress,
   RadialStress
 };
@@ -98,7 +105,7 @@ vonMisesStress(const RankTwoTensorTempl<T> & stress)
 }
 
 /*
- * The effective strain is calculated as
+ * The effective strain increment (or equivalent von Mises strain) is calculated as
  * \epsilon_{eff} = \sqrt{\frac{2}{3}\epsilon_{ij} \epsilon_{ij}}
  */
 template <typename T>
@@ -293,10 +300,7 @@ axialStress(const RankTwoTensorTempl<T> & stress,
   axis /= axis.norm();
 
   // Calculate the stress in the direction of the axis specifed by the user
-  T axial_stress = 0.0;
-  for (unsigned int i = 0; i < 3; ++i)
-    for (unsigned int j = 0; j < 3; ++j)
-      axial_stress += axis(j) * stress(j, i) * axis(i);
+  T axial_stress = axis * (stress * axis);
 
   direction = axis;
 
@@ -344,10 +348,7 @@ hoopStress(const RankTwoTensorTempl<T> & stress,
   Point zp = xp.cross(yp);
 
   // Calculate the scalar value of the hoop stress
-  T hoop_stress = 0.0;
-  for (unsigned int i = 0; i < 3; ++i)
-    for (unsigned int j = 0; j < 3; ++j)
-      hoop_stress += zp(j) * stress(j, i) * zp(i);
+  T hoop_stress = zp * (stress * zp);
 
   direction = zp;
 
@@ -376,14 +377,94 @@ radialStress(const RankTwoTensorTempl<T> & stress,
 
   // Compute the scalar stress component in the direction of the normal vector from the
   // user-defined axis of rotation.
-  T radial_stress = 0.0;
-  for (unsigned int i = 0; i < 3; ++i)
-    for (unsigned int j = 0; j < 3; ++j)
-      radial_stress += radial_norm(j) * stress(j, i) * radial_norm(i);
+  T radial_stress = radial_norm * (stress * radial_norm);
 
   direction = radial_norm;
 
   return radial_stress;
+}
+
+/* The radial stress is calculated as
+ * radial_stress = radial^T_i * \sigma_{ij} * radial_j
+ * where normal is the position vector of the current point that is normal to
+ * the user-defined axis of rotation;
+ * @param center The center point of the spherical system
+ * @param curr_point The point corresponding to the stress (pass in & _q_point[_qp])
+ * @param direction The direction vector in which the scalar stress value is calculated.
+ */
+template <typename T>
+T
+radialStress(const RankTwoTensorTempl<T> & stress,
+             const Point & center,
+             const Point & curr_point,
+             Point & direction)
+{
+  Point radial = curr_point - center;
+  radial /= radial.norm();
+
+  // Compute the scalar stress component in the radial direction
+  T radial_stress = radial * (stress * radial);
+
+  direction = radial;
+
+  return radial_stress;
+}
+
+/* The hoop stress is calculated as
+ * hoop_stress = tangential^T_i * \sigma_{ij} * tangential_j
+ * where tangential is tangential direction at the current point in the spherical system;
+ * @param center The center point of the spherical system
+ * @param curr_point The point corresponding to the stress (pass in & _q_point[_qp])
+ * @param direction The direction vector in which the scalar stress value is calculated.
+ */
+template <typename T>
+T
+hoopStress(const RankTwoTensorTempl<T> & stress,
+           const Point & center,
+           const Point & curr_point,
+           Point & direction)
+{
+  Point radial = curr_point - center;
+  Real r = radial.norm();
+  radial /= r;
+
+  // Given normal vector N=(n1,n2,n3) and current point C(c1,c2,c3), the tangential plane is then
+  // defined as n1(x-c1) + n2(y-c2) + n3(z-c3)=0. Let us assume n1!=0, the arbitrary point P on this
+  // plane can be taken as P(x,c2+r,c3+r) where r is the radius. The x can be solved as x =
+  // -r(n2+n3)/n1 + c1. The tangential vector PC is given as P-C.
+
+  Point tangential;
+
+  if (!MooseUtils::absoluteFuzzyEqual(radial(0), 0.0))
+  {
+    Real x = curr_point(0) - (radial(1) + radial(2)) * r / radial(0);
+    tangential = Point(x, curr_point(1) + r, curr_point(2) + r) - curr_point;
+  }
+  else if (!MooseUtils::absoluteFuzzyEqual(radial(1), 0.0))
+  {
+    Real y = curr_point(1) - (radial(0) + radial(2)) * r / radial(1);
+    tangential = Point(curr_point(0) + r, y, curr_point(2) + r) - curr_point;
+  }
+  else if (!MooseUtils::absoluteFuzzyEqual(radial(1), 0.0))
+  {
+    Real z = curr_point(2) - (radial(0) + radial(1)) * r / radial(2);
+    tangential = Point(curr_point(0) + r, curr_point(1) + r, z) - curr_point;
+  }
+  else
+    mooseError("In Hoop stress calculation for spherical geometry, the current (quadracture) point "
+               "is likely to be at the center. ");
+
+  tangential /= tangential.norm();
+
+  // Compute the scalar stress component in the hoop direction
+  T hoop_stress = 0.0;
+  for (unsigned int i = 0; i < 3; ++i)
+    for (unsigned int j = 0; j < 3; ++j)
+      hoop_stress += tangential(j) * stress(j, i) * tangential(i);
+
+  direction = tangential;
+
+  return hoop_stress;
 }
 
 /*
@@ -394,10 +475,7 @@ template <typename T>
 T
 directionValueTensor(const RankTwoTensorTempl<T> & r2tensor, const Point & direction)
 {
-  T tensor_value_in_direction = 0.0;
-  for (unsigned int i = 0; i < 3; ++i)
-    for (unsigned int j = 0; j < 3; ++j)
-      tensor_value_in_direction += direction(j) * r2tensor(j, i) * direction(i);
+  T tensor_value_in_direction = direction * (r2tensor * direction);
 
   return tensor_value_in_direction;
 }
@@ -458,7 +536,8 @@ getQuantity(const RankTwoTensorTempl<T> & tensor,
     case 0:
       return vonMisesStress(tensor);
     case 1:
-      return effectiveStrain(tensor);
+      mooseError("To compute an effective inelastic strain use "
+                 "RankTwoScalarTools::effectiveStrain()");
     case 2:
       return hydrostatic(tensor);
     case 3:
@@ -492,15 +571,14 @@ getQuantity(const RankTwoTensorTempl<T> & tensor,
     case 17:
       return stressIntensity(tensor);
     default:
-      mooseError("RankTwoScalarAux Error: Pass valid scalar type - " +
-                 scalarOptions().getRawNames());
+      mooseError("RankTwoScalarTools Error: invalid scalar type");
   }
 }
 
 template <typename T>
 T
 getCylindricalComponent(const RankTwoTensorTempl<T> & tensor,
-                        const CYLINDRICAL_COMPONENT & scalar_type,
+                        const CylindricalComponent & scalar_type,
                         const Point & point1,
                         const Point & point2,
                         const Point & curr_point,
@@ -508,35 +586,52 @@ getCylindricalComponent(const RankTwoTensorTempl<T> & tensor,
 {
   switch (scalar_type)
   {
-    case CYLINDRICAL_COMPONENT::AxialStress:
+    case CylindricalComponent::AxialStress:
       return axialStress(tensor, point1, point2, direction);
-    case CYLINDRICAL_COMPONENT::HoopStress:
+    case CylindricalComponent::HoopStress:
       return hoopStress(tensor, point1, point2, curr_point, direction);
-    case CYLINDRICAL_COMPONENT::RadialStress:
+    case CylindricalComponent::RadialStress:
       return radialStress(tensor, point1, point2, curr_point, direction);
     default:
-      mooseError("RankTwoCylindricalComponent Error: Pass valid scalar type - " +
-                 cylindricalOptions().getRawNames());
+      mooseError("RankTwoCylindricalComponent Error: scalar type invalid");
+  }
+}
+
+template <typename T>
+T
+getSphericalComponent(const RankTwoTensorTempl<T> & tensor,
+                      const SphericalComponent & scalar_type,
+                      const Point & center,
+                      const Point & curr_point,
+                      Point & direction)
+{
+  switch (scalar_type)
+  {
+    case SphericalComponent::HoopStress:
+      return hoopStress(tensor, center, curr_point, direction);
+    case SphericalComponent::RadialStress:
+      return radialStress(tensor, center, curr_point, direction);
+    default:
+      mooseError("RankTwoSphericalComponent Error: scalar type invalid");
   }
 }
 
 template <typename T>
 T
 getPrincipalComponent(const RankTwoTensorTempl<T> & tensor,
-                      const INVARIANT_TYPE & scalar_type,
+                      const InvariantType & scalar_type,
                       Point & direction)
 {
   switch (scalar_type)
   {
-    case INVARIANT_TYPE::MaxPrincipal:
+    case InvariantType::MaxPrincipal:
       return maxPrincipal(tensor, direction);
-    case INVARIANT_TYPE::MidPrincipal:
+    case InvariantType::MidPrincipal:
       return midPrincipal(tensor, direction);
-    case INVARIANT_TYPE::MinPrincipal:
+    case InvariantType::MinPrincipal:
       return minPrincipal(tensor, direction);
     default:
-      mooseError("RankTwoInvariant Error: Pass valid invariant - " +
-                 principalComponentOptions().getRawNames());
+      mooseError("RankTwoInvariant Error: valid invariant");
   }
 }
 
@@ -549,31 +644,32 @@ getDirectionalComponent(const RankTwoTensorTempl<T> & tensor, const Point & dire
 
 template <typename T>
 T
-getInvariant(const RankTwoTensorTempl<T> & tensor, const INVARIANT_TYPE & scalar_type)
+getInvariant(const RankTwoTensorTempl<T> & tensor, const InvariantType & scalar_type)
 {
   switch (scalar_type)
   {
-    case INVARIANT_TYPE::VonMisesStress:
+    case InvariantType::VonMisesStress:
       return vonMisesStress(tensor);
-    case INVARIANT_TYPE::EffectiveStrain:
-      return effectiveStrain(tensor);
-    case INVARIANT_TYPE::Hydrostatic:
+    case InvariantType::EffectiveStrain:
+      mooseError("To compute an effective inelastic strain use "
+                 "RankTwoScalarTools::effectiveStrain()");
+    case InvariantType::Hydrostatic:
       return hydrostatic(tensor);
-    case INVARIANT_TYPE::L2norm:
+    case InvariantType::L2norm:
       return L2norm(tensor);
-    case INVARIANT_TYPE::VolumetricStrain:
+    case InvariantType::VolumetricStrain:
       return volumetricStrain(tensor);
-    case INVARIANT_TYPE::FirstInvariant:
+    case InvariantType::FirstInvariant:
       return firstInvariant(tensor);
-    case INVARIANT_TYPE::SecondInvariant:
+    case InvariantType::SecondInvariant:
       return secondInvariant(tensor);
-    case INVARIANT_TYPE::ThirdInvariant:
+    case InvariantType::ThirdInvariant:
       return thirdInvariant(tensor);
-    case INVARIANT_TYPE::TriaxialityStress:
+    case InvariantType::TriaxialityStress:
       return triaxialityStress(tensor);
-    case INVARIANT_TYPE::MaxShear:
+    case InvariantType::MaxShear:
       return maxShear(tensor);
-    case INVARIANT_TYPE::StressIntensity:
+    case InvariantType::StressIntensity:
       return stressIntensity(tensor);
     default:
       mooseError("RankTwoCartesianComponent Error: Pass valid invariant - " +

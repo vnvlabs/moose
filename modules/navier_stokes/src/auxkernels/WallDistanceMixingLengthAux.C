@@ -15,17 +15,27 @@ InputParameters
 WallDistanceMixingLengthAux::validParams()
 {
   InputParameters params = AuxKernel::validParams();
-  params.addClassDescription("Computes the turbulent mixing length by assuming that it is "
-                             "proportional to the distance from the nearest wall.");
+  params.addClassDescription(
+      "Computes the turbulent mixing length by assuming that it is "
+      "proportional to the distance from the nearest wall. The mixing"
+      "length is capped at a distance proportional to inputted parameter delta.");
   params.addParam<std::vector<BoundaryName>>("walls", "Boundaries that correspond to solid walls");
-  params.addParam<Real>("von_karman_const", 0.4, "");
+  params.addParam<Real>("von_karman_const", 0.41, "");   // Von Karman constant
+  params.addParam<Real>("von_karman_const_0", 0.09, ""); // Escudier' model parameter
+  params.addParam<Real>(
+      "delta",
+      1e9,
+      ""); // Tunable parameter related to the thickness of the boundary layer.
+           // When it is not specified, Prandtl's original mixing length model is retrieved.
   return params;
 }
 
 WallDistanceMixingLengthAux::WallDistanceMixingLengthAux(const InputParameters & parameters)
   : AuxKernel(parameters),
     _wall_boundary_names(getParam<std::vector<BoundaryName>>("walls")),
-    _von_karman_const(getParam<Real>("von_karman_const"))
+    _von_karman_const(getParam<Real>("von_karman_const")),
+    _von_karman_const_0(getParam<Real>("von_karman_const_0")),
+    _delta(getParam<Real>("delta"))
 {
   const MeshBase & mesh = _subproblem.mesh().getMesh();
   if (!mesh.is_replicated())
@@ -57,12 +67,18 @@ WallDistanceMixingLengthAux::computeValue()
     for (dof_id_type elem_id : bnd_elems)
     {
       const Elem & elem{l_mesh.elem_ref(elem_id)};
-      Point bnd_pos = elem.centroid();
+      Point bnd_pos = elem.vertex_average();
       Real sq_dist = (bnd_pos - _q_point[_qp]).norm_sq();
       min_sq_dist = std::min(min_sq_dist, sq_dist);
     }
   }
 
-  // Return the mixing length
-  return _von_karman_const * std::sqrt(min_sq_dist);
+  if (std::sqrt(min_sq_dist) / _delta <= _von_karman_const_0 / _von_karman_const)
+  {
+    return _von_karman_const * std::sqrt(min_sq_dist);
+  }
+  else
+  {
+    return _von_karman_const_0 * _delta;
+  }
 }

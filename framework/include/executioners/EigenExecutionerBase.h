@@ -11,13 +11,8 @@
 
 #include "Executioner.h"
 
-// Forward Declarations
-class EigenExecutionerBase;
 class MooseEigenSystem;
 class FEProblemBase;
-
-template <>
-InputParameters validParams<EigenExecutionerBase>();
 
 /**
  * This class provides reusable routines for eigenvalue executioners.
@@ -131,6 +126,9 @@ protected:
   FEProblemBase & _problem;
   MooseEigenSystem & _eigen_sys;
 
+  /// dummy solve object for properly setting PETSc options
+  FEProblemSolve _feproblem_solve;
+
   /// Storage for the eigenvalue computed by the executioner
   PostprocessorValue & _eigenvalue;
 
@@ -141,8 +139,6 @@ protected:
   /// Postprocessor for normalization
   const Real & _normalization;
   ExecFlagEnum _norm_exec;
-
-  PerfID _final_timer;
 
   // Chebyshev acceleration
   class Chebyshev_Parameters

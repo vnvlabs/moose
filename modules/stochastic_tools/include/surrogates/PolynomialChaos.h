@@ -14,12 +14,14 @@
 #include "QuadratureSampler.h"
 
 #include "Distribution.h"
+#include "nlohmann/json.h"
 
 class PolynomialChaos : public SurrogateModel
 {
 public:
   static InputParameters validParams();
   PolynomialChaos(const InputParameters & parameters);
+  using SurrogateModel::evaluate;
   virtual Real evaluate(const std::vector<Real> & x) const override;
 
   /// Access number of dimensions/parameters
@@ -59,6 +61,8 @@ public:
   Real computeSobolIndex(const std::set<unsigned int> & ind) const;
   Real computeSobolTotal(const unsigned int dim) const;
 
+  void store(nlohmann::json & json) const;
+
 private:
   /// Variables calculation and for looping over the computed coefficients in parallel
   ///
@@ -94,4 +98,6 @@ private:
 
   /// The distributions used for sampling
   const std::vector<std::unique_ptr<const PolynomialQuadrature::Polynomial>> & _poly;
+
+  friend void to_json(nlohmann::json & json, const PolynomialChaos *& pc);
 };

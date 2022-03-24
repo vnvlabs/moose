@@ -25,6 +25,7 @@
 #include "CommandLine.h"
 #include "Conversion.h"
 #include "NonlinearSystemBase.h"
+#include "DelimitedFileReader.h"
 
 #include "libmesh/mesh_tools.h"
 #include "libmesh/numeric_vector.h"
@@ -39,8 +40,6 @@
 #ifdef LIBMESH_HAVE_SYS_UTSNAME_H
 #include <sys/utsname.h>
 #endif
-
-defineLegacyParams(MultiApp);
 
 InputParameters
 MultiApp::validParams()
@@ -157,24 +156,41 @@ MultiApp::validParams()
       "Additional command line arguments to pass to the sub apps. If one set is provided the "
       "arguments are applied to all, otherwise there must be a set for each sub app.");
 
+  params.addParam<std::vector<FileName>>(
+      "cli_args_files",
+      "File names that should be looked in for additional command line arguments "
+      "to pass to the sub apps. Each line of a file is set to each sub app. If only "
+      "one line is provided, it will be applied to all sub apps.");
+
   params.addRangeCheckedParam<Real>("relaxation_factor",
                                     1.0,
                                     "relaxation_factor>0 & relaxation_factor<2",
                                     "Fraction of newly computed value to keep."
                                     "Set between 0 and 2.");
-  params.addParam<std::vector<std::string>>("relaxed_variables",
-                                            std::vector<std::string>(),
-                                            "List of variables to relax during Picard Iteration");
+  params.addDeprecatedParam<std::vector<std::string>>(
+      "relaxed_variables",
+      std::vector<std::string>(),
+      "Use transformed_variables.",
+      "List of subapp variables to relax during Multiapp coupling iterations");
+  params.addParam<std::vector<std::string>>(
+      "transformed_variables",
+      std::vector<std::string>(),
+      "List of subapp variables to use coupling algorithm on during Multiapp coupling iterations");
+  params.addParam<std::vector<PostprocessorName>>(
+      "transformed_postprocessors",
+      std::vector<PostprocessorName>(),
+      "List of subapp postprocessors to use coupling "
+      "algorithm on during Multiapp coupling iterations");
 
   params.addParam<bool>(
       "clone_master_mesh", false, "True to clone master mesh and use it for this MultiApp.");
 
   params.addParam<bool>("keep_solution_during_restore",
                         false,
-                        "This is useful when doing Picard.  It takes the "
-                        "final solution from the previous Picard iteration"
+                        "This is useful when doing MultiApp coupling iterations. It takes the "
+                        "final solution from the previous coupling iteration"
                         "and re-uses it as the initial guess "
-                        "for the next picard iteration");
+                        "for the next coupling iteration");
 
   params.addPrivateParam<std::shared_ptr<CommandLine>>("_command_line");
   params.addPrivateParam<bool>("use_positions", true);
@@ -189,7 +205,7 @@ MultiApp::MultiApp(const InputParameters & parameters)
   : MooseObject(parameters),
     SetupInterface(this),
     Restartable(this, "MultiApps"),
-    PerfGraphInterface(this),
+    PerfGraphInterface(this, std::string("MultiApp::") + _name),
     _fe_problem(*getCheckedPointerParam<FEProblemBase *>("_fe_problem_base")),
     _app_type(isParamValid("app_type") ? std::string(getParam<MooseEnum>("app_type"))
                                        : _fe_problem.getMooseApp().type()),
@@ -219,20 +235,35 @@ MultiApp::MultiApp(const InputParameters & parameters)
     _backups(declareRestartableDataWithContext<SubAppBackups>("backups", this)),
     _cli_args(getParam<std::vector<std::string>>("cli_args")),
     _keep_solution_during_restore(getParam<bool>("keep_solution_during_restore")),
-    _perf_backup(registerTimedSection("backup", 3)),
-    _perf_restore(registerTimedSection("restore", 3)),
-    _perf_init(registerTimedSection("init", 3)),
-    _perf_reset_app(registerTimedSection("resetApp", 3))
+    _solve_step_timer(registerTimedSection("solveStep", 3, "Taking Step")),
+    _init_timer(registerTimedSection("init", 3, "Initializing MultiApp")),
+    _backup_timer(registerTimedSection("backup", 3, "Backing Up MultiApp")),
+    _restore_timer(registerTimedSection("restore", 3, "Restoring MultiApp")),
+    _reset_timer(registerTimedSection("resetApp", 3, "Resetting MultiApp"))
 {
+
+  if (parameters.isParamSetByUser("cli_args") && parameters.isParamValid("cli_args") &&
+      parameters.isParamValid("cli_args_files"))
+    paramError("cli_args",
+               "'cli_args' and 'cli_args_files' cannot be specified simultaneously in MultiApp ");
 }
 
 void
 MultiApp::init(unsigned int num_apps, bool batch_mode)
 {
-  TIME_SECTION(_perf_init);
+  auto config = rankConfig(
+      processor_id(), n_processors(), num_apps, _min_procs_per_app, _max_procs_per_app, batch_mode);
+  init(num_apps, config);
+}
+
+void
+MultiApp::init(unsigned int num_apps, const LocalRankConfig & config)
+{
+  TIME_SECTION(_init_timer);
 
   _total_num_apps = num_apps;
-  _rank_config = buildComm(batch_mode);
+  _rank_config = config;
+  buildComm();
   _backups.reserve(_my_num_apps);
   for (unsigned int i = 0; i < _my_num_apps; i++)
     _backups.emplace_back(std::make_shared<Backup>());
@@ -262,6 +293,9 @@ MultiApp::createApps()
   if (!_has_an_app)
     return;
 
+  // Read commandLine arguments that will be used when creating apps
+  readCommandLineArguments();
+
   Moose::ScopedCommSwapper swapper(_my_comm);
 
   _apps.resize(_my_num_apps);
@@ -285,6 +319,103 @@ MultiApp::initialSetup()
     // if not using positions, we create the sub-apps in initialSetup instead of right after
     // construction of MultiApp
     createApps();
+}
+
+void
+MultiApp::readCommandLineArguments()
+{
+  if (isParamValid("cli_args_files"))
+  {
+    _cli_args_from_file.clear();
+
+    std::vector<FileName> cli_args_files = getParam<std::vector<FileName>>("cli_args_files");
+    std::vector<FileName> input_files = getParam<std::vector<FileName>>("input_files");
+
+    // If we use parameter "cli_args_files", at least one file should be provided
+    if (!cli_args_files.size())
+      paramError("cli_args_files", "You need to provide at least one commandLine argument file ");
+
+    // If we multiple input files, then we need to check if the number of input files
+    // match with the number of argument files
+    if (cli_args_files.size() != 1 && cli_args_files.size() != input_files.size())
+      paramError("cli_args_files",
+                 "The number of commandLine argument files ",
+                 cli_args_files.size(),
+                 " for MultiApp ",
+                 name(),
+                 " must either be only one or match the number of input files ",
+                 input_files.size());
+
+    // Go through all argument files
+    std::vector<std::string> cli_args;
+    for (unsigned int p_file_it = 0; p_file_it < cli_args_files.size(); p_file_it++)
+    {
+      std::string cli_args_file = cli_args_files[p_file_it];
+      // Clear up
+      cli_args.clear();
+      // Read the file on the root processor then broadcast it
+      if (processor_id() == 0)
+      {
+        MooseUtils::checkFileReadable(cli_args_file);
+
+        std::ifstream is(cli_args_file.c_str());
+        std::copy(std::istream_iterator<std::string>(is),
+                  std::istream_iterator<std::string>(),
+                  std::back_inserter(cli_args));
+
+        // We do not allow empty files
+        if (!cli_args.size())
+          paramError("cli_args_files",
+                     "There is no commandLine argument in the commandLine argument file ",
+                     cli_args_file);
+
+        // If we have position files, we need to
+        // make sure the number of commandLine argument strings
+        // match with the number of positions
+        if (_npositions_inputfile.size())
+        {
+          auto num_positions = _npositions_inputfile[p_file_it];
+          // Check if the number of commandLine argument strings equal to
+          // the number of positions
+          if (cli_args.size() == 1)
+            for (MooseIndex(num_positions) num = 0; num < num_positions; num++)
+              _cli_args_from_file.push_back(cli_args.front());
+          else if (cli_args.size() == num_positions)
+            for (auto && cli_arg : cli_args)
+              _cli_args_from_file.push_back(cli_arg);
+          else if (cli_args.size() != num_positions)
+            paramError("cli_args_files",
+                       "The number of commandLine argument strings ",
+                       cli_args.size(),
+                       " in the file ",
+                       cli_args_file,
+                       " must either be only one or match the number of positions ",
+                       num_positions);
+        }
+        else
+        {
+          // If we do not have position files, we will check if the number of
+          // commandLine argument strings match with the total number of subapps
+          for (auto && cli_arg : cli_args)
+            _cli_args_from_file.push_back(cli_arg);
+        }
+      }
+    }
+
+    // Broad cast all arguments to everyone
+    _communicator.broadcast(_cli_args_from_file);
+  }
+
+  if (_cli_args_from_file.size() && _cli_args_from_file.size() != 1 &&
+      _cli_args_from_file.size() != _total_num_apps)
+    mooseError(" The number of commandLine argument strings ",
+               _cli_args_from_file.size(),
+               " must either be only one or match the total "
+               "number of sub apps ",
+               _total_num_apps);
+
+  if (_cli_args_from_file.size() && _cli_args.size())
+    mooseError("Can not set commandLine arguments from both input_file and external files");
 }
 
 void
@@ -325,47 +456,20 @@ MultiApp::fillPositions()
     for (unsigned int p_file_it = 0; p_file_it < positions_files.size(); p_file_it++)
     {
       std::string positions_file = positions_files[p_file_it];
+      MooseUtils::DelimitedFileReader file(positions_file, &_communicator);
+      file.setFormatFlag(MooseUtils::DelimitedFileReader::FormatFlag::ROWS);
+      file.read();
 
-      std::vector<Real> positions_vec;
+      const std::vector<Point> & data = file.getDataAsPoints();
+      for (const auto & d : data)
+        _positions.push_back(d);
 
-      // Read the file on the root processor then broadcast it
-      if (processor_id() == 0)
-      {
-        MooseUtils::checkFileReadable(positions_file);
+      // Save the number of positions for this input file
+      _npositions_inputfile.push_back(data.size());
 
-        std::ifstream is(positions_file.c_str());
-        std::istream_iterator<Real> begin(is), end;
-        positions_vec.insert(positions_vec.begin(), begin, end);
-
-        if (positions_vec.size() % LIBMESH_DIM != 0)
-          mooseError("Number of entries in 'positions_file' ",
-                     positions_file,
-                     " must be divisible by ",
-                     LIBMESH_DIM,
-                     " in MultiApp ",
-                     name());
-      }
-
-      // Bradcast the vector to all processors
-      std::size_t num_positions = positions_vec.size();
-      _communicator.broadcast(num_positions);
-      positions_vec.resize(num_positions);
-      _communicator.broadcast(positions_vec);
-
-      for (unsigned int i = 0; i < positions_vec.size(); i += LIBMESH_DIM)
-      {
+      for (unsigned int i = 0; i < data.size(); ++i)
         if (input_files.size() != 1)
           _input_files.push_back(input_files[p_file_it]);
-
-        Point position;
-
-        // This is here so it will theoretically work with LIBMESH_DIM=1 or 2. That is completely
-        // untested!
-        for (unsigned int j = 0; j < LIBMESH_DIM; j++)
-          position(j) = positions_vec[i + j];
-
-        _positions.push_back(position);
-      }
     }
   }
   else
@@ -438,18 +542,16 @@ MultiApp::postExecute()
 void
 MultiApp::backup()
 {
-  TIME_SECTION(_perf_backup);
+  TIME_SECTION(_backup_timer);
 
-  _console << "Beginning backing up MultiApp " << name() << std::endl;
   for (unsigned int i = 0; i < _my_num_apps; i++)
     _backups[i] = _apps[i]->backup();
-  _console << "Finished backing up MultiApp " << name() << std::endl;
 }
 
 void
 MultiApp::restore(bool force)
 {
-  TIME_SECTION(_perf_restore);
+  TIME_SECTION(_restore_timer);
 
   if (force || needsRestoration())
   {
@@ -650,7 +752,7 @@ MultiApp::localApp(unsigned int local_app)
 void
 MultiApp::resetApp(unsigned int global_app, Real time)
 {
-  TIME_SECTION(_perf_reset_app);
+  TIME_SECTION(_reset_timer);
 
   Moose::ScopedCommSwapper swapper(_my_comm);
 
@@ -718,7 +820,7 @@ MultiApp::createApp(unsigned int i, Real start_time)
   app_cli->initForMultiApp(full_name);
   app_params.set<std::shared_ptr<CommandLine>>("_command_line") = app_cli;
 
-  if (_cli_args.size() > 0)
+  if (_cli_args.size() > 0 || _cli_args_from_file.size() > 0)
   {
     for (const std::string & str : MooseUtils::split(getCommandLineArgsParamHelper(i), ";"))
     {
@@ -776,31 +878,41 @@ MultiApp::createApp(unsigned int i, Real start_time)
   if (app->getOutputFileBase().empty())
     app->setOutputFileBase(_app.getOutputFileBase() + "_" + multiapp_name.str());
   preRunInputFile();
-  app->runInputFile();
 
-  auto & picard_solve = _apps[i]->getExecutioner()->picardSolve();
-  picard_solve.setMultiAppRelaxationFactor(getParam<Real>("relaxation_factor"));
-  picard_solve.setMultiAppRelaxationVariables(
-      getParam<std::vector<std::string>>("relaxed_variables"));
-  if (getParam<Real>("relaxation_factor") != 1.0)
-  {
-    // Store a copy of the previous solution here
-    FEProblemBase & fe_problem_base = _apps[i]->getExecutioner()->feProblem();
-    fe_problem_base.getNonlinearSystemBase().addVector("self_relax_previous", false, PARALLEL);
-  }
+  // Transfer coupling relaxation information to the subapps
+  _apps[i]->fixedPointConfig().sub_relaxation_factor = getParam<Real>("relaxation_factor");
+  _apps[i]->fixedPointConfig().sub_transformed_vars =
+      getParam<std::vector<std::string>>("transformed_variables");
+  // Handle deprecated parameter
+  if (!parameters().isParamSetByAddParam("relaxed_variables"))
+    _apps[i]->fixedPointConfig().sub_transformed_vars =
+        getParam<std::vector<std::string>>("relaxed_variables");
+  _apps[i]->fixedPointConfig().sub_transformed_pps =
+      getParam<std::vector<PostprocessorName>>("transformed_postprocessors");
+
+  app->runInputFile();
+  auto fixed_point_solve = &(_apps[i]->getExecutioner()->fixedPointSolve());
+  if (fixed_point_solve)
+    fixed_point_solve->allocateStorage(false);
 }
 
 std::string
 MultiApp::getCommandLineArgsParamHelper(unsigned int local_app)
 {
 
+  mooseAssert(_cli_args.size() || _cli_args_from_file.size(),
+              "There is no commandLine argument \n");
+
   // Single set of "cli_args" to be applied to all sub apps
   if (_cli_args.size() == 1)
     return _cli_args[0];
-
-  // Unique set of "cli_args" to be applied to each sub apps
-  else
+  else if (_cli_args_from_file.size() == 1)
+    return _cli_args_from_file[0];
+  else if (_cli_args.size())
+    // Unique set of "cli_args" to be applied to each sub apps
     return _cli_args[local_app + _first_local_app];
+  else
+    return _cli_args_from_file[local_app + _first_local_app];
 }
 
 LocalRankConfig
@@ -867,8 +979,8 @@ rankConfig(dof_id_type rank,
   return {n_local_apps, app_index, n_local_apps, app_index, is_first_local_rank};
 }
 
-LocalRankConfig
-MultiApp::buildComm(bool batch_mode)
+void
+MultiApp::buildComm()
 {
   int ierr;
 
@@ -889,22 +1001,16 @@ MultiApp::buildComm(bool batch_mode)
   ierr = MPI_Comm_rank(_communicator.get(), &rank);
   mooseCheckMPIErr(ierr);
 
-  auto config = rankConfig(_orig_rank,
-                           _orig_num_procs,
-                           _total_num_apps,
-                           _min_procs_per_app,
-                           _max_procs_per_app,
-                           batch_mode);
-  _my_num_apps = config.num_local_apps;
-  _first_local_app = config.first_local_app_index;
+  _my_num_apps = _rank_config.num_local_apps;
+  _first_local_app = _rank_config.first_local_app_index;
 
-  _has_an_app = config.num_local_apps > 0;
-  if (config.first_local_app_index >= _total_num_apps)
+  _has_an_app = _rank_config.num_local_apps > 0;
+  if (_rank_config.first_local_app_index >= _total_num_apps)
     mooseError("Internal error, a processor has an undefined app.");
 
   if (_has_an_app)
   {
-    _communicator.split(config.first_local_app_index, rank, _my_communicator);
+    _communicator.split(_rank_config.first_local_app_index, rank, _my_communicator);
     ierr = MPI_Comm_rank(_my_comm, &_my_rank);
     mooseCheckMPIErr(ierr);
   }
@@ -913,7 +1019,6 @@ MultiApp::buildComm(bool batch_mode)
     _communicator.split(MPI_UNDEFINED, rank, _my_communicator);
     _my_rank = 0;
   }
-  return config;
 }
 
 unsigned int

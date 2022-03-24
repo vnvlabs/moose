@@ -21,8 +21,6 @@
 
 registerMooseObject("MooseApp", SideSetsFromBoundingBoxGenerator);
 
-defineLegacyParams(SideSetsFromBoundingBoxGenerator);
-
 InputParameters
 SideSetsFromBoundingBoxGenerator::validParams()
 {
@@ -87,7 +85,7 @@ SideSetsFromBoundingBoxGenerator::generate()
     for (const auto & elem : mesh->active_element_ptr_range())
     {
       // boolean if element centroid is in bounding box
-      bool contains = _bounding_box.contains_point(elem->centroid());
+      bool contains = _bounding_box.contains_point(elem->vertex_average());
 
       // check if active elements are found in the bounding box
       if (contains)

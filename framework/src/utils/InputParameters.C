@@ -32,19 +32,23 @@ InputParameters::InputParameters()
     _collapse_nesting(false),
     _moose_object_syntax_visibility(true),
     _show_deprecated_message(true),
-    _allow_copy(true)
+    _allow_copy(true),
+    _from_legacy_construction(true)
 {
 }
 
 InputParameters::InputParameters(const InputParameters & rhs)
-  : Parameters(), _show_deprecated_message(true), _allow_copy(true)
+  : Parameters(),
+    _show_deprecated_message(true),
+    _allow_copy(true),
+    _from_legacy_construction(rhs._from_legacy_construction)
 
 {
   *this = rhs;
 }
 
 InputParameters::InputParameters(const Parameters & rhs)
-  : _show_deprecated_message(true), _allow_copy(true)
+  : _show_deprecated_message(true), _allow_copy(true), _from_legacy_construction(true)
 {
   _params.clear();
   Parameters::operator=(rhs);
@@ -63,6 +67,7 @@ InputParameters::clear()
   _moose_object_syntax_visibility = true;
   _show_deprecated_message = true;
   _allow_copy = true;
+  _from_legacy_construction = true;
   _block_fullpath = "";
   _block_location = "";
 }
@@ -1040,6 +1045,30 @@ InputParameters::setParamHelper<MaterialPropertyName, int>(const std::string & /
 }
 
 template <>
+void
+InputParameters::setParamHelper<MooseFunctorName, Real>(const std::string & /*name*/,
+                                                        MooseFunctorName & l_value,
+                                                        const Real & r_value)
+{
+  // Assign the default value so that it appears in the dump
+  std::ostringstream oss;
+  oss << r_value;
+  l_value = oss.str();
+}
+
+template <>
+void
+InputParameters::setParamHelper<MooseFunctorName, int>(const std::string & /*name*/,
+                                                       MooseFunctorName & l_value,
+                                                       const int & r_value)
+{
+  // Assign the default value so that it appears in the dump
+  std::ostringstream oss;
+  oss << r_value;
+  l_value = oss.str();
+}
+
+template <>
 const MooseEnum &
 InputParameters::getParamHelper<MooseEnum>(const std::string & name,
                                            const InputParameters & pars,
@@ -1107,4 +1136,13 @@ InputParameters::getControllableParameters() const
     if (it->second._controllable)
       controllable.emplace(it->first);
   return controllable;
+}
+
+std::string
+InputParameters::errorPrefix(const std::string & param) const
+{
+  auto prefix = param + ":";
+  if (!inputLocation(param).empty())
+    prefix = inputLocation(param) + ": (" + paramFullpath(param) + ")";
+  return prefix;
 }

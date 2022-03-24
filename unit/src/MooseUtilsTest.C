@@ -166,8 +166,14 @@ TEST(MooseUtils, convertStringInt)
   EXPECT_THROW(MooseUtils::convert<long long int>("42.1", true), std::invalid_argument);
 
   EXPECT_EQ(MooseUtils::convert<unsigned long long int>("42"), 42ull);
+  EXPECT_EQ(MooseUtils::convert<unsigned long long int>("18446744073709551615"),
+            18446744073709551615ull);
   EXPECT_EQ(MooseUtils::convert<unsigned long long int>("18446744073709551614"),
             18446744073709551614ull);
+  EXPECT_EQ(MooseUtils::convert<unsigned long long int>("18446744073709551613"),
+            18446744073709551613ull);
+  EXPECT_EQ(MooseUtils::convert<unsigned long long int>("17446744073709551600"),
+            17446744073709551600ull);
   EXPECT_THROW(MooseUtils::convert<unsigned long long int>("-42", true), std::invalid_argument);
   EXPECT_THROW(MooseUtils::convert<unsigned long long int>("", true), std::invalid_argument);
   EXPECT_THROW(MooseUtils::convert<unsigned long long int>("42 ", true), std::invalid_argument);
@@ -410,4 +416,47 @@ TEST(MooseUtils, directory)
   MooseUtils::removedirs(rpath);
   EXPECT_FALSE(MooseUtils::pathExists(path));
   EXPECT_THROW(MooseUtils::makedirs("/should_not_access", true), std::invalid_argument);
+}
+
+TEST(MooseUtils, globCompare)
+{
+  EXPECT_TRUE(MooseUtils::globCompare("Bell", "?ell"));
+  EXPECT_TRUE(MooseUtils::globCompare("Bovine", "*vin*"));
+  EXPECT_TRUE(MooseUtils::globCompare("Bathroom", "Ba*"));
+  EXPECT_TRUE(MooseUtils::globCompare("Mop", "M*op"));
+  EXPECT_TRUE(MooseUtils::globCompare("Four", "????"));
+  EXPECT_TRUE(MooseUtils::globCompare("Bathroom", "*room"));
+  EXPECT_TRUE(MooseUtils::globCompare("Irradiation", "*ra*o*"));
+  EXPECT_TRUE(MooseUtils::globCompare("Clock", "C*ck"));
+  EXPECT_TRUE(MooseUtils::globCompare("LoveIsInTheAirTonight", "LoveIsInThe???Tonight"));
+  EXPECT_FALSE(MooseUtils::globCompare("Moose", "*ealII*"));
+  EXPECT_FALSE(MooseUtils::globCompare("FEM", "?EN"));
+  EXPECT_FALSE(MooseUtils::globCompare("Three", "????"));
+}
+
+TEST(MooseUtils, SemidynamicVector)
+{
+  MooseUtils::SemidynamicVector<int, 10> test(4);
+  EXPECT_EQ(test.size(), 4);
+  EXPECT_EQ(test.max_size(), 10);
+
+  // test iterator
+  unsigned int count = 0;
+  for (auto & i : test)
+    i = ++count;
+  EXPECT_EQ(count, 4);
+
+  // test resize
+  test.resize(6);
+  count = 0;
+  for (auto & i : test)
+    i = ++count;
+  EXPECT_EQ(count, 6);
+
+  // test const_iterator
+  const auto & ctest = test;
+  count = 0;
+  for (auto & i : ctest)
+    count += i;
+  EXPECT_EQ(count, 1 + 2 + 3 + 4 + 5 + 6);
 }

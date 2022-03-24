@@ -13,12 +13,7 @@
 #include "FEProblemBase.h"
 #include "Eigenvalue.h"
 
-// Forward declarations
-class EigenProblem;
 class NonlinearEigenSystem;
-
-template <>
-InputParameters validParams<EigenProblem>();
 
 /**
  * Problem for solving eigenvalue problems
@@ -29,6 +24,11 @@ public:
   static InputParameters validParams();
 
   EigenProblem(const InputParameters & parameters);
+
+  virtual std::string solverTypeString() override
+  {
+    return Moose::stringify(solverParams()._eigen_solve_type);
+  }
 
 #ifdef LIBMESH_HAVE_SLEPC
   virtual void solve() override;
@@ -66,29 +66,37 @@ public:
                         const Real value = std::numeric_limits<Real>::max());
 
   /**
-   * Whether or not we do free power iteration. It is used in convergence check.
+   * Set an initial eigenvalue for initial normalization
+   */
+  void setInitialEigenvalue(const Real initial_eigenvalue)
+  {
+    _initial_eigenvalue = initial_eigenvalue;
+  }
+
+  /**
+   * Whether or not we are doing free power iteration. It is used in convergence check.
    * We need to mark the solver as "converged" when doing free power to retrieve
    * the final solution from SLPEc
    */
   bool doFreePowerIteration() const { return _do_free_power_iteration; }
 
   /**
-   * Set a flag to indicate whether or not we do free power iteration.
+   * Set a flag to indicate whether or not we are doing free power iterations.
    */
   void doFreePowerIteration(bool do_power) { _do_free_power_iteration = do_power; }
 
   /**
-   * Eigenvector need to be scaled back if it was scaled in an ealier stage
-   * Scaling eigen vector does not affect solution (eigenvaue, eigenvector),
-   * but it does affect the convergence rate. To have a optimal converge rate,
-   * We pre scale eigen vector using the same factor as that computed in
+   * Eigenvector need to be scaled back if it was scaled in an earlier stage
+   * Scaling eigen vector does not affect solution (eigenvalue, eigenvector),
+   * but it does affect the convergence rate. To have an optimal convergence rate,
+   * We pre-scale eigen vector using the same factor as the one computed in
    * "postScaleEigenVector"
    */
-  void preScaleEigenVector();
+  void preScaleEigenVector(const std::pair<Real, Real> & eig);
 
   /**
    * Normalize eigen vector. Scale eigen vector such as ||x|| = _normal_factor
-   * This might be useful when couple to other physics
+   * This might be useful when coupling to other physics
    */
   void postScaleEigenVector();
 
@@ -98,7 +106,7 @@ public:
   void scaleEigenvector(const Real scaling_factor);
 
   /**
-   * Set eigen problem type. Don't need to use this if we use Newton eigenvaue solver.
+   * Set eigen problem type. Don't need to use this if we use Newton eigenvalue solver.
    */
   void setEigenproblemType(Moose::EigenProblemType eigen_problem_type);
 
@@ -123,7 +131,7 @@ public:
                            const std::set<TagID> & tags);
 
   /**
-   * Form two Jacobian matrices, whre each is associateed with one tag, through one
+   * Form two Jacobian matrices, where each is associated with one tag, through one
    * element-loop.
    */
   void computeJacobianAB(const NumericVector<Number> & soln,
@@ -142,7 +150,7 @@ public:
                                   TagID tag) override;
 
   /**
-   * Form two vetors, whre each is associateed with one tag, through one
+   * Form two vetors, where each is associated with one tag, through one
    * element-loop.
    */
   void computeResidualAB(const NumericVector<Number> & soln,
@@ -150,6 +158,12 @@ public:
                          NumericVector<Number> & residualB,
                          TagID tagA,
                          TagID tagB);
+
+  /**
+   * Convenience function for performing execution of MOOSE systems.
+   * We override this function to perform an initial scaling.
+   */
+  virtual void execute(const ExecFlagType & exec_type) override;
 
   /**
    * For nonlinear eigen solver, a good initial value can help convergence.
@@ -183,6 +197,36 @@ public:
    */
   void outputInverseEigenvalue(bool inverse) { _output_inverse_eigenvalue = inverse; }
 
+  /**
+   * Whether or not we are in a linear solver iteration
+   */
+  bool onLinearSolver() const { return _on_linear_solver; }
+
+  /**
+   * Set a flag to indicate whether or not we are in a linear solver iteration
+   */
+  void onLinearSolver(bool ols) { _on_linear_solver = ols; }
+
+  /**
+   * Whether or not matrices are constant
+   */
+  bool constantMatrices() const { return _constant_matrices; }
+
+  /**
+   * Set a flag to indicate whether or not we use constant matrices
+   */
+  void constantMatrices(bool cm) { _constant_matrices = cm; }
+
+  /**
+   * Whether or not constant matrices were already formed
+   */
+  bool wereMatricesFormed() const { return _matrices_formed; }
+
+  /**
+   * Set a flag to indicate whether or not constant matrices were already formed
+   */
+  void wereMatricesFormed(bool mf) { _matrices_formed = mf; }
+
 private:
   /**
    * Do some free/extra power iterations
@@ -206,20 +250,19 @@ protected:
   /// Which eigenvalue is used to compute residual. By default the zeroth eigenvalue
   /// is used.
   unsigned int _active_eigen_index;
+
   /// Whether or not we are doing free power iteration. Free power iteration is
   /// often used to compute initial guess for Newton eigen solver. It is automatically
   /// triggered by Eigenvalue Executioner
   bool _do_free_power_iteration;
-  /// Whether or not output eigenvalue as its inverse. By default, we output regular eigenvaue.
+  /// Whether or not output eigenvalue as its inverse. By default, we output regular eigenvalue.
   bool _output_inverse_eigenvalue;
-  /// Timers
-  PerfID _compute_jacobian_tag_timer;
-  PerfID _compute_jacobian_ab_timer;
-  PerfID _compute_residual_tag_timer;
-  PerfID _compute_residual_ab_timer;
-  PerfID _solve_timer;
-  PerfID _compute_jacobian_blocks_timer;
-
+  /// Whether or not we are in linear solver
+  bool _on_linear_solver;
+  /// Whether or not matrices had been formed
+  bool _matrices_formed;
+  /// Whether or not require constant matrices
+  bool _constant_matrices;
   /// Whether or not we normalize eigenvector
   bool _has_normalization;
   /// Postprocessor used to compute a factor from eigenvector
@@ -227,6 +270,8 @@ protected:
   /// Postprocessor target value. The value of postprocessor should equal to
   /// '_normal_factor' by adjusting eigenvector
   Real _normal_factor;
-  /// A flag to indicate if it is the first time of calling solve
+  /// A flag to indicate if it is the first time calling the solve
   bool & _first_solve;
+  /// A value used for initial normalization
+  Real _initial_eigenvalue;
 };

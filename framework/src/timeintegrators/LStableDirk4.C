@@ -14,8 +14,6 @@
 
 registerMooseObject("MooseApp", LStableDirk4);
 
-defineLegacyParams(LStableDirk4);
-
 InputParameters
 LStableDirk4::validParams()
 {
@@ -68,7 +66,9 @@ LStableDirk4::computeTimeDerivatives()
 }
 
 void
-LStableDirk4::computeADTimeDerivatives(DualReal & ad_u_dot, const dof_id_type & dof) const
+LStableDirk4::computeADTimeDerivatives(DualReal & ad_u_dot,
+                                       const dof_id_type & dof,
+                                       DualReal & /*ad_u_dotdot*/) const
 {
   computeTimeDerivativeHelper(ad_u_dot, _solution_old(dof));
 }
@@ -95,7 +95,7 @@ LStableDirk4::solve()
     // parameters for PETSc.
     _fe_problem.initPetscOutput();
 
-    _console << "Stage " << _stage << "\n";
+    _console << "Stage " << _stage << std::endl;
 
     // Set the time for this stage
     _fe_problem.time() = time_old + _c[_stage - 1] * _dt;

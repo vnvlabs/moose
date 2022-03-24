@@ -72,8 +72,9 @@ enumerated below. The convention followed is:
 - A sink has $s>0$.  This removes fluid or heat from the simulation domain;
 - A source has $s<0$.  This adds fluid or heat to the simulation domain.
 
-The input parameters for each PorousFlow polyline sink involve a plain text file whose lines are
-space-separated quantities:
+There are two separate input formats for the PorousFlow polyline sink. The first requires the location for each point along the line length to be specified. The second is relevant for straight lines only, and requires a starting location, direction and length.
+
+The first input format can be defined by either a plain text file or a reporter. In the plain text file, each point is specified by a line containing the following space-separated quantities:
 \begin{equation}
 \label{eq:bh_plaintext_format}
 {\mathtt{w_{i}\ x_{i}\ y_{i}\ z_{i}}}
@@ -82,14 +83,25 @@ space-separated quantities:
 The weighting terms, $w_{i}$, are for user convenience, but for the Peaceman borehole case they are
 the borehole radius at point $x_{i}$.
 
-Rather than manually specifying each point via the separate points file, the
-line may be specified instead using the combination of the following parameters:
+The reporter format for point data supplies the same coordinate and weighting data using the following syntax:
+
+!listing modules/porous_flow/test/tests/dirackernels/pls02reporter.i start=weight_reporter end=piecewise-linear
+
+where the polyline coordinates and weighting are defined in the following [ConstantReporter](/ConstantReporter.md):
+
+!listing modules/porous_flow/test/tests/dirackernels/pls02reporter.i block=Reporters
+
+Reporter input provides an easy way to control polyline sink point locations from a [Sampler](Samplers/index.md) multi-app.  
+It is an error to supply both plaint text file and reporter input for the point data.
+
+Rather than manually specifying each point via the separate points file or reporter, the second input format allows the 
+line to be specified using the combination of the following parameters:
 
 - `line_base = '[w] [x] [y] [z]'`: the base/start point for the line
 - `line_direction = '[dx] [dy] [dz]'`: line direction (does not need to be unit-length)
 - `line_length = [length]`: exactly what you expect - the line length.
 
-It is an error to specify both a point (plain text) file parameter and the
+It is an error to specify both a point (plain text file or reporter) parameter, and the
 line base parameter.  When specifying the line this way, one point will be
 generated along the line for each element the line passes through.  These
 points are automatically updated when the mesh changes due to adaptivity,
@@ -126,7 +138,7 @@ during the simulation.
 
 
 !alert warning
-When using the PorousFlow Dirac Kernels in conjunction with [`PorousFlowPorosity`](porosity.md) that depends on volumetric strain (`mechanical = true`) you should set `strain_at_nearest_qp = true` in your GlobalParams block.  This ensures the nodal Porosity Material uses the volumetric strain at the Dirac quadpoint(s).  Otherwise, a nodal Porosity Material evaluated at node $i$ in an element will attempt to use the $i^{th}$ member of volumetric strain, but volumetric strain will only be of size equal to the number of Dirac points in the element.
+When using the PorousFlow Dirac Kernels in conjunction with [`PorousFlowPorosity`](/porous_flow/porosity.md) that depends on volumetric strain (`mechanical = true`) you should set `strain_at_nearest_qp = true` in your GlobalParams block.  This ensures the nodal Porosity Material uses the volumetric strain at the Dirac quadpoint(s).  Otherwise, a nodal Porosity Material evaluated at node $i$ in an element will attempt to use the $i^{th}$ member of volumetric strain, but volumetric strain will only be of size equal to the number of Dirac points in the element.
 
 ## Polyline sinks as functions of porepressure and/or temperature
 

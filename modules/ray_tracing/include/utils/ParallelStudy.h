@@ -219,6 +219,12 @@ protected:
   virtual void postExecuteChunk(const work_iterator /* begin */, const work_iterator /* end */) {}
 
   /**
+   * Insertion point called just after trying to receive work and just before beginning
+   * work on the work buffer
+   */
+  virtual void preReceiveAndExecute() {}
+
+  /**
    * Pure virtual for acting on parallel data that has JUST been received and
    * filled into the buffer.
    *
@@ -385,11 +391,11 @@ ParallelStudy<WorkType, ParallelDataType>::ParallelStudy(
     _clicks_per_root_communication(params.get<unsigned int>("clicks_per_root_communication")),
     _clicks_per_receive(params.get<unsigned int>("clicks_per_receive")),
 
-    _parallel_data_buffer_tag(Parallel::MessageTag(100)),
+    _parallel_data_buffer_tag(comm.get_unique_tag()),
     _parallel_data_pools(libMesh::n_threads()),
     _temp_threaded_work(libMesh::n_threads()),
     _work_buffer(createWorkBuffer()),
-    _receive_buffer(libmesh_make_unique<
+    _receive_buffer(std::make_unique<
                     ReceiveBuffer<ParallelDataType, ParallelStudy<WorkType, ParallelDataType>>>(
         comm, this, _method, _clicks_per_receive, _parallel_data_buffer_tag)),
 
@@ -416,9 +422,9 @@ ParallelStudy<WorkType, ParallelDataType>::createWorkBuffer()
 
   const auto buffer_type = _params.get<MooseEnum>("work_buffer_type");
   if (buffer_type == "lifo")
-    buffer = libmesh_make_unique<MooseUtils::LIFOBuffer<WorkType>>();
+    buffer = std::make_unique<MooseUtils::LIFOBuffer<WorkType>>();
   else if (buffer_type == "circular")
-    buffer = libmesh_make_unique<MooseUtils::CircularBuffer<WorkType>>();
+    buffer = std::make_unique<MooseUtils::CircularBuffer<WorkType>>();
   else
     mooseError("Unknown work buffer type");
 
@@ -440,7 +446,7 @@ ParallelStudy<WorkType, ParallelDataType>::validParams()
       "The number of objects to process at one time during execution");
   params.addRangeCheckedParam<unsigned int>("clicks_per_communication",
                                             10,
-                                            "clicks_per_communication > 0",
+                                            "clicks_per_communication >= 0",
                                             "Iterations to wait before communicating");
   params.addRangeCheckedParam<unsigned int>("clicks_per_root_communication",
                                             10,
@@ -542,8 +548,8 @@ ParallelStudy<WorkType, ParallelDataType>::executeAndBuffer(const std::size_t ch
     if (threaded_work_size)
     {
       // We don't ever want to decrease the capacity, so only set it if we need more entries
-      if (_work_buffer->capacity() < _work_buffer->capacity() + threaded_work_size)
-        _work_buffer->setCapacity(_work_buffer->capacity() + threaded_work_size);
+      if (_work_buffer->capacity() < _work_buffer->size() + threaded_work_size)
+        _work_buffer->setCapacity(_work_buffer->size() + threaded_work_size);
 
       // Move the work into the buffer
       for (auto & threaded_work_vector : _temp_threaded_work)
@@ -582,7 +588,7 @@ ParallelStudy<WorkType, ParallelDataType>::moveParallelDataToBuffer(
   if (find_pair == _send_buffers.end())
     _send_buffers
         .emplace(dest_pid,
-                 libmesh_make_unique<
+                 std::make_unique<
                      SendBuffer<ParallelDataType, ParallelStudy<WorkType, ParallelDataType>>>(
                      comm(),
                      this,
@@ -647,6 +653,8 @@ ParallelStudy<WorkType, ParallelDataType>::receiveAndExecute()
     _receive_buffer->receive();
 
   postReceiveParallelDataInternal();
+
+  preReceiveAndExecute();
 
   while (!_work_buffer->empty())
   {
@@ -811,7 +819,7 @@ ParallelStudy<WorkType, ParallelDataType>::harmExecute()
   // Work completed by each processor
   std::vector<unsigned long long int> work_completed_per_proc(comm().size(), 0);
   // Tag for sending work finished
-  Parallel::MessageTag work_completed_requests_tag = Parallel::MessageTag(21000);
+  const auto work_completed_requests_tag = comm().get_unique_tag();
 
   // Get the amount of work that was started in the whole domain
   comm().sum(_local_work_started, _total_work_started, work_started_request);

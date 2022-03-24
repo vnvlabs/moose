@@ -12,8 +12,6 @@
 #include "FEProblem.h"
 #include "PetscSupport.h"
 
-defineLegacyParams(ExplicitRK2);
-
 InputParameters
 ExplicitRK2::validParams()
 {
@@ -61,7 +59,9 @@ ExplicitRK2::computeTimeDerivatives()
 }
 
 void
-ExplicitRK2::computeADTimeDerivatives(DualReal & ad_u_dot, const dof_id_type & dof) const
+ExplicitRK2::computeADTimeDerivatives(DualReal & ad_u_dot,
+                                      const dof_id_type & dof,
+                                      DualReal & /*ad_u_dotdot*/) const
 {
   computeTimeDerivativeHelper(ad_u_dot, _solution_old(dof), _solution_older(dof));
 }
@@ -82,7 +82,7 @@ ExplicitRK2::solve()
   // non-time Kernels (which should be marked implicit=false) are
   // evaluated at the old solution during this stage.
   _fe_problem.initPetscOutput();
-  _console << "1st solve\n";
+  _console << "1st solve" << std::endl;
   _stage = 2;
   _fe_problem.timeOld() = time_old;
   _fe_problem.time() = time_stage2;
@@ -101,7 +101,7 @@ ExplicitRK2::solve()
   // The "update" stage (which we call stage 3) requires an additional
   // solve with the mass matrix.
   _fe_problem.initPetscOutput();
-  _console << "2nd solve\n";
+  _console << "2nd solve" << std::endl;
   _stage = 3;
   _fe_problem.timeOld() = time_stage2;
   _fe_problem.time() = time_new;

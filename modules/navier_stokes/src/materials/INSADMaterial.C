@@ -12,27 +12,28 @@
 #include "Assembly.h"
 #include "INSADObjectTracker.h"
 #include "FEProblemBase.h"
+#include "NS.h"
 
 registerMooseObject("NavierStokesApp", INSADMaterial);
 
 InputParameters
 INSADMaterial::validParams()
 {
-  InputParameters params = ADMaterial::validParams();
+  InputParameters params = Material::validParams();
   params.addClassDescription("This is the material class used to compute some of the strong "
                              "residuals for the INS equations.");
   params.addRequiredCoupledVar("velocity", "The velocity");
-  params.addRequiredCoupledVar("pressure", "The pressure");
+  params.addRequiredCoupledVar(NS::pressure, "The pressure");
   params.addParam<MaterialPropertyName>("mu_name", "mu", "The name of the dynamic viscosity");
   params.addParam<MaterialPropertyName>("rho_name", "rho", "The name of the density");
   return params;
 }
 
 INSADMaterial::INSADMaterial(const InputParameters & parameters)
-  : ADMaterial(parameters),
+  : Material(parameters),
     _velocity(adCoupledVectorValue("velocity")),
     _grad_velocity(adCoupledVectorGradient("velocity")),
-    _grad_p(adCoupledGradient("pressure")),
+    _grad_p(adCoupledGradient(NS::pressure)),
     _mu(getADMaterialProperty<Real>("mu_name")),
     _rho(getADMaterialProperty<Real>("rho_name")),
     _velocity_dot(nullptr),

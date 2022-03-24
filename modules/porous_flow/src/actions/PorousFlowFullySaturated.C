@@ -172,6 +172,8 @@ PorousFlowFullySaturated::addKernels()
     params.set<UserObjectName>("PorousFlowDictator") = _dictator_name;
     params.set<bool>("multiply_by_density") = _multiply_by_density;
     params.set<bool>("strain_at_nearest_qp") = _strain_at_nearest_qp;
+    if (!_base_name.empty())
+      params.set<std::string>("base_name") = _base_name;
 
     for (unsigned i = 0; i < _num_mass_fraction_vars; ++i)
     {
@@ -317,9 +319,15 @@ PorousFlowFullySaturated::addMaterials()
 
   if (_deps.dependsOn(_included_objects, "volumetric_strain_qp") ||
       _deps.dependsOn(_included_objects, "volumetric_strain_nodal"))
-    addVolumetricStrainMaterial(_coupled_displacements, true);
+    addVolumetricStrainMaterial(_coupled_displacements, _base_name);
 
-  if (_deps.dependsOn(_included_objects,
-                      "relative_permeability_qp")) // might be needed by Darcy-velocity Aux
-    addRelativePermeabilityCorey(false, 0, 0.0, 0.0, 0.0);
+  // Relative permeability might be needed by Darcy-velocity Aux, so add a material
+  // setting kr=1
+  if (_deps.dependsOn(_included_objects, "relative_permeability_qp"))
+    addRelativePermeabilityConst(false, 0, 1.0);
+
+  // Some obects not added by this action might have a use_mobility = true param,
+  // which needs a nodal relative permeability
+  if (_deps.dependsOn(_included_objects, "relative_permeability_nodal"))
+    addRelativePermeabilityConst(true, 0, 1.0);
 }

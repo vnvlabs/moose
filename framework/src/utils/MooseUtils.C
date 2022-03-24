@@ -15,13 +15,28 @@
 #include "InputParameters.h"
 #include "ExecFlagEnum.h"
 #include "InfixIterator.h"
+#include "MaterialBase.h"
+#include "MortarConstraintBase.h"
+#include "MortarNodalAuxKernel.h"
 
 #include "libmesh/utility.h"
 #include "libmesh/elem.h"
 
 // External includes
 #include "pcrecpp.h"
+/**
+ * Ignore GCC warnings from tinydir corresponding to memory overlap and possible
+ * uninitialized variables
+ */
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wrestrict"
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 #include "tinydir.h"
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 // C++ includes
 #include <iostream>
@@ -35,9 +50,7 @@
 #include <numeric>
 #include <unistd.h>
 
-#ifdef LIBMESH_HAVE_PETSC
 #include "petscsys.h"
-#endif
 
 #ifdef __WIN32__
 #include <windows.h>
@@ -66,6 +79,7 @@ runTestsExecutable()
   // TODO: maybe no path prefix - just moose_test_runner here?
   return pathjoin(Moose::getExecutablePath(), "moose_test_runner");
 }
+
 std::string
 findTestRoot()
 {
@@ -81,21 +95,31 @@ findTestRoot()
 }
 
 std::string
-installedTestsDir(const std::string & app_name)
+installedInputsDir(const std::string & app_name, const std::string & dir_name)
 {
-  std::string installed_path = pathjoin(Moose::getExecutablePath(), "../share", app_name, "test");
+  // See moose.mk for a detailed explanation of the assumed installed application
+  // layout. Installed inputs are expected to be installed in "share/<app_name>/<folder>".
+  // The binary, which has a defined location will be in "bin", a peer directory to "share".
+  std::string installed_path =
+      pathjoin(Moose::getExecutablePath(), "..", "share", app_name, dir_name);
 
-  auto testroot = pathjoin(installed_path, "testroot");
-  if (pathExists(testroot) && checkFileReadable(testroot))
-    return installed_path;
-  return "";
+  auto test_root = pathjoin(installed_path, "testroot");
+  if (!pathExists(installed_path))
+    mooseError("Couldn't locate any installed inputs to copy in path: ", installed_path);
+
+  checkFileReadable(test_root);
+  return installed_path;
 }
 
 std::string
 docsDir(const std::string & app_name)
 {
-  std::string installed_path = pathjoin(Moose::getExecutablePath(), "../share", app_name, "doc");
-  auto docfile = pathjoin(installed_path, "css/moose.css");
+  // See moose.mk for a detailed explanation of the assumed installed application
+  // layout. Installed docs are expected to be installed in "share/<app_name>/doc".
+  // The binary, which has a defined location will be in "bin", a peer directory to "share".
+  std::string installed_path = pathjoin(Moose::getExecutablePath(), "..", "share", app_name, "doc");
+
+  auto docfile = pathjoin(installed_path, "css", "moose.css");
   if (pathExists(docfile) && checkFileReadable(docfile))
     return installed_path;
   return "";
@@ -410,6 +434,19 @@ splitFileName(std::string full_file)
   return std::pair<std::string, std::string>(path, file);
 }
 
+std::string
+getCurrentWorkingDir()
+{
+  // Note: At the time of creating this method, our minimum compiler still
+  // does not support <filesystem>. Additionally, the inclusion of that header
+  // requires an additional library to be linked so for now, we'll just
+  // use the Unix standard library to get us the cwd().
+  constexpr unsigned int BUF_SIZE = 1024;
+  char buffer[BUF_SIZE];
+
+  return getcwd(buffer, BUF_SIZE) != nullptr ? buffer : "";
+}
+
 void
 makedirs(const std::string & dir_name, bool throw_on_failure)
 {
@@ -632,6 +669,8 @@ MaterialPropertyStorageDump(
       }
     }
   }
+
+  Moose::out << std::flush;
 }
 
 std::string &
@@ -645,7 +684,8 @@ removeColor(std::string & msg)
 void
 indentMessage(const std::string & prefix,
               std::string & message,
-              const char * color /*= COLOR_CYAN*/)
+              const char * color /*= COLOR_CYAN*/,
+              bool indent_first_line)
 {
   // First we need to see if the message we need to indent (with color) also contains color codes
   // that span lines.
@@ -658,13 +698,19 @@ indentMessage(const std::string & prefix,
 
   bool ends_in_newline = message.empty() ? true : message.back() == '\n';
 
+  bool first = true;
+
   std::istringstream iss(message);
   for (std::string line; std::getline(iss, line);) // loop over each line
   {
     const static pcrecpp::RE match_color(".*(\\33\\[3\\dm)((?!\\33\\[3\\d)[^\n])*");
     pcrecpp::StringPiece line_piece(line);
     match_color.FindAndConsume(&line_piece, &color_code);
-    colored_message += color + prefix + ": " + curr_color + line;
+
+    if (!first || indent_first_line)
+      colored_message += color + prefix + ": " + curr_color;
+
+    colored_message += line;
 
     // Only add a newline to the last line if it had one to begin with!
     if (!iss.eof() || ends_in_newline)
@@ -672,6 +718,8 @@ indentMessage(const std::string & prefix,
 
     if (!color_code.empty())
       curr_color = color_code; // remember last color of this line
+
+    first = false;
   }
   message = colored_message;
 }
@@ -773,6 +821,29 @@ wildCardMatch(std::string name, std::string search_string)
     return false;
 }
 
+bool
+globCompare(const std::string & candidate,
+            const std::string & pattern,
+            std::size_t c,
+            std::size_t p)
+{
+  if (p == pattern.size())
+    return c == candidate.size();
+
+  if (pattern[p] == '*')
+  {
+    for (; c < candidate.size(); ++c)
+      if (globCompare(candidate, pattern, c, p + 1))
+        return true;
+    return globCompare(candidate, pattern, c, p + 1);
+  }
+
+  if (pattern[p] != '?' && pattern[p] != candidate[c])
+    return false;
+
+  return globCompare(candidate, pattern, c + 1, p + 1);
+}
+
 template <typename T>
 T
 convertStringToInt(const std::string & str, bool throw_on_failure)
@@ -783,8 +854,15 @@ convertStringToInt(const std::string & str, bool throw_on_failure)
   // This would be the case for scientific notation
   long double double_val;
   std::stringstream double_ss(str);
+  double_ss >> double_val;
 
-  if ((double_ss >> double_val).fail() || !double_ss.eof())
+  // on arm64 the long double does not have sufficient precission
+  bool use_int = false;
+  std::stringstream int_ss(str);
+  if (!(int_ss >> val).fail() && int_ss.eof())
+    use_int = true;
+
+  if (double_ss.fail() || !double_ss.eof())
   {
     std::string msg =
         std::string("Unable to convert '") + str + "' to type " + demangle(typeid(T).name());
@@ -795,21 +873,18 @@ convertStringToInt(const std::string & str, bool throw_on_failure)
       mooseError(msg);
   }
 
-  // Check to see if it's an integer (and within range of an integer
+  // Check to see if it's an integer (and within range of an integer)
   if (double_val == static_cast<T>(double_val))
-    val = double_val;
-  else // Still failure
-  {
-    std::string msg =
-        std::string("Unable to convert '") + str + "' to type " + demangle(typeid(T).name());
+    return use_int ? val : static_cast<T>(double_val);
 
-    if (throw_on_failure)
-      throw std::invalid_argument(msg);
-    else
-      mooseError(msg);
-  }
+  // Still failure
+  std::string msg =
+      std::string("Unable to convert '") + str + "' to type " + demangle(typeid(T).name());
 
-  return val;
+  if (throw_on_failure)
+    throw std::invalid_argument(msg);
+  else
+    mooseError(msg);
 }
 
 template <>
@@ -895,7 +970,8 @@ getDefaultExecFlagEnum()
                               EXEC_TIMESTEP_END,
                               EXEC_TIMESTEP_BEGIN,
                               EXEC_FINAL,
-                              EXEC_CUSTOM);
+                              EXEC_CUSTOM,
+                              EXEC_ALWAYS);
   return exec_enum;
 }
 
@@ -1078,7 +1154,6 @@ fileSize(const std::string & filename)
 std::string
 realpath(const std::string & path)
 {
-#ifdef LIBMESH_HAVE_PETSC
   char dummy[PETSC_MAX_PATH_LEN];
 #if defined(PETSC_HAVE_REALPATH)
   // If "realpath" is adopted by PETSc and
@@ -1095,17 +1170,6 @@ realpath(const std::string & path)
     mooseError("Failed to get real path for ", path);
 
   return dummy;
-#else
-#ifndef __WIN32__
-  char dummy[PATH_MAX];
-  if (!realpath(path.c_str(), dummy))
-    mooseError("Failed to get real path for ", path);
-  return dummy;
-#else
-  // on windows, but without PETSc: just return original path
-  return path;
-#endif
-#endif
 }
 
 std::string
@@ -1173,6 +1237,72 @@ prettyCppType(const std::string & cpp_type)
   return s;
 }
 
+template <typename Consumers>
+std::deque<MaterialBase *>
+buildRequiredMaterials(const Consumers & mat_consumers,
+                       const std::vector<std::shared_ptr<MaterialBase>> & mats,
+                       const bool allow_stateful)
+{
+  std::deque<MaterialBase *> required_mats;
+
+  std::unordered_set<unsigned int> needed_mat_props;
+  for (const auto & consumer : mat_consumers)
+  {
+    const auto & mp_deps = consumer->getMatPropDependencies();
+    needed_mat_props.insert(mp_deps.begin(), mp_deps.end());
+  }
+
+  // A predicate of calling this function is that these materials come in already sorted by
+  // dependency with the front of the container having no other material dependencies and following
+  // materials potentially depending on the ones in front of them. So we can start at the back and
+  // iterate forward checking whether the current material supplies anything that is needed, and if
+  // not we discard it
+  for (auto it = mats.rbegin(); it != mats.rend(); ++it)
+  {
+    auto * const mat = it->get();
+    bool supplies_needed = false;
+
+    const auto & supplied_props = mat->getSuppliedPropIDs();
+
+    // Do O(N) with the small container
+    for (const auto supplied_prop : supplied_props)
+    {
+      if (needed_mat_props.count(supplied_prop))
+      {
+        supplies_needed = true;
+        break;
+      }
+    }
+
+    if (!supplies_needed)
+      continue;
+
+    if (!allow_stateful && mat->hasStatefulProperties())
+      mooseError("Someone called buildRequiredMaterials with allow_stateful = false but a material "
+                 "dependency ",
+                 mat->name(),
+                 " computes stateful properties.");
+
+    const auto & mp_deps = mat->getMatPropDependencies();
+    needed_mat_props.insert(mp_deps.begin(), mp_deps.end());
+    required_mats.push_front(mat);
+  }
+
+  return required_mats;
+}
+
+template std::deque<MaterialBase *>
+buildRequiredMaterials(const std::vector<MortarConstraintBase *> &,
+                       const std::vector<std::shared_ptr<MaterialBase>> &,
+                       bool);
+template std::deque<MaterialBase *>
+buildRequiredMaterials(const std::array<const MortarNodalAuxKernelTempl<Real> *, 1> &,
+                       const std::vector<std::shared_ptr<MaterialBase>> &,
+                       bool);
+template std::deque<MaterialBase *>
+buildRequiredMaterials(const std::array<const MortarNodalAuxKernelTempl<RealVectorValue> *, 1> &,
+                       const std::vector<std::shared_ptr<MaterialBase>> &,
+                       bool);
 } // MooseUtils namespace
 
 std::string
@@ -1189,9 +1319,10 @@ getLatestCheckpointFileHelper(const std::list<std::string> & checkpoint_files,
   // Loop through all possible files and store the newest
   for (const auto & cp_file : checkpoint_files)
   {
-    if (find_if(extensions.begin(), extensions.end(), [cp_file](const std::string & ext) {
-          return MooseUtils::hasExtension(cp_file, ext);
-        }) != extensions.end())
+    if (find_if(extensions.begin(),
+                extensions.end(),
+                [cp_file](const std::string & ext)
+                { return MooseUtils::hasExtension(cp_file, ext); }) != extensions.end())
     {
       struct stat stats;
       stat(cp_file.c_str(), &stats);

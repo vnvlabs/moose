@@ -12,10 +12,6 @@
 #include "libmesh/libmesh_common.h"
 #include "libmesh/petsc_macro.h"
 
-#ifdef LIBMESH_HAVE_PETSC
-#if PETSC_VERSION_LESS_THAN(3, 3, 0)
-#else
-
 #include "LineSearch.h"
 
 #include <map>
@@ -54,6 +50,3 @@ protected:
   const std::map<std::pair<unsigned int, unsigned int>, PenetrationLocator *> *
       _pentration_locators;
 };
-
-#endif // PETSC_VERSION_LESS_THAN(3, 3, 0)
-#endif // LIBMESH_HAVE_PETSC

@@ -16,8 +16,6 @@
 
 #include "libmesh/quadrature.h"
 
-defineLegacyParams(MaterialBase);
-
 InputParameters
 MaterialBase::validParams()
 {
@@ -27,6 +25,7 @@ MaterialBase::validParams()
   params += BoundaryRestrictable::validParams();
   params += TransientInterface::validParams();
   params += RandomInterface::validParams();
+  params += FunctorInterface::validParams();
 
   params.addParam<bool>("use_displaced_mesh",
                         false,
@@ -52,6 +51,14 @@ MaterialBase::validParams()
       "output_properties",
       "List of material properties, from this material, to output (outputs "
       "must also be defined to an output type)");
+  params.addParam<MaterialPropertyName>(
+      "declare_suffix",
+      "",
+      "An optional suffix parameter that can be appended to any declared properties. The suffix "
+      "will be prepended with a '_' character.");
+
+  // Allow Material objects to be enabled/disabled by Control objects
+  params.declareControllable("enable");
 
   params.addParamNamesToGroup("outputs output_properties", "Outputs");
   params.addParamNamesToGroup("use_displaced_mesh", "Advanced");
@@ -84,6 +91,7 @@ MaterialBase::MaterialBase(const InputParameters & parameters)
                     false),
     ElementIDInterface(this),
     GeometricSearchInterface(this),
+    FunctorInterface(this),
     _subproblem(*getCheckedPointerParam<SubProblem *>("_subproblem")),
     _fe_problem(*getCheckedPointerParam<FEProblemBase *>("_fe_problem_base")),
     _tid(parameters.get<THREAD_ID>("_tid")),
@@ -94,7 +102,8 @@ MaterialBase::MaterialBase(const InputParameters & parameters)
     _mesh(_subproblem.mesh()),
     _coord_sys(_assembly.coordSystem()),
     _compute(getParam<bool>("compute")),
-    _has_stateful_property(false)
+    _has_stateful_property(false),
+    _declare_suffix(getParam<MaterialPropertyName>("declare_suffix"))
 {
 }
 
@@ -111,10 +120,10 @@ MaterialBase::initStatefulProperties(unsigned int n_points)
   for (auto & prop : _supplied_props)
     if (materialData().getMaterialPropertyStorage().isStatefulProp(prop) &&
         !_overrides_init_stateful_props)
-      mooseError(std::string("Material \"") + name() +
-                 "\" provides one or more stateful "
-                 "properties but initQpStatefulProperties() "
-                 "was not overridden in the derived class.");
+      mooseWarning(std::string("Material \"") + name() +
+                   "\" provides one or more stateful "
+                   "properties but initQpStatefulProperties() "
+                   "was not overridden in the derived class.");
 }
 
 void
@@ -141,18 +150,18 @@ MaterialBase::registerPropName(std::string prop_name, bool is_get, Prop_State st
     _supplied_prop_ids.insert(property_id);
 
     _props_to_flags[prop_name] |= static_cast<int>(state);
+
+    // Store material properties for block ids
+    for (const auto & block_id : blockIDs())
+      _fe_problem.storeSubdomainMatPropName(block_id, prop_name);
+
+    // Store material properties for the boundary ids
+    for (const auto & boundary_id : boundaryIDs())
+      _fe_problem.storeBoundaryMatPropName(boundary_id, prop_name);
   }
 
   if (static_cast<int>(state) % 2 == 0)
     _has_stateful_property = true;
-
-  // Store material properties for block ids
-  for (const auto & block_id : blockIDs())
-    _fe_problem.storeSubdomainMatPropName(block_id, prop_name);
-
-  // Store material properties for the boundary ids
-  for (const auto & boundary_id : boundaryIDs())
-    _fe_problem.storeBoundaryMatPropName(boundary_id, prop_name);
 }
 
 std::set<OutputName>

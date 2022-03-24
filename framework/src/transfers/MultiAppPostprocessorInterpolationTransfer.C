@@ -22,8 +22,6 @@
 
 registerMooseObject("MooseApp", MultiAppPostprocessorInterpolationTransfer);
 
-defineLegacyParams(MultiAppPostprocessorInterpolationTransfer);
-
 InputParameters
 MultiAppPostprocessorInterpolationTransfer::validParams()
 {
@@ -173,7 +171,7 @@ MultiAppPostprocessorInterpolationTransfer::execute()
               std::vector<Point> pts;
               std::vector<Number> vals;
 
-              pts.push_back(elem->centroid());
+              pts.push_back(elem->vertex_average());
               vals.resize(1);
 
               idi->interpolate_field_data(vars, pts, vals);

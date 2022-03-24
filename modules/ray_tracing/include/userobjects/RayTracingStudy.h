@@ -15,7 +15,6 @@
 #include "ElemIndexHelper.h"
 #include "ParallelRayStudy.h"
 #include "RayTracingAttributes.h"
-#include "SidePtrHelper.h"
 #include "TraceData.h"
 #include "TraceRayBndElement.h"
 
@@ -24,6 +23,7 @@
 
 // libMesh includes
 #include "libmesh/mesh.h"
+#include "libmesh/elem_side_builder.h"
 
 // Forward Declarations
 class RayBoundaryConditionBase;
@@ -37,7 +37,7 @@ class RayTracingObject;
  *
  * Subclasses _must_ override generateRays()
  */
-class RayTracingStudy : public GeneralUserObject, public SidePtrHelper
+class RayTracingStudy : public GeneralUserObject
 {
 public:
   RayTracingStudy(const InputParameters & parameters);
@@ -530,7 +530,7 @@ public:
    */
   virtual const Point * getElemNormals(const Elem * /* elem */, const THREAD_ID /* tid */)
   {
-    mooseError("Not implemented");
+    mooseError("Unimplemented element normal caching in ", type(), "::getElemNormals()");
   }
 
   /**
@@ -551,7 +551,7 @@ public:
    * @param name The name of said ray
    * @param graceful Whether or not to exit gracefully if none is found (with invalid_id)
    */
-  RayID registeredRayID(const std::string & name, const bool graceful) const;
+  RayID registeredRayID(const std::string & name, const bool graceful = false) const;
   /**
    * Gets the name of a registered ray
    * @param ray_id The ID of said ray
@@ -641,34 +641,12 @@ public:
   bool currentlyGenerating() const { return _parallel_ray_study->currentlyPreExecuting(); }
 
   /**
-   * Casts the RayTracingStudy found in the given input parameters to a study of type T
-   * with a meaningful error message if it fails
-   *
-   * Can be used for casting to derived studies on other objects that use them
-   * (RayKernels, RayBCs, etc)
-   */
-  template <typename T>
-  static T & castFromStudy(const InputParameters & params)
-  {
-    static_assert(std::is_base_of<RayTracingStudy, T>::value, "Not derived from a RayTracingStudy");
-
-    RayTracingStudy * study =
-        params.getCheckedPointerParam<RayTracingStudy *>("_ray_tracing_study");
-
-    T * other_study = dynamic_cast<T *>(study);
-    if (!other_study)
-      ::mooseError(params.get<std::string>("_type"),
-                   " '",
-                   params.get<std::string>("_object_name"),
-                   "' must be paired with a ",
-                   typeid(T).name());
-    return *other_study;
-  }
-
-  /**
    * Gets the threaded TraceRay object for \p tid.
    */
+  ///@{
+  TraceRay & traceRay(const THREAD_ID tid) { return *_threaded_trace_ray[tid]; }
   const TraceRay & traceRay(const THREAD_ID tid) const { return *_threaded_trace_ray[tid]; }
+  ///@}
 
   /**
    * Whether or not to verify if Rays have valid information before being traced
@@ -699,6 +677,20 @@ public:
    */
   ParallelStudy<std::shared_ptr<Ray>, Ray> * parallelStudy() { return _parallel_ray_study.get(); }
 
+  /**
+   * Get an element's side pointer without excessive memory allocation
+   *
+   * @param elem The element to build a side for
+   * @param s The side to build
+   * @param tid The thread id
+   * @return A pointer to the side element
+   */
+  const libMesh::Elem &
+  elemSide(const libMesh::Elem & elem, const unsigned int s, const THREAD_ID tid = 0)
+  {
+    return _threaded_elem_side_builders[tid](elem, s);
+  }
+
 protected:
   /**
    * Subclasses should override this to determine how to generate Rays.
@@ -720,16 +712,6 @@ protected:
    * Helper function for computing the total domain volume
    */
   Real computeTotalVolume();
-
-  /**
-   * Gets the threaded TraceRay objects.
-   *
-   * Allows for other studies to change options in the TraceRay objects.
-   */
-  const std::vector<std::shared_ptr<TraceRay>> & threadedTraceRay() const
-  {
-    return _threaded_trace_ray;
-  }
 
   /**
    * Gets the writeable current RayKernels for a thread
@@ -1028,11 +1010,11 @@ private:
    */
   RayID registerRay(const std::string & name);
 
+  /// Threaded helpers for building element sides without extraneous allocation
+  std::vector<ElemSideBuilder> _threaded_elem_side_builders;
+
   /// Timing
   //@{
-  PerfID _execute_study_timer;
-  PerfID _generate_timer;
-  PerfID _propagate_timer;
   std::chrono::steady_clock::time_point _execution_start_time;
   std::chrono::steady_clock::duration _execution_time;
   std::chrono::steady_clock::duration _generation_time;
@@ -1111,7 +1093,7 @@ private:
   const std::unique_ptr<ParallelRayStudy> _parallel_ray_study;
 
   /// Quadrature rule for laying points across a 1D ray segment
-  UniquePtr<QBase> _segment_qrule;
+  std::unique_ptr<QBase> _segment_qrule;
 
   /// Total number of processor crossings for Rays that finished on this processor
   unsigned long long int _ending_processor_crossings;

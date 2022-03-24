@@ -13,8 +13,6 @@
 
 registerMooseObject("MooseApp", ExplicitEuler);
 
-defineLegacyParams(ExplicitEuler);
-
 InputParameters
 ExplicitEuler::validParams()
 {
@@ -50,7 +48,9 @@ ExplicitEuler::computeTimeDerivatives()
 }
 
 void
-ExplicitEuler::computeADTimeDerivatives(DualReal & ad_u_dot, const dof_id_type & dof) const
+ExplicitEuler::computeADTimeDerivatives(DualReal & ad_u_dot,
+                                        const dof_id_type & dof,
+                                        DualReal & /*ad_u_dotdot*/) const
 {
   computeTimeDerivativeHelper(ad_u_dot, _solution_old(dof));
 }

@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+#* This file is part of the MOOSE framework
+#* https://www.mooseframework.org
+#*
+#* All rights reserved, see COPYRIGHT for full restrictions
+#* https://github.com/idaholab/moose/blob/master/COPYRIGHT
+#*
+#* Licensed under LGPL 2.1, please see LICENSE for details
+#* https://www.gnu.org/licenses/lgpl-2.1.html
 
 # This script is intended for INTERNAL use only by CIVET testing.
 #
@@ -15,6 +23,8 @@ echo "use only. Please use scripts/update_and_rebuild_petsc.sh instead."
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 echo $SCRIPT_DIR
+
+cd $SCRIPT_DIR/..
 
 # Initialize petsc submodule
 git_dir=`git rev-parse --show-cdup 2>/dev/null`

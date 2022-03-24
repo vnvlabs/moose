@@ -13,12 +13,6 @@
 #include "NearestPointBase.h"
 #include "ElementIntegralVariablePostprocessor.h"
 #include "ElementVariableVectorPostprocessor.h"
-// Forward Declarations
-class NearestPointIntegralVariablePostprocessor;
-
-template <>
-InputParameters validParams<NearestPointIntegralVariablePostprocessor>();
-
 /**
  * Given a list of points this object computes the variable integral
  * closest to each one of those points.
@@ -41,5 +35,7 @@ public:
   virtual void finalize() override;
 
 protected:
+  virtual const std::vector<Point> spatialPoints() const override { return getPoints(); }
+
   VectorPostprocessorValue & _np_post_processor_values;
 };

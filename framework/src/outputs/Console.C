@@ -26,8 +26,6 @@
 
 registerMooseObject("MooseApp", Console);
 
-defineLegacyParams(Console);
-
 InputParameters
 Console::validParams()
 {
@@ -366,6 +364,8 @@ Console::output(const ExecFlagType & type)
 
   // Write the file
   writeStreamToFile();
+
+  _console << std::flush;
 }
 
 void
@@ -527,12 +527,12 @@ Console::writeVariableNorms()
   }
 
   // Update the output streams
-  _console << oss.str();
+  _console << oss.str() << std::flush;
 }
 
 // Quick helper to output the norm in color
 std::string
-Console::outputNorm(const Real & old_norm, const Real & norm)
+Console::outputNorm(const Real & old_norm, const Real & norm, const unsigned int precision)
 {
   std::string color = COLOR_GREEN;
 
@@ -544,7 +544,7 @@ Console::outputNorm(const Real & old_norm, const Real & norm)
     color = COLOR_YELLOW;
 
   std::stringstream oss;
-  oss << std::scientific << color << norm << COLOR_DEFAULT;
+  oss << std::scientific << std::setprecision(precision) << color << norm << COLOR_DEFAULT;
 
   return oss.str();
 }
@@ -559,7 +559,7 @@ Console::outputInput()
   oss << "--- " << _app.getInputFileName()
       << " ------------------------------------------------------";
   _app.actionWarehouse().printInputFile(oss);
-  _console << oss.str() << '\n';
+  _console << oss.str() << std::endl;
 }
 
 void
@@ -573,7 +573,7 @@ Console::outputPostprocessors()
     oss << "\nPostprocessor Values:\n";
     _postprocessor_table.sortColumns();
     _postprocessor_table.printTable(oss, _max_rows, _fit_mode);
-    _console << oss.str() << '\n';
+    _console << oss.str() << std::endl;
   }
 }
 
@@ -606,7 +606,7 @@ Console::outputScalarVariables()
       _scalar_table.sortColumns();
       _scalar_table.printTable(oss, _max_rows, _fit_mode);
     }
-    _console << oss.str() << '\n';
+    _console << oss.str() << std::endl;
   }
 }
 
@@ -648,6 +648,8 @@ Console::outputSystemInformation()
 
   // Output the legacy flags, these cannot be turned off so they become annoying to people.
   _console << ConsoleUtils::outputLegacyInformation(_app);
+
+  _console << std::flush;
 }
 
 void
@@ -664,6 +666,8 @@ Console::meshChanged()
     output = ConsoleUtils::outputAuxiliarySystemInformation(*_problem_ptr);
     if (!output.empty())
       _console << "Auxiliary System:\n" << output;
+
+    _console << std::flush;
   }
 }
 

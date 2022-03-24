@@ -86,7 +86,31 @@ as listed here.
 
 ### Navier-Stokes
 
-If you use the incompressible portion of the Navier-Stokes module, please cite:
+If you use the finite volume incompressible, compressible and weakly compressible implementations in the Navier-Stokes module, please cite:
+
+```
+@techreport{,
+      title = {NEAMS-TH-CRAB},
+     author = {Guillaume L. Giudicelli, Alexander D. Lindsay, Ramiro Freile, Jieun Lee},
+       year = {2021},
+     number = {INL/EXT-21-62895},
+institution = {Idaho National Laboratory}
+}
+```
+
+If you use the finite volume incompressible porous flow equations implementation in the Navier-Stokes module, please cite:
+
+```
+@inproceedings{,
+    title = {Coupled Multiphysics Transient Simulations of the MK1-FHR reactor Using the Finite Volume Capabilities of the MOOSE Framework},
+   author = {Guillaume Giudicelli, Alexander Lindsay, Paolo Balestra, Robert Carlsen, Javier Ortensi, Derek Gaston, Mark DeHart, Abdalla Abou-Jaoude, April J. Novak},
+     year = {2021},
+booktitle = {Mathematics and Computation for Nuclear Science and Engineering},
+publisher = {American Nuclear Society}
+}
+```
+
+If you use the finite element incompressible portion of the Navier-Stokes module, please cite:
 
 ```
 @article{peterson2018overview,
@@ -178,7 +202,7 @@ journal = {International Journal for Numerical Methods in Engineering},
 
 ### Porous Flow
 
-The [following paper](https://doi.org/10.21105/joss.02176) provides an overview of the MOOSE Porous Flow module.
+The following papers present the governing equations of the MOOSE Porous Flow module, along with discussions of its capabilities and implementation details:
 
 ```
 @article{Wilkins2020,
@@ -191,6 +215,36 @@ The [following paper](https://doi.org/10.21105/joss.02176) provides an overview 
   pages = {2176},
   author = {Andy Wilkins and Christopher P. Green and Jonathan Ennis-King},
   title = {PorousFlow: a multiphysics simulation code for coupled problems in porous media},
+  journal = {Journal of Open Source Software}
+}
+
+@article{Wilkins2021,
+  title = {An open-source multiphysics simulation code for coupled problems in porous media},
+  journal = {Computers \& Geosciences},
+  volume = {154},
+  pages = {104820},
+  year = {2021},
+  issn = {0098-3004},
+  doi = {10.1016/j.cageo.2021.104820},
+  author = {Andy Wilkins and Christopher P. Green and Jonathan Ennis-King}
+}
+```
+
+### Geochemistry Module
+
+The following paper introduces the MOOSE Geochemistry module, along with discussions of its capabilities and implementation details:
+
+```
+@article{Wilkins2021,
+  doi = {10.21105/joss.03314},
+  url = {https://doi.org/10.21105/joss.03314},
+  year = {2021},
+  publisher = {The Open Journal},
+  volume = {6},
+  number = {68},
+  pages = {3314},
+  author = {Andy Wilkins and Christopher P. Green and Logan Harbour and Robert Podgorney},
+  title = {The MOOSE geochemistry module},
   journal = {Journal of Open Source Software}
 }
 ```
@@ -226,5 +280,23 @@ journal = {Computational Mechanics},
  number = {2},
   pages = {233--252},
  volume = {62}
+}
+```
+
+### Reactor
+
+The following technical report documents functionalities and demonstration of the MOOSE Reactor module.
+
+```
+@TechReport{shemon2021moose,
+  author      = {Shemon, E. and Jung, Y. S. and Kumar, S. and Miao, Y. and Mo, K. and Oaks, A. and Richards, S.},
+  institution = {Argonne National Laboratory, ANL/NSE-21/43},
+  title       = {MOOSE Framework Meshing Enhancements to Support Reactor Analysis},
+  year        = {2021},
+  month       = sep,
+  type        = {techreport},
+  doi         = {10.2172/1821454},
+  place       = {United States},
+  url         = {https://www.osti.gov/biblio/1821454},
 }
 ```

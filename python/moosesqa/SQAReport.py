@@ -15,15 +15,7 @@ from .LogHelper import LogHelper
 
 LOG = logging.getLogger(__name__)
 
-@mooseutils.addProperty('title', ptype=str, default='')
-@mooseutils.addProperty('show_warning', ptype=bool, default=True)
-@mooseutils.addProperty('show_error', ptype=bool, default=True)
-@mooseutils.addProperty('show_critical', ptype=bool, default=True)
-@mooseutils.addProperty('status', ptype=int, default=0)
-@mooseutils.addProperty('logger', ptype=LogHelper)
-@mooseutils.addProperty('color_text', ptype=bool, default=True)
-@mooseutils.addProperty('number_of_newlines_after_log', ptype=int, default=2)
-class SQAReport(mooseutils.AutoPropertyMixin):
+class SQAReport(object):
     """
     Base class for building reports regarding the status of SQA items.
     """
@@ -35,8 +27,16 @@ class SQAReport(mooseutils.AutoPropertyMixin):
         ERROR = 2
 
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.status = SQAReport.Status.PASS
+        self.title = kwargs.pop('title', '')
+        self.show_warning = kwargs.pop('show_warning', True)
+        self.show_error = kwargs.pop('show_error', True)
+        self.show_critical = kwargs.pop('show_critical', True)
+        self.status = kwargs.pop('status', SQAReport.Status.PASS)
+        self.logger = kwargs.pop('logger', None)
+        self.color_text = kwargs.pop('color_text', True)
+        self.number_of_newlines_after_log = kwargs.pop('number_of_newlines_after_log', 2)
+
+        self.attributes = kwargs
 
         # SilentRecordHandler (added by moosesqa.__init__)
         self._handler = logging.getLogger('moosesqa').handlers[0]
@@ -140,3 +140,15 @@ class SQAReport(mooseutils.AutoPropertyMixin):
         else:
             text = mooseutils.colorText('OK', 'LIGHT_GREEN', colored=self.color_text)
         return text
+
+    @staticmethod
+    def _getFiles(locations):
+        """Get complete list of files for the given *locations*."""
+        file_list = list()
+        for working_dir in locations:
+            path = mooseutils.eval_path(working_dir)
+            if mooseutils.git_is_repo(path):
+                file_list += mooseutils.git_ls_files(path)
+            else:
+                file_list += glob.glob(os.path.join(path,'**', '*.*'), recursive=True)
+        return file_list

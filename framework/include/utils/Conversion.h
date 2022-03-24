@@ -100,6 +100,9 @@ stringify(unsigned long long v)
 /// Convert solve type into human readable string
 std::string stringify(const SolveType & t);
 
+/// Convert eigen solve type into human readable string
+std::string stringify(const EigenSolveType & t);
+
 /// Convert variable field type into human readable string
 std::string stringify(const VarFieldType & t);
 
@@ -112,9 +115,9 @@ std::string stringify(FEFamily f);
 /// Add pair stringify to support maps
 template <typename T, typename U>
 std::string
-stringify(const std::pair<T, U> & p)
+stringify(const std::pair<T, U> & p, const std::string & delim = ":")
 {
-  return stringify(p.first) + ':' + stringify(p.second);
+  return stringify(p.first) + delim + stringify(p.second);
 }
 
 /**
@@ -154,6 +157,14 @@ stringify(const T<U...> & c,
  * Real -> string -> Real roundtrips.
  */
 std::string stringifyExact(Real);
+}
+
+template <typename T1, typename T2>
+std::vector<T2>
+vectorCast(std::vector<T2> in)
+{
+  std::vector<T2> out(in.begin(), in.end());
+  return out;
 }
 
 /**

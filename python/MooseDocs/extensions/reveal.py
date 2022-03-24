@@ -32,6 +32,7 @@ class RevealExtension(command.CommandExtension):
         config = command.CommandExtension.defaultConfig()
         config['translate'] = (['index.md'], "The files that should be translated, this allows " \
                                "files that are included to only be translated once.")
+        config['background_image'] = (None, "Background image for all slides.")
         return config
 
     def extend(self, reader, renderer):
@@ -67,6 +68,7 @@ class RevealExtension(command.CommandExtension):
         for child in ast.children:
             if child.name == 'Section':
                 section = child
+                child['data-background'] = 'https://ukmadcat.com/wp-content/uploads/2019/04/sleepy-cat.jpg'
             else:
                 child.parent = section
 
@@ -81,7 +83,7 @@ class RevealExtension(command.CommandExtension):
                     else:
                         subchild.parent = section
 
-    def postRender(self, page, result):
+    def preWrite(self, page, result):
         """Update internal links to use slide numbers."""
 
         # The Reveal.js platform does not honor traditional anchors in links, so the following
@@ -103,6 +105,15 @@ class RevealExtension(command.CommandExtension):
             if href.startswith('#'):
                 key = lookup[href[1:]]
                 a['href'] = '#/{}/{}'.format(*key)
+
+        img = self.get('background_image')
+        if (img is not None) and (not img.startswith('http')):
+            node = self.translator.findPage(img)
+            img = str(node.relativeSource(page))
+
+        if img is not None:
+            for sec in moosetree.iterate(result, lambda n: n.name == 'section'):
+                sec['data-background'] = img
 
     @staticmethod
     def _getNodeIDs(root):
@@ -128,7 +139,7 @@ class RevealNotes(command.CommandComponent):
         settings = command.CommandComponent.defaultSettings()
         return settings
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         return Notes(parent)
 
 class SectionBlock(components.ReaderComponent):
@@ -140,7 +151,7 @@ class SectionBlock(components.ReaderComponent):
         settings = components.ReaderComponent.defaultSettings()
         return settings
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         n = len(info['SlideBreak'])
         if n == 2:
             SubSection(parent)

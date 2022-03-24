@@ -27,8 +27,8 @@
   []
   [rename]
     type = RenameBlockGenerator
-    old_block_id = '0 1'
-    new_block_name = 'caps aquifer'
+    old_block = '0 1'
+    new_block = 'caps aquifer'
     input = 'injection_area'
   []
 []
@@ -78,7 +78,6 @@
   [mass_water_dot]
     type = PorousFlowMassTimeDerivative
     fluid_component = 0
-    use_displaced_mesh = false
     variable = pwater
   []
   [flux_water]
@@ -90,13 +89,11 @@
   [vol_strain_rate_water]
     type = PorousFlowMassVolumetricExpansion
     fluid_component = 0
-    use_displaced_mesh = false
     variable = pwater
   []
   [mass_co2_dot]
     type = PorousFlowMassTimeDerivative
     fluid_component = 1
-    use_displaced_mesh = false
     variable = pgas
   []
   [flux_co2]
@@ -108,12 +105,10 @@
   [vol_strain_rate_co2]
     type = PorousFlowMassVolumetricExpansion
     fluid_component = 1
-    use_displaced_mesh = false
     variable = pgas
   []
   [energy_dot]
     type = PorousFlowEnergyTimeDerivative
-    use_displaced_mesh = false
     variable = T
   []
   [advection]
@@ -128,7 +123,6 @@
   []
   [vol_strain_rate_heat]
     type = PorousFlowHeatVolumetricExpansion
-    use_displaced_mesh = false
     variable = T
   []
   [grad_stress_r]

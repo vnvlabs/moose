@@ -13,6 +13,7 @@ Renderer objects. The Translator objects exist as a place to import extensions a
 between the reading and rendering content.
 """
 import os
+import uuid
 import logging
 import multiprocessing
 import types
@@ -65,6 +66,7 @@ class Translator(mixins.ConfigObject):
         self.__extensions = extensions
         self.__reader = reader
         self.__renderer = renderer
+        self.__unique_id = uuid.uuid4()
 
         # Define an Executioner if not provided
         self.__executioner = executioner
@@ -103,24 +105,37 @@ class Translator(mixins.ConfigObject):
         return self.__executioner
 
     @property
+    def uid(self):
+        """Return the unique ID for this translator object."""
+        return self.__unique_id
+
+    @property
     def destination(self):
         """Return the destination directory."""
         return self.get('destination')
 
     def addPage(self, page):
-        """
-        Add an additional page to the list of available pages.
-
-        Inputs:
-          page[pages.Page]: The object to insert into the list
-        """
-        if self.__initialized:
-            msg = "The {} object has already been initialized, the addPage method must be called " \
-                  "prior to initialization. Extension objects can add pages within the init() " \
-                  "method."
-            raise MooseDocs.common.exceptions.MooseDocsException(msg, type(self))
-
+        """Add an additional page to the list of available pages."""
         self.__executioner.addPage(page)
+
+    def addPages(self, pages):
+        """Add an additional pages to the list of available pages."""
+        for page in pages:
+            self.__executioner.addPage(page)
+
+    def initPage(self, page):
+        """Initialize a page (call after addPage)."""
+        if not self.__initialized:
+            msg = "`initPage` should only be done after the Translator.init()"
+            raise exceptions.MooseDocsException(msg)
+        self.__executioner.initPages([page])
+
+    def initPages(self, pages):
+        """Add an additional pages to the list of available pages."""
+        if not self.__initialized:
+            msg = "`initPages` should only be done after the Translator.init()"
+            raise exceptions.MooseDocsException(msg)
+        self.__executioner.initPages(pages)
 
     def getPages(self):
         """Return the Page objects"""
@@ -147,12 +162,15 @@ class Translator(mixins.ConfigObject):
             exact[bool]: (False) When True an exact path match is required.
         """
         if isinstance(arg, str):
-            items = self.__page_cache.get(arg, None)
+            items = self.__page_cache.get(arg, None) if not exact else None
             if items is None:
                 func = lambda p: (p.local == arg) or \
                                  (not exact and p.local.endswith(os.sep + arg.lstrip(os.sep)))
                 items = [page for page in self.__executioner.getPages() if func(page)]
-                self.__page_cache[arg] = items
+
+                # if pages matched string 'arg', cache them so we don't have to repeat this search
+                if items:
+                    self.__page_cache[arg] = items
 
         else:
             items = [page for page in self.__executioner.getPages() if arg(page)]
@@ -193,30 +211,44 @@ class Translator(mixins.ConfigObject):
                 return None
 
         elif len(nodes) > 1:
+            # If multiple Directory objects are found and all have the same local path, this should
+            # be fine as they are functionally no different from each other. In any other situation,
+            # however, we need to raise an exception here.
+            if all([isinstance(node, pages.Directory) for node in nodes]) \
+               and [node.local for node in nodes].count(nodes[0].local) == len(nodes):
+                return nodes[0]
             msg = "Multiple pages with a name that ends with '{}' were found:".format(arg)
             for node in nodes:
                 msg += '\n  {}'.format(node.local)
             raise exceptions.MooseDocsException(msg)
+
         return nodes[0]
 
-    def init(self):
+    def init(self, nodes=None):
         """
-        Initialize the translator with the output destination for the converted content.
+        Initialize the translator with the output destination for the converted content. The nodes
+        argument serves the same purpose as for the execute() method.
 
         This method also initializes all the various items within the translator for performing
         the conversion. It is required to allow the build command to modify configuration items
         (i.e., the 'destination' option) prior to setting up the extensions.
-
-        Inputs:
-            destination[str]: The path to the output directory.
         """
         if self.__initialized:
             msg = "The {} object has already been initialized, this method should not " \
                   "be called twice."
-            raise MooseDocs.common.exceptions.MooseDocsException(msg, type(self))
+            raise exceptions.MooseDocsException(msg, type(self))
 
-        # Attach translator to Executioner
+        LOG.info('Initializing...')
+        t = time.time()
+
+        # Attach translator to Reader, Renderer, and Executioner
+        self.__reader.setTranslator(self)
+        self.__renderer.setTranslator(self)
         self.__executioner.setTranslator(self)
+
+        # Call the component init() methods
+        Translator.callFunction(self.__reader, 'init')
+        Translator.callFunction(self.__renderer, 'init')
 
         # Initialize the extension and call the extend method, then set the extension object
         # on each of the extensions.
@@ -237,18 +269,24 @@ class Translator(mixins.ConfigObject):
         for comp in self.__renderer.components:
             comp.setTranslator(self)
 
-        # Check that the extension requirements are met
+        # Check that the requirements of active extensions are met
         for ext in self.__extensions:
-            self.__checkRequires(ext)
+            if ext['active']:
+                self.__checkRequires(ext)
+
+        # Call Extension init() methods
+        self.executeMethod('init')
 
         # Initialize the Page objects
-        self.__executioner.init(self.get("destination"))
+        self.__executioner.initPages(nodes or self.getPages())
+
+        LOG.info('Initializing complete [%s sec.]', time.time() - t)
         self.__initialized = True
 
-    def execute(self, nodes=None, num_threads=1):
+    def execute(self, nodes=None, num_threads=1, read=True, tokenize=True, render=True, write=True):
         """Perform build for all pages, see executioners."""
         self.__assertInitialize()
-        self.__executioner(nodes, num_threads)
+        self.__executioner(nodes or self.getPages(), num_threads, read, tokenize, render, write)
 
     def __assertInitialize(self):
         """Helper for asserting initialize status."""
@@ -270,7 +308,6 @@ class Translator(mixins.ConfigObject):
 
     def __buildMarkdownFileCache(self):
         """Builds a list of markdown files, including the short-hand version for error reports."""
-
         self.__markdown_file_list = set()
         for local in [page.local for page in self.__executioner.getPages() if isinstance(page, pages.Source)]:
             self.__markdown_file_list.add(local)
@@ -279,13 +316,15 @@ class Translator(mixins.ConfigObject):
             for i in range(n, 0, -1):
                 self.__markdown_file_list.add(os.path.join(*parts[n-i:n]))
 
-    def executePageMethod(self, method, page, args=tuple()):
+    def executePageMethod(self, method, page, args=None):
         """Helper for calling per Page object methods."""
         if page.get(method, True):
-            self.executeMethod(method, args=(page, *args), log=False)
+            self.executeMethod(method, args=(page, *(args or tuple())), log=False)
 
-    def executeMethod(self, method, args=tuple(), log=False):
-        """Helper to call pre/post methods for extensions, reader, and renderer."""
+    def executeMethod(self, method, args=None, log=False):
+        """Helper to call pre/post or other methods from extension, reader, and renderer objects."""
+        if args is None:
+            args = tuple()
 
         if log:
             LOG.info('Executing {} methods...'.format(method))

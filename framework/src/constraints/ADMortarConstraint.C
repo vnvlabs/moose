@@ -99,9 +99,14 @@ ADMortarConstraint::computeJacobian(Moose::MortarType mortar_type)
     for (_i = 0; _i < test_space_size; _i++)
       residuals[_i] += _JxW_msm[_qp] * _coord[_qp] * computeQpResidual(mortar_type);
 
+#ifdef MOOSE_GLOBAL_AD_INDEXING
+  _assembly.processUnconstrainedDerivatives(residuals, dof_indices, _matrix_tags);
+#else
+
   auto local_functor = [&](const std::vector<ADReal> & input_residuals,
                            const std::vector<dof_id_type> &,
-                           const std::set<TagID> &) {
+                           const std::set<TagID> &)
+  {
     auto & ce = _assembly.couplingEntries();
     for (const auto & it : ce)
     {
@@ -146,14 +151,13 @@ ADMortarConstraint::computeJacobian(Moose::MortarType mortar_type)
 
       for (MooseIndex(3) type_index = 0; type_index < 3; ++type_index)
       {
-        // If we don't have a primary element, then we shouldn't be considering derivatives with
-        // respect to primary dofs. More practically speaking, the local K matrix will be improperly
-        // sized whenever we don't have a primary element because we won't be calling
-        // FEProblemBase::reinitNeighborFaceRef from withing ComputeMortarFunctor::operator()
-        if (type_index == 1 && !_has_primary)
+        const auto jacobian_type = jacobian_types[type_index];
+        // There's no actual coupling between secondary and primary dofs
+        if ((jacobian_type == JType::SecondaryPrimary) ||
+            (jacobian_type == JType::PrimarySecondary))
           continue;
 
-        prepareMatrixTagLower(_assembly, ivar, jvar, jacobian_types[type_index]);
+        prepareMatrixTagLower(_assembly, ivar, jvar, jacobian_type);
         for (_i = 0; _i < test_space_size; _i++)
           for (_j = 0; _j < shape_space_sizes[type_index]; _j++)
           {
@@ -169,4 +173,31 @@ ADMortarConstraint::computeJacobian(Moose::MortarType mortar_type)
   };
 
   _assembly.processDerivatives(residuals, dof_indices, _matrix_tags, local_functor);
+#endif
 }
+
+#ifdef MOOSE_GLOBAL_AD_INDEXING
+void
+ADMortarConstraint::trimDerivative(const dof_id_type remove_derivative_index, ADReal & dual_number)
+{
+  auto md_it = dual_number.derivatives().nude_data().begin();
+  auto mi_it = dual_number.derivatives().nude_indices().begin();
+
+  auto d_it = dual_number.derivatives().nude_data().begin();
+
+  for (auto i_it = dual_number.derivatives().nude_indices().begin();
+       i_it != dual_number.derivatives().nude_indices().end();
+       ++i_it, ++d_it)
+    if (*i_it != remove_derivative_index)
+    {
+      *mi_it = *i_it;
+      *md_it = *d_it;
+      ++mi_it;
+      ++md_it;
+    }
+
+  std::size_t n_indices = md_it - dual_number.derivatives().nude_data().begin();
+  dual_number.derivatives().nude_indices().resize(n_indices);
+  dual_number.derivatives().nude_data().resize(n_indices);
+}
+#endif

@@ -10,6 +10,7 @@
 #pragma once
 
 #include "MooseTypes.h"
+#include "InputParameters.h"
 
 #define usingFunctionInterfaceMembers                                                              \
   using FunctionInterface::getFunction;                                                            \
@@ -18,16 +19,14 @@
 // Forward declarations
 class Function;
 class FEProblemBase;
-class FunctionInterface;
 class Function;
 class InputParameters;
 class MooseObject;
+template <typename>
+class FunctionTempl;
 
 template <typename T>
 InputParameters validParams();
-
-template <>
-InputParameters validParams<FunctionInterface>();
 
 /**
  * Interface for objects that need to use functions
@@ -57,10 +56,28 @@ public:
 
   /**
    * Get a function with a given name
+   * @tparam T the type that this function, when evaluated, returns
+   * @param name The name of the parameter key of the function to retrieve
+   * @return The function with name associated with the parameter 'name'
+   */
+  template <typename T>
+  const FunctionTempl<T> & getFunction(const std::string & name) const;
+
+  /**
+   * Get a function with a given name
    * @param name The name of the function to retrieve
    * @return The function with name 'name'
    */
   const Function & getFunctionByName(const FunctionName & name) const;
+
+  /**
+   * Get a function with a given name
+   * @tparam T the type that this function, when evaluated, returns
+   * @param name The name of the function to retrieve
+   * @return The function with name 'name'
+   */
+  template <typename T>
+  const FunctionTempl<T> & getFunctionByName(const FunctionName & name) const;
 
 private:
   /// Parameters of the object with this interface

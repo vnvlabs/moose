@@ -1,12 +1,12 @@
 
-#include <string>
-#include <vector>
 #include <algorithm>
-#include <sstream>
-#include <set>
 #include <iterator>
 #include <memory>
 #include <regex>
+#include <set>
+#include <sstream>
+#include <string>
+#include <vector>
 
 #include "parse.h"
 
@@ -84,10 +84,10 @@ toBool(const std::string & val, bool * dst)
   return false;
 }
 
+// clang-format off
 std::string
 nodeTypeName(NodeType t)
 {
-// clang-format off
   #define nodecase(type) case NodeType::type: return #type;
   switch (t)
     {
@@ -98,8 +98,8 @@ nodeTypeName(NodeType t)
       default : return std::to_string((int)t);
     }
   #undef nodecase
-  // clang-format on
 }
+// clang-format on
 
 Error::Error(const std::string & msg) : msg(msg) {}
 
@@ -186,6 +186,15 @@ void
 Node::remove()
 {
   delete this;
+}
+
+const std::string &
+Node::filename()
+{
+  if (_toks.size() > 0)
+    return _toks[0].name;
+  static std::string unknown_name = "[unknown]";
+  return unknown_name;
 }
 
 int
@@ -312,12 +321,21 @@ Node::fullpath()
 }
 
 void
-Node::walk(Walker * w, NodeType t)
+Node::walk(Walker * w, NodeType t, TraversalOrder o)
 {
+  // traverse children first
+  if (o == TraversalOrder::AfterChildren)
+    for (auto child : _children)
+      child->walk(w, t, o);
+
+  // execute walker
   if (_type == t || t == NodeType::All)
     w->walk(fullpath(), pathNorm(path()), this);
-  for (auto child : _children)
-    child->walk(w, t);
+
+  // traverse children last
+  if (o == TraversalOrder::BeforeChildren)
+    for (auto child : _children)
+      child->walk(w, t, o);
 }
 
 Node *
@@ -379,7 +397,7 @@ Comment::render(int indent, const std::string & indent_text, int /*maxlen*/)
 }
 
 Node *
-Comment::clone()
+Comment::clone(bool)
 {
   auto n = new Comment(_text, _isinline);
   n->tokens() = tokens();
@@ -427,9 +445,9 @@ Section::render(int indent, const std::string & indent_text, int maxlen)
 }
 
 Node *
-Section::clone()
+Section::clone(bool absolute_path)
 {
-  auto n = new Section(_path);
+  auto n = new Section(absolute_path ? fullpath() : _path);
   // Although we don't usually copy over tokens for cloned nodes, we make an exception here
   // in order to "remember" whether or not the user used the legacy "../" section closing marker.
   n->tokens() = tokens();
@@ -514,9 +532,9 @@ Field::render(int indent, const std::string & indent_text, int maxlen)
 }
 
 Node *
-Field::clone()
+Field::clone(bool absolute_path)
 {
-  auto n = new Field(_field, _kind, _val);
+  auto n = new Field(absolute_path ? fullpath() : _field, _kind, _val);
   n->tokens() = tokens();
   return n;
 }
@@ -690,7 +708,7 @@ public:
     if (_pos >= _tokens.size())
     {
       _pos++;
-      return Token{TokType::EOF, "", _input.size()};
+      return Token{TokType::EOF, "", _name, _input.size()};
     }
     auto tok = _tokens[_pos];
     _pos++;
@@ -956,7 +974,7 @@ class MergeSectionWalker : public Walker
 {
 public:
   MergeSectionWalker(Node * orig) : _orig(orig) {}
-  void walk(const std::string & /*fullpath*/, const std::string & /*nodepath*/, Node * n)
+  void walk(const std::string & /*fullpath*/, const std::string & /*nodepath*/, Node * n) override
   {
     auto result = _orig->find(n->fullpath());
     if (!result && n->parent())
@@ -966,6 +984,8 @@ public:
         anchor->addChild(n->clone());
     }
   }
+
+  NodeType nodeType() override { return NodeType::Section; }
 
 private:
   std::set<std::string> _done;
@@ -977,8 +997,8 @@ merge(Node * from, Node * into)
 {
   MergeFieldWalker fw(into);
   MergeSectionWalker sw(into);
-  from->walk(&fw, NodeType::Field);
-  from->walk(&sw, NodeType::Section);
+  from->walk(&fw);
+  from->walk(&sw);
 }
 
 Node *

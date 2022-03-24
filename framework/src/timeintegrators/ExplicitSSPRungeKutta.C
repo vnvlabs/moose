@@ -17,8 +17,6 @@
 
 registerMooseObject("MooseApp", ExplicitSSPRungeKutta);
 
-defineLegacyParams(ExplicitSSPRungeKutta);
-
 InputParameters
 ExplicitSSPRungeKutta::validParams()
 {
@@ -75,11 +73,27 @@ ExplicitSSPRungeKutta::computeTimeDerivatives()
 }
 
 void
-ExplicitSSPRungeKutta::computeADTimeDerivatives(DualReal & ad_u_dot, const dof_id_type & dof) const
+ExplicitSSPRungeKutta::computeADTimeDerivatives(ADReal & ad_u_dot,
+                                                const dof_id_type & dof,
+                                                DualReal & /*ad_u_dotdot*/) const
 {
-  for (unsigned int k = 0; k <= _stage; k++)
-    ad_u_dot -= _a[_stage][k] * (*(_solution_stage[k]))(dof);
-  ad_u_dot *= 1.0 / (_b[_stage] * _dt);
+  // Note that if the solution for the current stage is not a nullptr, then neither
+  // are the previous stages.
+  if (_solution_stage[_stage])
+  {
+    for (unsigned int k = 0; k <= _stage; k++)
+      ad_u_dot -= _a[_stage][k] * (*(_solution_stage[k]))(dof);
+    ad_u_dot *= 1.0 / (_b[_stage] * _dt);
+  }
+  else
+  {
+    // We must be outside the solve loop in order to meet this criterion. In that case are we at
+    // timestep_begin or timestep_end? We don't know, so I don't think it's meaningful to compute
+    // derivatives here. Let's put in a quiet NaN which will only signal if we try to do something
+    // meaningful with it (and then we do want to signal because time derivatives may not be
+    // meaningful right now)
+    ad_u_dot = std::numeric_limits<typename ADReal::value_type>::quiet_NaN();
+  }
 }
 
 void

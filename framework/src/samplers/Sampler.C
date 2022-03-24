@@ -12,9 +12,6 @@
 
 // MOOSE includes
 #include "Sampler.h"
-#include "MultiApp.h"
-
-defineLegacyParams(Sampler);
 
 InputParameters
 Sampler::validParams()
@@ -49,11 +46,16 @@ Sampler::validParams()
       0.1 * std::numeric_limits<unsigned int>::max(),
       "The maximum allowed number of items in the std::vector returned by getNextLocalRow method.");
 
-  params.addParam<dof_id_type>(
+  params.addParam<unsigned int>(
       "min_procs_per_row",
       1,
       "This will ensure that the sampler is partitioned properly when "
       "'MultiApp/*/min_procs_per_app' is specified. It is not recommended to use otherwise.");
+  params.addParam<unsigned int>(
+      "max_procs_per_row",
+      std::numeric_limits<unsigned int>::max(),
+      "This will ensure that the sampler is partitioned properly when "
+      "'MultiApp/*/max_procs_per_app' is specified. It is not recommended to use otherwise.");
   return params;
 }
 
@@ -63,6 +65,10 @@ Sampler::Sampler(const InputParameters & parameters)
     DistributionInterface(this),
     PerfGraphInterface(this),
     SamplerInterface(this),
+    _min_procs_per_row(getParam<unsigned int>("min_procs_per_row") > n_processors()
+                           ? n_processors()
+                           : getParam<unsigned int>("min_procs_per_row")),
+    _max_procs_per_row(getParam<unsigned int>("max_procs_per_row")),
     _n_rows(0),
     _n_cols(0),
     _n_seeds(1),
@@ -73,17 +79,7 @@ Sampler::Sampler(const InputParameters & parameters)
     _limit_get_global_samples(getParam<dof_id_type>("limit_get_global_samples")),
     _limit_get_local_samples(getParam<dof_id_type>("limit_get_local_samples")),
     _limit_get_next_local_row(getParam<dof_id_type>("limit_get_next_local_row")),
-    _min_procs_per_row(getParam<dof_id_type>("min_procs_per_row") > n_processors()
-                           ? n_processors()
-                           : getParam<dof_id_type>("min_procs_per_row")),
-    _auto_advance_generators(true),
-    _perf_get_global_samples(registerTimedSection("getGlobalSamples", 1)),
-    _perf_get_local_samples(registerTimedSection("getLocalSamples", 1)),
-    _perf_get_next_local_row(registerTimedSection("getNextLocalRow", 1)),
-    _perf_sample_row(registerTimedSection("computeSampleRow", 2)),
-    _perf_local_sample_matrix(registerTimedSection("computeLocalSampleMatrix", 2)),
-    _perf_sample_matrix(registerTimedSection("computeSampleMatrix", 2)),
-    _perf_advance_generator(registerTimedSection("advanceGenerators", 2))
+    _auto_advance_generators(true)
 {
 }
 
@@ -108,7 +104,7 @@ Sampler::init()
     _generator.seed(i, seed_generator.randl(0));
 
   // Save the initial state
-  _generator.saveState();
+  saveGeneratorState();
 
   // Mark class as initialized, which locks out certain methods
   _initialized = true;
@@ -117,20 +113,32 @@ Sampler::init()
 void
 Sampler::reinit()
 {
-  auto rc = rankConfig(processor_id(),
-                       n_processors(),
-                       _n_rows,
-                       _min_procs_per_row,
-                       std::numeric_limits<dof_id_type>::max());
-  _n_local_rows = rc.is_first_local_rank ? rc.num_local_apps : 0;
-  _local_row_begin = rc.first_local_app_index;
+  _rank_config.first = constructRankConfig(false);
+  _rank_config.second = constructRankConfig(true);
+  if (_rank_config.first.num_local_sims != _rank_config.second.num_local_sims ||
+      _rank_config.first.first_local_sim_index != _rank_config.second.first_local_sim_index ||
+      _rank_config.first.is_first_local_rank != _rank_config.second.is_first_local_rank)
+    mooseError("Sampler has inconsistent partitionings for normal and batch mode.");
+
+  _n_local_rows = _rank_config.first.is_first_local_rank ? _rank_config.first.num_local_sims : 0;
+  _local_row_begin = _rank_config.first.first_local_sim_index;
   _local_row_end = _local_row_begin + _n_local_rows;
 
   // Set the next row iterator index
   _next_local_row = _local_row_begin;
 
+  // Create communicator that only has processors with rows
+  _communicator.split(_n_local_rows > 0 ? 1 : MPI_UNDEFINED, processor_id(), _local_comm);
+
   // Update reinit() flag (see execute method)
   _needs_reinit = false;
+}
+
+LocalRankConfig
+Sampler::constructRankConfig(bool batch_mode) const
+{
+  return rankConfig(
+      processor_id(), n_processors(), _n_rows, _min_procs_per_row, _max_procs_per_row, batch_mode);
 }
 
 void
@@ -176,10 +184,10 @@ Sampler::execute()
 
   if (_has_executed)
   {
-    _generator.restoreState();
+    restoreGeneratorState();
     advanceGeneratorsInternal(_n_rows * _n_cols);
   }
-  _generator.saveState();
+  saveGeneratorState();
   executeTearDown();
   _has_executed = true;
 }
@@ -187,7 +195,8 @@ Sampler::execute()
 DenseMatrix<Real>
 Sampler::getGlobalSamples()
 {
-  TIME_SECTION(_perf_get_global_samples);
+  TIME_SECTION("getGlobalSamples", 1, "Retrieving Global Samples");
+
   checkReinitStatus();
 
   if (_n_rows * _n_cols > _limit_get_global_samples)
@@ -199,7 +208,7 @@ Sampler::getGlobalSamples()
                ".");
 
   _next_local_row_requires_state_restore = true;
-  _generator.restoreState();
+  restoreGeneratorState();
   sampleSetUp(SampleMode::GLOBAL);
   DenseMatrix<Real> output(_n_rows, _n_cols);
   computeSampleMatrix(output);
@@ -210,7 +219,8 @@ Sampler::getGlobalSamples()
 DenseMatrix<Real>
 Sampler::getLocalSamples()
 {
-  TIME_SECTION(_perf_get_local_samples);
+  TIME_SECTION("getLocalSamples", 1, "Retrieving Local Samples");
+
   checkReinitStatus();
 
   if (_n_local_rows * _n_cols > _limit_get_local_samples)
@@ -221,10 +231,13 @@ Sampler::getLocalSamples()
                _limit_get_local_samples,
                ".");
 
-  _next_local_row_requires_state_restore = true;
-  _generator.restoreState();
-  sampleSetUp(SampleMode::LOCAL);
   DenseMatrix<Real> output(_n_local_rows, _n_cols);
+  if (_n_local_rows == 0)
+    return output;
+
+  _next_local_row_requires_state_restore = true;
+  restoreGeneratorState();
+  sampleSetUp(SampleMode::LOCAL);
   computeLocalSampleMatrix(output);
   sampleTearDown(SampleMode::LOCAL);
   return output;
@@ -233,12 +246,11 @@ Sampler::getLocalSamples()
 std::vector<Real>
 Sampler::getNextLocalRow()
 {
-  TIME_SECTION(_perf_get_next_local_row);
   checkReinitStatus();
 
   if (_next_local_row_requires_state_restore)
   {
-    _generator.restoreState();
+    restoreGeneratorState();
     sampleSetUp(SampleMode::LOCAL);
     advanceGeneratorsInternal(_next_local_row * _n_cols);
     _next_local_row_requires_state_restore = false;
@@ -271,7 +283,7 @@ Sampler::getNextLocalRow()
 void
 Sampler::computeSampleMatrix(DenseMatrix<Real> & matrix)
 {
-  TIME_SECTION(_perf_sample_matrix);
+  TIME_SECTION("computeSampleMatrix", 2, "Computing Sample Matrix");
 
   for (dof_id_type i = 0; i < _n_rows; ++i)
   {
@@ -287,7 +299,7 @@ Sampler::computeSampleMatrix(DenseMatrix<Real> & matrix)
 void
 Sampler::computeLocalSampleMatrix(DenseMatrix<Real> & matrix)
 {
-  TIME_SECTION(_perf_local_sample_matrix);
+  TIME_SECTION("computeLocalSampleMatrix", 2, "Computing Local Sample Matrix");
 
   advanceGeneratorsInternal(_local_row_begin * _n_cols);
   for (dof_id_type i = _local_row_begin; i < _local_row_end; ++i)
@@ -306,8 +318,6 @@ Sampler::computeLocalSampleMatrix(DenseMatrix<Real> & matrix)
 void
 Sampler::computeSampleRow(dof_id_type i, std::vector<Real> & data)
 {
-  TIME_SECTION(_perf_sample_row);
-
   for (dof_id_type j = 0; j < _n_cols; ++j)
   {
     data[j] = computeSample(i, j);
@@ -319,7 +329,8 @@ Sampler::computeSampleRow(dof_id_type i, std::vector<Real> & data)
 void
 Sampler::advanceGenerators(const dof_id_type count)
 {
-  TIME_SECTION(_perf_advance_generator);
+  TIME_SECTION("advanceGenerators", 2, "Advancing Generators");
+
   for (std::size_t j = 0; j < _generator.size(); ++j)
     advanceGenerator(j, count);
 }

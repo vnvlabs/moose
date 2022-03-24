@@ -9,13 +9,13 @@
 
 #pragma once
 
-#include "Material.h"
+#include "FunctorMaterial.h"
 
 /**
  * A material that optionally couples both a finite element and finite volume variable (strictly
- * speaking they don't have to be one or the either)
+ * speaking they don't have to be one or the other)
  */
-class FEFVCouplingMaterial : public Material
+class FEFVCouplingMaterial : public FunctorMaterial
 {
 public:
   static InputParameters validParams();
@@ -23,12 +23,7 @@ public:
   FEFVCouplingMaterial(const InputParameters & parameters);
 
 protected:
-  virtual void computeQpProperties() override;
-
-  const ADVariableValue & _fe_var;
-  const ADVariableValue & _fv_var;
-  ADMaterialProperty<Real> * const _fe_prop;
-  ADMaterialProperty<Real> * const _fv_prop;
-  ADMaterialProperty<Real> * const _declared_prop;
-  const ADMaterialProperty<Real> * const _retrieved_prop;
+  const Moose::Functor<ADReal> & _fe_var;
+  const Moose::Functor<ADReal> & _fv_var;
+  const Moose::Functor<ADReal> * const _retrieved_prop;
 };

@@ -44,12 +44,13 @@ offset = 1e-2
 
 [Contact]
   [frictional]
-    mesh = revised_file_mesh
     primary = 20
     secondary = 10
     formulation = mortar
     model = coulomb
     friction_coefficient = 0.1
+    mortar_approach = legacy
+    c_normal = 1e0
   []
 []
 

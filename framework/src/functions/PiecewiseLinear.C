@@ -11,12 +11,12 @@
 
 registerMooseObject("MooseApp", PiecewiseLinear);
 
-defineLegacyParams(PiecewiseLinear);
-
 InputParameters
 PiecewiseLinear::validParams()
 {
   InputParameters params = PiecewiseLinearBase::validParams();
+  params.addParam<bool>(
+      "extrap", false, "If true, extrapolates when sample point is outside of abscissa range");
   params.addClassDescription("Linearly interpolates between pairs of x-y data");
   return params;
 }
@@ -24,5 +24,5 @@ PiecewiseLinear::validParams()
 PiecewiseLinear::PiecewiseLinear(const InputParameters & parameters)
   : PiecewiseLinearBase(parameters)
 {
-  buildInterpolation();
+  buildInterpolation(getParam<bool>("extrap"));
 }

@@ -45,8 +45,7 @@ outputFrameworkInformation(const MooseApp & app)
       << std::setw(console_field_width)
       << "  Num Processors: " << static_cast<std::size_t>(app.n_processors()) << '\n'
       << std::setw(console_field_width)
-      << "  Num Threads: " << static_cast<std::size_t>(libMesh::n_threads()) << '\n'
-      << '\n';
+      << "  Num Threads: " << static_cast<std::size_t>(libMesh::n_threads()) << std::endl;
 
   return oss.str();
 }
@@ -66,7 +65,7 @@ outputMeshInformation(FEProblemBase & problem, bool verbose)
     bool pre_split = problem.getMooseApp().isUseSplit();
 
     // clang-format off
-    oss << "Mesh: " << '\n'
+    oss << "\nMesh: " << '\n'
         << std::setw(console_field_width)
         << "  Parallel Type: " << (moose_mesh.isDistributedMesh() ? "distributed" : "replicated")
         << (forced || pre_split ? " (" : "")
@@ -81,26 +80,53 @@ outputMeshInformation(FEProblemBase & problem, bool verbose)
     // clang-format on
   }
 
-  oss << std::setw(console_field_width) << "  Nodes:" << '\n'
-      << std::setw(console_field_width) << "    Total:" << mesh.n_nodes() << '\n'
-      << std::setw(console_field_width) << "    Local:" << mesh.n_local_nodes() << '\n'
-      << std::setw(console_field_width) << "  Elems:" << '\n'
-      << std::setw(console_field_width) << "    Total:" << mesh.n_active_elem() << '\n'
-      << std::setw(console_field_width) << "    Local:" << mesh.n_active_local_elem() << '\n';
+  if (mesh.n_processors() > 1)
+  {
+    dof_id_type nnodes = mesh.n_nodes();
+    dof_id_type nnodes_local = mesh.n_local_nodes();
+    oss << std::setw(console_field_width) << "  Nodes:" << '\n'
+        << std::setw(console_field_width) << "    Total:" << nnodes << '\n';
+    oss << std::setw(console_field_width) << "    Local:" << nnodes_local << '\n';
+    dof_id_type min_nnodes = nnodes_local, max_nnodes = nnodes_local;
+    mesh.comm().min(min_nnodes);
+    mesh.comm().max(max_nnodes);
+    if (mesh.processor_id() == 0)
+      oss << std::setw(console_field_width) << "    Min/Max/Avg:" << min_nnodes << '/' << max_nnodes
+          << '/' << nnodes / mesh.n_processors() << '\n';
+  }
+  else
+    oss << std::setw(console_field_width) << "  Nodes:" << mesh.n_nodes() << '\n';
+
+  if (mesh.n_processors() > 1)
+  {
+    dof_id_type nelems = mesh.n_active_elem();
+    dof_id_type nelems_local = mesh.n_active_local_elem();
+    oss << std::setw(console_field_width) << "  Elems:" << '\n'
+        << std::setw(console_field_width) << "    Total:" << nelems << '\n';
+    oss << std::setw(console_field_width) << "    Local:" << nelems_local << '\n';
+    dof_id_type min_nelems = nelems_local, max_nelems = nelems_local;
+    mesh.comm().min(min_nelems);
+    mesh.comm().max(max_nelems);
+    if (mesh.processor_id() == 0)
+      oss << std::setw(console_field_width) << "    Min/Max/Avg:" << min_nelems << '/' << max_nelems
+          << '/' << nelems / mesh.n_processors() << '\n';
+  }
+  else
+    oss << std::setw(console_field_width) << "  Elems:" << mesh.n_active_elem() << '\n';
 
   if (verbose)
   {
 
     oss << std::setw(console_field_width)
-        << "  Num Subdomains: " << static_cast<std::size_t>(mesh.n_subdomains()) << '\n'
-        << std::setw(console_field_width)
-        << "  Num Partitions: " << static_cast<std::size_t>(mesh.n_partitions()) << '\n';
-    if (problem.n_processors() > 1)
-      oss << std::setw(console_field_width) << "  Partitioner: " << moose_mesh.partitionerName()
+        << "  Num Subdomains: " << static_cast<std::size_t>(mesh.n_subdomains()) << '\n';
+    if (mesh.n_processors() > 1)
+      oss << std::setw(console_field_width)
+          << "  Num Partitions: " << static_cast<std::size_t>(mesh.n_partitions()) << '\n'
+          << std::setw(console_field_width) << "  Partitioner: " << moose_mesh.partitionerName()
           << (moose_mesh.isPartitionerForced() ? " (forced) " : "") << '\n';
   }
 
-  oss << '\n';
+  oss << std::endl;
 
   return oss.str();
 }
@@ -228,7 +254,7 @@ outputSystemInformationHelper(std::stringstream & oss, System & system)
       curr_string_pos = oss.tellp();
       insertNewline(oss, begin_string_pos, curr_string_pos);
     }
-    oss << "\n\n";
+    oss << "\n" << std::endl;
   }
 
   return oss.str();
@@ -245,7 +271,7 @@ outputNonlinearSystemInformation(FEProblemBase & problem)
   {
     oss << std::setw(console_field_width)
         << "  AD size required: " << problem.getNonlinearSystemBase().requiredDerivativeSize()
-        << "\n";
+        << std::endl;
   }
 #endif
   return outputSystemInformationHelper(oss, problem.getNonlinearSystemBase().system());
@@ -273,7 +299,7 @@ outputRelationshipManagerInformation(const MooseApp & app)
           << "  " + MooseUtils::underscoreToCamelCase(MooseUtils::toLower(info_pair.first), true) +
                  ":"
           << info_pair.second << '\n';
-    oss << '\n';
+    oss << std::endl;
   }
 
   return oss.str();
@@ -296,8 +322,7 @@ outputExecutionInformation(const MooseApp & app, FEProblemBase & problem)
   if (time_stepper != "")
     oss << std::setw(console_field_width) << "  TimeStepper: " << time_stepper << '\n';
 
-  oss << std::setw(console_field_width)
-      << "  Solver Mode: " << Moose::stringify(problem.solverParams()._type) << '\n';
+  oss << std::setw(console_field_width) << "  Solver Mode: " << problem.solverTypeString() << '\n';
 
   const std::string & pc_desc = problem.getPetscOptions().pc_description;
   if (!pc_desc.empty())
@@ -312,7 +337,7 @@ outputExecutionInformation(const MooseApp & app, FEProblemBase & problem)
       oss << " (auto)";
     oss << '\n';
   }
-  oss << '\n';
+  oss << std::endl;
 
   return oss.str();
 }
@@ -339,7 +364,7 @@ outputOutputInformation(MooseApp & app)
       for (const auto & adv_it : adv_on)
         if (execute_on != adv_it.second)
           oss << "    " << std::setw(console_field_width - 4) << adv_it.first + ":"
-              << "\"" << adv_it.second << "\"\n";
+              << "\"" << adv_it.second << "\"" << std::endl;
     }
   }
 
@@ -361,7 +386,7 @@ outputLegacyInformation(MooseApp & app)
            "files that contain material property output for which output occurs on INITIAL, then "
            "these will generate diffs due to zero values being stored, and these tests should be "
            "re-golded.\n"
-        << COLOR_DEFAULT << '\n';
+        << COLOR_DEFAULT << std::endl;
   }
 
   return oss.str();

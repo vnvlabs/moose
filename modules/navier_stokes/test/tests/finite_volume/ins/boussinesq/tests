@@ -38,4 +38,24 @@
     valgrind = 'none'
     ad_indexing_type = 'global'
   []
+  [wcnsfv]
+    type = Exodiff
+    input = wcnsfv.i
+    exodiff = wcnsfv_out.e
+    requirement = 'The system shall be able to model natural convection using a weakly compressible implementation.'
+    ad_indexing_type = 'global'
+    method = '!dbg'
+    valgrind = 'none'
+  []
+  [transient_wcnsfv]
+    type = Exodiff
+    input = transient-wcnsfv.i
+    exodiff = transient-wcnsfv_out.e
+    requirement = 'The system shall be able to model transient natural convection with a low Rayleigh number using a weakly compressible implementation.'
+    ad_indexing_type = 'global'
+    method = '!dbg'
+    cli_args = "Outputs/out/execute_on='final'"
+    recover = false # See https://github.com/idaholab/moose/issues/17906
+    valgrind = 'none'
+  []
 []

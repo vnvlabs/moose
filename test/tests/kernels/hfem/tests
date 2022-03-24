@@ -1,20 +1,61 @@
 [Tests]
   issues = '#17447'
   design = '/DGKernels/index.md'
-
   [dirichlet]
     type = 'Exodiff'
     input = 'dirichlet.i'
     exodiff = 'dirichlet_out.e'
-    requirement = 'The system shall support hybrid finite element method (HFEM) calculations with Dirichlet boundary conditions.'
+    requirement = 'The system shall support hybrid finite element method (HFEM) calculations with Dirichlet boundary conditions using standard variables.'
     mesh_mode = replicated
     mumps = true
+  []
+  [array_dirichlet]
+    type = 'Exodiff'
+    input = 'array_dirichlet.i'
+    exodiff = 'array_dirichlet_out.e'
+    requirement = 'The system shall support hybrid finite element method (HFEM) calculations with Dirichlet boundary conditions using array variables.'
+    mesh_mode = replicated
+    mumps = true
+  []
+  [array_dirichlet_pjfnk]
+    type = 'Exodiff'
+    input = 'array_dirichlet_pjfnk.i'
+    exodiff = 'array_dirichlet_pjfnk_out.e'
+    requirement = 'The system shall support hybrid finite element method (HFEM) calculations with preconditioner only using the block diagonal Jacobian.'
+    mesh_mode = replicated
+    issues = '#20029'
+  []
+  [array_dirichlet_transform]
+    type = 'Exodiff'
+    input = 'array_dirichlet_transform.i'
+    exodiff = 'array_dirichlet_transform_out.e'
+    requirement = 'The system shall support hybrid finite element method (HFEM) calculations with coupling of components of array variables on internal sides.'
+    mesh_mode = replicated
+    mumps = true
+    issues = '#20029'
+  []
+  [array_dirichlet_transform_bc]
+    type = 'Exodiff'
+    input = 'array_dirichlet_transform_bc.i'
+    exodiff = 'array_dirichlet_transform_bc_out.e'
+    requirement = 'The system shall support hybrid finite element method (HFEM) calculations with coupling of components of array variables on boundary sides.'
+    mesh_mode = replicated
+    mumps = true
+    issues = '#20029'
   []
   [neumann]
     type = 'Exodiff'
     input = 'neumann.i'
     exodiff = 'neumann_out.e'
-    requirement = 'The system shall support hybrid finite element method (HFEM) calculations with Neumann boundary conditions.'
+    requirement = 'The system shall support hybrid finite element method (HFEM) calculations with Neumann boundary conditions using standard variables.'
+    mesh_mode = replicated
+    mumps = true
+  []
+  [array_neumann]
+    type = 'Exodiff'
+    input = 'array_neumann.i'
+    exodiff = 'array_neumann_out.e'
+    requirement = 'The system shall support hybrid finite element method (HFEM) calculations with Neumann boundary conditions using array variables.'
     mesh_mode = replicated
     mumps = true
   []
@@ -22,13 +63,21 @@
     type = 'Exodiff'
     input = 'robin.i'
     exodiff = 'robin_out.e'
-    requirement = 'The system shall support hybrid finite element method (HFEM) calculations with Robin boundary conditions.'
+    requirement = 'The system shall support hybrid finite element method (HFEM) calculations with Robin boundary conditions using standard variables.'
+    mesh_mode = replicated
+    mumps = true
+  []
+  [array_robin]
+    type = 'Exodiff'
+    input = 'array_robin.i'
+    exodiff = 'array_robin_out.e'
+    requirement = 'The system shall support hybrid finite element method (HFEM) calculations with Robin boundary conditions using array variables.'
     mesh_mode = replicated
     mumps = true
   []
   [high_order]
     type = 'Exodiff'
-    input = 'robin.i'
+    input = 'array_robin.i'
     cli_args = 'Variables/u/order=FOURTH Variables/lambda/order=FIRST Outputs/file_base=high_order_out'
     exodiff = 'high_order_out.e'
     requirement = 'The system shall support hybrid finite element method (HFEM) calculations with high order shape functions.'
@@ -73,5 +122,26 @@
     expect_err = 'Hybrid finite element method must use replicated mesh'
     requirement = 'The system shall issue an error for not fully supported distributed mesh with hybrid finite element method (HFEM) calculations.'
     mumps = true
+  []
+
+  [accurate_lower_d_volumes]
+    requirement = 'The system shall be able to compute lower dimensional element volumes using element Jacobian information computed earlier during finite element object reinitialization and when the highest dimension of the mesh is'
+    issues = '#17938'
+    [2d]
+      type = 'Exodiff'
+      input = 'lower-d-volumes.i'
+      exodiff = 'lower-d-volumes_out.e'
+      detail = 'two'
+      mumps = true
+      mesh_mode = replicated
+    []
+    [3d]
+      type = 'Exodiff'
+      input = '3d-lower-d-volumes.i'
+      exodiff = '3d-lower-d-volumes_out.e'
+      detail = 'three'
+      mumps = true
+      mesh_mode = replicated
+    []
   []
 []

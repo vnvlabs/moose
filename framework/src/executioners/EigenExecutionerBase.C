@@ -17,13 +17,13 @@
 #include "MooseEigenSystem.h"
 #include "UserObject.h"
 
-defineLegacyParams(EigenExecutionerBase);
-
 InputParameters
 EigenExecutionerBase::validParams()
 {
   InputParameters params = Executioner::validParams();
-  params.addClassDescription("Executioner for Eigen value problems.");
+  params.addClassDescription("Executioner for eigenvalue problems.");
+
+  params += FEProblemSolve::validParams();
 
   params.addRequiredParam<PostprocessorName>("bx_norm", "To evaluate |Bx| for the eigenvalue");
   params.addParam<PostprocessorName>("normalization", "To evaluate |x| for normalization");
@@ -56,13 +56,13 @@ EigenExecutionerBase::EigenExecutionerBase(const InputParameters & parameters)
   : Executioner(parameters),
     _problem(_fe_problem),
     _eigen_sys(static_cast<MooseEigenSystem &>(_problem.getNonlinearSystemBase())),
+    _feproblem_solve(*this),
     _eigenvalue(addAttributeReporter("eigenvalue", getParam<Real>("k0"))),
     _source_integral(getPostprocessorValue("bx_norm")),
     _source_integral_old(1),
     _normalization(isParamValid("normalization")
                        ? getPostprocessorValue("normalization")
-                       : getPostprocessorValue("bx_norm")), // use |Bx| for normalization by default
-    _final_timer(registerTimedSection("final", 1))
+                       : getPostprocessorValue("bx_norm")) // use |Bx| for normalization by default
 {
   // FIXME: currently we have to use old and older solution vectors for power iteration.
   //       We will need 'step' in the future.
@@ -414,7 +414,7 @@ EigenExecutionerBase::postExecute()
   }
 
   {
-    TIME_SECTION(_final_timer)
+    TIME_SECTION("final", 1, "Executing Final Objects")
     _problem.execMultiApps(EXEC_FINAL);
     _problem.execute(EXEC_FINAL);
     _problem.outputStep(EXEC_FINAL);

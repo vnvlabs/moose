@@ -16,9 +16,7 @@
 #include "DistributionInterface.h"
 #include "PerfGraphInterface.h"
 #include "SamplerInterface.h"
-
-template <>
-InputParameters validParams<Sampler>();
+#include "MultiApp.h"
 
 /**
  * This is the base class for Samplers as used within the Stochastic Tools module.
@@ -111,7 +109,32 @@ public:
   dof_id_type getLocalRowEnd() const;
   ///@}
 
+  /**
+   * Reference to rank configuration defining the partitioning of the sampler matrix
+   * This is primarily used by MultiApps to ensure consistent partitioning
+   */
+  const LocalRankConfig & getRankConfig(bool batch_mode) const
+  {
+    return batch_mode ? _rank_config.second : _rank_config.first;
+  }
+
 protected:
+  /**
+   * Enum describing the type of parallel communication to perform.
+   *
+   * Some routines require specific communication methods that not all processors
+   * see, these IDs will determine how that routine is performed:
+   *  - NONE routine is not distrubuted and things all can happen locally
+   *  - LOCAL routine is distributed on all processors
+   *  - SEMI_LOCAL routine is distributed only on processors that own rows
+   */
+  enum CommMethod
+  {
+    NONE = 0,
+    LOCAL = 1,
+    SEMI_LOCAL = 2
+  };
+
   // The following methods are the basic methods that should be utilized my most application
   // developers that are creating a custom Sampler.
 
@@ -213,7 +236,9 @@ protected:
    * NOTE: This will advance the generator by the size of the supplied vector.
    */
   template <typename T>
-  void shuffle(std::vector<T> & data, const std::size_t seed_index = 0, bool is_distributed = true);
+  void shuffle(std::vector<T> & data,
+               const std::size_t seed_index = 0,
+               const CommMethod method = CommMethod::LOCAL);
 
   //@{
   /**
@@ -226,6 +251,28 @@ protected:
   virtual void executeSetUp() {}
   virtual void executeTearDown() {}
   ///@}
+
+  //@{
+  /**
+   * Here we save/restore generator states
+   */
+  void saveGeneratorState() { _generator.saveState(); }
+  void restoreGeneratorState() { _generator.restoreState(); }
+  //@}
+
+  /**
+   * This is where the sampler partitioning is defined. It is NOT recommended to
+   * override this function unless you know EXACTLY what you are doing
+   */
+  virtual LocalRankConfig constructRankConfig(bool batch_mode) const;
+
+  /// The minimum number of processors that are associated with a set of rows
+  const dof_id_type _min_procs_per_row;
+  /// The maximum number of processors that are associated with a set of rows
+  const dof_id_type _max_procs_per_row;
+
+  /// Communicator that was split based on samples that have rows
+  libMesh::Parallel::Communicator _local_comm;
 
 private:
   ///@{
@@ -310,28 +357,22 @@ private:
   /// Max number of entries for matrix returned by getNextLocalRow
   const dof_id_type _limit_get_next_local_row;
 
-  /// The minimum number of processors that are associated with a set of rows
-  /// Must be consistent with MultiApp::_min_procs_per_app
-  const dof_id_type _min_procs_per_row;
+  /// The partitioning of the sampler matrix, built in reinit()
+  /// first is for normal mode and send is for batch mode
+  std::pair<LocalRankConfig, LocalRankConfig> _rank_config;
 
   /// Flag for disabling automatic generator advancing
   bool _auto_advance_generators;
-
-  ///@{
-  /// PrefGraph timers
-  const PerfID _perf_get_global_samples;
-  const PerfID _perf_get_local_samples;
-  const PerfID _perf_get_next_local_row;
-  const PerfID _perf_sample_row;
-  const PerfID _perf_local_sample_matrix;
-  const PerfID _perf_sample_matrix;
-  const PerfID _perf_advance_generator;
-  ///@}
 };
 
 template <typename T>
 void
-Sampler::shuffle(std::vector<T> & data, const std::size_t seed_index, bool is_distributed)
+Sampler::shuffle(std::vector<T> & data, const std::size_t seed_index, const CommMethod method)
 {
-  MooseUtils::shuffle<T>(data, _generator, seed_index, is_distributed ? &_communicator : nullptr);
+  if (method == CommMethod::NONE)
+    MooseUtils::shuffle<T>(data, _generator, seed_index, nullptr);
+  else if (method == CommMethod::LOCAL)
+    MooseUtils::shuffle<T>(data, _generator, seed_index, &_communicator);
+  else if (method == CommMethod::SEMI_LOCAL)
+    MooseUtils::shuffle<T>(data, _generator, seed_index, &_local_comm);
 }

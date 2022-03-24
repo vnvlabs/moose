@@ -28,6 +28,8 @@ EBSDReaderPointDataAux::EBSDReaderPointDataAux(const InputParameters & parameter
     _data_name(getParam<MooseEnum>("data_name")),
     _val(_ebsd_reader.getPointDataAccessFunctor(_data_name))
 {
+  if (isNodal())
+    mooseError("This AuxKernel only supports Elemental fields");
 }
 
 void
@@ -35,7 +37,7 @@ EBSDReaderPointDataAux::precalculateValue()
 {
   // EBSD data is defined at element centroids, so this only makes
   // sense as an Element AuxKernel
-  Point p = _current_elem->centroid();
+  Point p = _current_elem->vertex_average();
 
   _value = (*_val)(_ebsd_reader.getData(p));
 }

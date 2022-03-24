@@ -8,7 +8,7 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "FullSolveMultiApp.h"
-#include "LayeredSideFluxAverage.h"
+#include "LayeredSideDiffusiveFluxAverage.h"
 #include "Executioner.h"
 #include "Transient.h"
 
@@ -16,8 +16,6 @@
 #include "libmesh/mesh_tools.h"
 
 registerMooseObject("MooseApp", FullSolveMultiApp);
-
-defineLegacyParams(FullSolveMultiApp);
 
 InputParameters
 FullSolveMultiApp::validParams()
@@ -107,6 +105,8 @@ FullSolveMultiApp::solveStep(Real /*dt*/, Real /*target_time*/, bool auto_advanc
 
   if (!_has_an_app)
     return true;
+
+  TIME_SECTION(_solve_step_timer);
 
   Moose::ScopedCommSwapper swapper(_my_comm);
 

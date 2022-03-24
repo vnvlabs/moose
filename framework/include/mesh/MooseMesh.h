@@ -34,8 +34,6 @@
 #include "libmesh/point.h"
 #include "libmesh/partitioner.h"
 
-// forward declaration
-class MooseMesh;
 class Assembly;
 class RelationshipManager;
 class MooseVariableBase;
@@ -52,9 +50,6 @@ class BoundingBox;
 }
 // Useful typedefs
 typedef StoredRange<std::set<Node *>::iterator, Node *> SemiLocalNodeRange;
-
-template <>
-InputParameters validParams<MooseMesh>();
 
 /**
  * Helper object for holding qp mapping info.
@@ -282,14 +277,18 @@ public:
   /**
    * Calls local_nodes_begin/end() on the underlying libMesh mesh object.
    */
-  MeshBase::const_node_iterator localNodesBegin();
-  MeshBase::const_node_iterator localNodesEnd();
+  MeshBase::node_iterator localNodesBegin();
+  MeshBase::node_iterator localNodesEnd();
+  MeshBase::const_node_iterator localNodesBegin() const;
+  MeshBase::const_node_iterator localNodesEnd() const;
 
   /**
    * Calls active_local_nodes_begin/end() on the underlying libMesh mesh object.
    */
-  MeshBase::const_element_iterator activeLocalElementsBegin();
-  const MeshBase::const_element_iterator activeLocalElementsEnd();
+  MeshBase::element_iterator activeLocalElementsBegin();
+  const MeshBase::element_iterator activeLocalElementsEnd();
+  MeshBase::const_element_iterator activeLocalElementsBegin() const;
+  const MeshBase::const_element_iterator activeLocalElementsEnd() const;
 
   /**
    * Calls n_nodes/elem() on the underlying libMesh mesh object.
@@ -486,7 +485,27 @@ public:
   /**
    * Set uniform refinement level
    */
-  void setUniformRefineLevel(unsigned int);
+  void setUniformRefineLevel(unsigned int, bool deletion = true);
+
+  /**
+   * Return a flag indicating whether or not we should skip remote deletion
+   * and repartition after uniform refinements. If the flag is true, uniform
+   * refinements will run more efficiently, but at the same time, there might
+   * be extra ghosting elements. The number of layers of additional ghosting
+   * elements depends on the number of uniform refinement levels.  This flag
+   * should be used only when you have a "fine enough" coarse mesh and want
+   * to refine the mesh by a few levels. Otherwise, it might introduce an
+   * unbalanced workload and too large ghosting domain.
+   */
+  bool skipDeletionRepartitionAfterRefine() const
+  {
+    return _skip_deletion_repartition_after_refine;
+  }
+
+  /**
+   * Whether or not skip uniform refinements when using a pre-split mesh
+   */
+  bool skipRefineWhenUseSplit() const { return _skip_refine_when_use_split; }
 
   /**
    * This will add the boundary ids to be ghosted to this processor
@@ -1036,14 +1055,20 @@ public:
 
   ///@{ accessors for the FaceInfo objects
   unsigned int nFace() const { return _face_info.size(); }
-  /// Accessor for local \p FaceInfo objects
+  /// Accessor for local \p FaceInfo objects.
   const std::vector<const FaceInfo *> & faceInfo() const
   {
     buildFaceInfo();
     return _face_info;
   }
+  /// Accessor for the local FaceInfo object on the side of one element. Returns null if ghosted.
   const FaceInfo * faceInfo(const Elem * elem, unsigned int side) const;
-  // const
+  /// Accessor for all \p FaceInfo objects.
+  const std::vector<FaceInfo> & allFaceInfo() const
+  {
+    buildFaceInfo();
+    return _all_face_info;
+  }
   ///@}
 
   /**
@@ -1057,7 +1082,7 @@ public:
    * coordinate value associated with the coordinate system. For Cartesian coordinate systems,
    * 'coordinate' is simply '1'; in RZ, '2*pi*r', and in spherical, '4*pi*r^2'
    */
-  void computeFaceInfoFaceCoords(const SubProblem & subproblem);
+  void computeFaceInfoFaceCoords();
 
   /**
    * Set whether this mesh is displaced
@@ -1076,6 +1101,46 @@ public:
   {
     return _node_set_nodes;
   }
+
+  /**
+   * Get the coordinate system type, e.g. xyz, rz, or r-spherical, for the provided subdomain id \p
+   * sid
+   */
+  Moose::CoordinateSystemType getCoordSystem(SubdomainID sid) const;
+
+  /**
+   * Set the coordinate system for the provided blocks to \p coord_sys
+   */
+  void setCoordSystem(const std::vector<SubdomainName> & blocks, const MultiMooseEnum & coord_sys);
+
+  /**
+   * For axisymmetric simulations, set the symmetry coordinate axis. For r in the x-direction, z in
+   * the y-direction the coordinate axis would be y
+   */
+  void setAxisymmetricCoordAxis(const MooseEnum & rz_coord_axis);
+
+  /**
+   * Returns the desired radial direction for RZ coordinate transformation
+   * @return The coordinate direction for the radial direction
+   */
+  unsigned int getAxisymmetricRadialCoord() const;
+
+  /**
+   * Performs a sanity check for every element in the mesh. If an element dimension is 3 and the
+   * corresponding coordinate system is RZ, then this will error. If an element dimension is greater
+   * than 1 and the corresponding system is RPSHERICAL then this will error
+   */
+  void checkCoordinateSystems();
+
+  /**
+   * Set the coordinate system data to that of \p other_mesh
+   */
+  void setCoordData(const MooseMesh & other_mesh);
+
+  /**
+   * Mark the face information as dirty
+   */
+  void faceInfoDirty() { _face_info_dirty = true; }
 
 protected:
   /// Deprecated (DO NOT USE)
@@ -1121,6 +1186,12 @@ protected:
 
   /// The level of uniform refinement requested (set to zero if AMR is disabled)
   unsigned int _uniform_refine_level;
+
+  /// Whether or not to skip uniform refinements when using a pre-split mesh
+  bool _skip_refine_when_use_split;
+
+  /// Whether or not skip remote deletion and repartition after uniform refinements
+  bool _skip_deletion_repartition_after_refine;
 
   /// true if mesh is changed (i.e. after adaptivity step)
   bool _is_changed;
@@ -1397,35 +1468,6 @@ private:
   /// Whether or not to allow generation of nodesets from sidesets
   bool _construct_node_list_from_side_list;
 
-  /// Timers
-  PerfID _prepare_timer;
-  PerfID _update_timer;
-  PerfID _mesh_changed_timer;
-  PerfID _cache_changed_lists_timer;
-  PerfID _update_active_semi_local_node_range_timer;
-  PerfID _build_node_list_timer;
-  PerfID _build_bnd_elem_list_timer;
-  PerfID _node_to_elem_map_timer;
-  PerfID _node_to_active_semilocal_elem_map_timer;
-  PerfID _get_active_local_element_range_timer;
-  PerfID _get_active_node_range_timer;
-  PerfID _get_local_node_range_timer;
-  PerfID _get_boundary_node_range_timer;
-  PerfID _get_boundary_element_range_timer;
-  PerfID _cache_info_timer;
-  PerfID _build_periodic_node_map_timer;
-  PerfID _build_periodic_node_sets_timer;
-  PerfID _detect_orthogonal_dim_ranges_timer;
-  PerfID _detect_paired_sidesets_timer;
-  PerfID _build_refinement_map_timer;
-  PerfID _build_coarsening_map_timer;
-  PerfID _find_adaptivity_qp_maps_timer;
-  PerfID _build_refinement_and_coarsening_maps_timer;
-  PerfID _change_boundary_id_timer;
-  PerfID _init_timer;
-  PerfID _read_recovered_mesh_timer;
-  PerfID _ghost_ghosted_boundaries_timer;
-
   /// Whether we need to delete remote elements after init'ing the EquationSystems
   bool _need_delete;
 
@@ -1458,6 +1500,12 @@ private:
 
   /// Build lower-d mesh for all sides
   void buildLowerDMesh();
+
+  /// Type of coordinate system per subdomain
+  std::map<SubdomainID, Moose::CoordinateSystemType> _coord_sys;
+
+  /// Storage for RZ axis selection
+  unsigned int _rz_coord_axis;
 
   template <typename T>
   struct MeshType;
@@ -1581,7 +1629,7 @@ MooseMesh::buildTypedMesh(unsigned int dim)
   if (dim == libMesh::invalid_uint)
     dim = getParam<MooseEnum>("dim");
 
-  auto mesh = libmesh_make_unique<T>(_communicator, dim);
+  auto mesh = std::make_unique<T>(_communicator, dim);
 
   if (!getParam<bool>("allow_renumbering"))
     mesh->allow_renumbering(false);
@@ -1597,7 +1645,7 @@ MooseMesh::buildTypedMesh(unsigned int dim)
     // Set custom partitioner
     if (!_custom_partitioner.get())
       mooseError("Custom partitioner requested but not set!");
-    mesh->partitioner().reset(_custom_partitioner.release());
+    mesh->partitioner() = _custom_partitioner->clone();
   }
   else
     setPartitionerHelper(mesh.get());

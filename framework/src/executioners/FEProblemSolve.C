@@ -12,8 +12,6 @@
 #include "FEProblem.h"
 #include "NonlinearSystemBase.h"
 
-defineLegacyParams(FEProblemSolve);
-
 std::set<std::string> const FEProblemSolve::_moose_line_searches = {"contact", "project"};
 
 const std::set<std::string> &
@@ -36,10 +34,8 @@ FEProblemSolve::validParams()
 
   std::set<std::string> alias_line_searches = {"default", "none", "basic"};
   line_searches.insert(alias_line_searches.begin(), alias_line_searches.end());
-#ifdef LIBMESH_HAVE_PETSC
   std::set<std::string> petsc_line_searches = Moose::PetscSupport::getPetscValidLineSearches();
   line_searches.insert(petsc_line_searches.begin(), petsc_line_searches.end());
-#endif // LIBMESH_HAVE_PETSC
   std::string line_search_string = Moose::stringify(line_searches, " ");
   MooseEnum line_search(line_search_string, "default");
   std::string addtl_doc_str(" (Note: none = basic)");
@@ -60,10 +56,7 @@ FEProblemSolve::validParams()
                         "changing between non-linear iterations. We recommend that this tolerance "
                         "be looser than the standard linear tolerance");
 
-  // Default Solver Behavior
-#ifdef LIBMESH_HAVE_PETSC
   params += Moose::PetscSupport::getPetscValidParams();
-#endif // LIBMESH_HAVE_PETSC
   params.addParam<Real>("l_tol", 1.0e-5, "Linear Tolerance");
   params.addParam<Real>("l_abs_tol", 1.0e-50, "Linear Absolute Tolerance");
   params.addParam<unsigned int>("l_max_its", 10000, "Max Linear Iterations");
@@ -86,7 +79,7 @@ FEProblemSolve::validParams()
       "n_max_nonlinear_pingpong",
       100,
       "The maximum number of times the non linear residual can ping pong "
-      "before requesting halting the current evalution and requesting timestep cut");
+      "before requesting halting the current evaluation and requesting timestep cut");
   params.addParam<bool>(
       "snesmf_reuse_base",
       true,
@@ -105,7 +98,10 @@ FEProblemSolve::validParams()
       "Whether the scaling factors should only be computed once at the beginning of the simulation "
       "through an extra Jacobian evaluation. If this is set to false, then the scaling factors "
       "will be computed during an extra Jacobian evaluation at the beginning of every time step.");
-  params.addParam<bool>("verbose", false, "Set to true to print additional information");
+  params.addParam<bool>(
+      "off_diagonals_in_auto_scaling",
+      false,
+      "Whether to consider off-diagonals when determining automatic scaling factors.");
   params.addRangeCheckedParam<Real>(
       "resid_vs_jac_scaling_param",
       0,
@@ -115,7 +111,7 @@ FEProblemSolve::validParams()
       "0 indicates pure Jacobian-based scaling");
   params.addParam<std::vector<std::vector<std::string>>>(
       "scaling_group_variables",
-      "Name of variables that are grouped together to for determing scale factors. (Multiple "
+      "Name of variables that are grouped together for determining scale factors. (Multiple "
       "groups can be provided, separated by semicolon)");
   params.addRangeCheckedParam<unsigned int>(
       "num_grids",
@@ -124,25 +120,26 @@ FEProblemSolve::validParams()
       "The number of grids to use for a grid sequencing algorithm. This includes the final grid, "
       "so num_grids = 1 indicates just one solve in a time-step");
 
-  params.addParamNamesToGroup("l_tol l_abs_tol l_max_its nl_max_its nl_max_funcs "
-                              "nl_abs_tol nl_rel_tol nl_abs_step_tol nl_rel_step_tol "
-                              "snesmf_reuse_base compute_initial_residual_before_preset_bcs "
-                              "automatic_scaling compute_scaling_once num_grids",
-                              "Solver");
+  params.addParamNamesToGroup(
+      "l_tol l_abs_tol l_max_its nl_max_its nl_max_funcs "
+      "nl_abs_tol nl_rel_tol nl_abs_step_tol nl_rel_step_tol "
+      "snesmf_reuse_base compute_initial_residual_before_preset_bcs "
+      "automatic_scaling compute_scaling_once off_diagonals_in_auto_scaling num_grids",
+      "Solver");
   return params;
 }
 
-FEProblemSolve::FEProblemSolve(Executioner * ex)
-  : SolveObject(ex), _splitting(getParam<std::vector<std::string>>("splitting"))
+FEProblemSolve::FEProblemSolve(Executioner & ex)
+  : SolveObject(ex),
+    _splitting(getParam<std::vector<std::string>>("splitting")),
+    _num_grid_steps(getParam<unsigned int>("num_grids") - 1)
 {
   if (_moose_line_searches.find(getParam<MooseEnum>("line_search").operator std::string()) !=
       _moose_line_searches.end())
     _problem.addLineSearch(_pars);
 
-// Extract and store PETSc related settings on FEProblemBase
-#ifdef LIBMESH_HAVE_PETSC
+  // Extract and store PETSc related settings on FEProblemBase
   Moose::PetscSupport::storePetscOptions(_problem, _pars);
-#endif // LIBMESH_HAVE_PETSC
 
   EquationSystems & es = _problem.es();
   es.parameters.set<Real>("linear solver tolerance") = getParam<Real>("l_tol");
@@ -189,11 +186,48 @@ FEProblemSolve::FEProblemSolve(Executioner * ex)
   _problem.setNonlinearAbsoluteDivergenceTolerance(getParam<Real>("nl_abs_div_tol"));
 
   _nl.setDecomposition(_splitting);
+
+  // Check whether the user has explicitly requested automatic scaling and is using a solve type
+  // without a matrix. If so, then we warn them
+  if ((_pars.isParamSetByUser("automatic_scaling") && getParam<bool>("automatic_scaling")) &&
+      _problem.solverParams()._type == Moose::ST_JFNK)
+  {
+    paramWarning("automatic_scaling",
+                 "Automatic scaling isn't implemented for the case where you do not have a "
+                 "preconditioning matrix. No scaling will be applied");
+    _problem.automaticScaling(false);
+  }
+  else
+    // Check to see whether automatic_scaling has been specified anywhere, including at the
+    // application level. No matter what: if we don't have a matrix, we don't do scaling
+    _problem.automaticScaling((isParamValid("automatic_scaling")
+                                   ? getParam<bool>("automatic_scaling")
+                                   : getMooseApp().defaultAutomaticScaling()) &&
+                              (_problem.solverParams()._type != Moose::ST_JFNK));
+
+  _nl.computeScalingOnce(getParam<bool>("compute_scaling_once"));
+  _nl.autoScalingParam(getParam<Real>("resid_vs_jac_scaling_param"));
+  _nl.offDiagonalsInAutoScaling(getParam<bool>("off_diagonals_in_auto_scaling"));
+  if (isParamValid("scaling_group_variables"))
+    _nl.scalingGroupVariables(
+        getParam<std::vector<std::vector<std::string>>>("scaling_group_variables"));
+
+  _problem.numGridSteps(_num_grid_steps);
 }
 
 bool
 FEProblemSolve::solve()
 {
-  _problem.solve();
+  // This loop is for nonlinear multigrids (developed by Alex)
+  for (MooseIndex(_num_grid_steps) grid_step = 0; grid_step <= _num_grid_steps; ++grid_step)
+  {
+    _problem.solve();
+
+    if (!_problem.converged())
+      return false;
+
+    if (grid_step != _num_grid_steps)
+      _problem.uniformRefine();
+  }
   return _problem.converged();
 }

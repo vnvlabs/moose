@@ -11,6 +11,7 @@
 #include "SamplerTransientMultiApp.h"
 #include "Sampler.h"
 #include "StochasticToolsTransfer.h"
+#include "SamplerFullSolveMultiApp.h"
 
 registerMooseObject("StochasticToolsApp", SamplerTransientMultiApp);
 
@@ -49,11 +50,7 @@ SamplerTransientMultiApp::SamplerTransientMultiApp(const InputParameters & param
     _sampler(getSampler("sampler")),
     _mode(getParam<MooseEnum>("mode").getEnum<StochasticTools::MultiAppMode>()),
     _local_batch_app_index(0),
-    _number_of_sampler_rows(_sampler.getNumberOfRows()),
-    _perf_solve_step(registerTimedSection("solveStep", 1)),
-    _perf_solve_batch_step(registerTimedSection("solveStepBatch", 1)),
-    _perf_initial_setup(registerTimedSection("initialSetup", 2)),
-    _perf_command_line_args(registerTimedSection("getCommandLineArgsParamHelper", 4))
+    _number_of_sampler_rows(_sampler.getNumberOfRows())
 {
   if (_mode == StochasticTools::MultiAppMode::BATCH_RESET)
     paramError("mode",
@@ -62,14 +59,27 @@ SamplerTransientMultiApp::SamplerTransientMultiApp(const InputParameters & param
                "', currently is not implemented for the SamplerTransientMultiApp, the available "
                "options are 'normal' or 'batch-restore'.");
 
-  init(_sampler.getNumberOfRows(), _mode == StochasticTools::MultiAppMode::BATCH_RESTORE);
-  checkRankConfig();
+  if (getParam<unsigned int>("min_procs_per_app") !=
+          _sampler.getParam<unsigned int>("min_procs_per_row") ||
+      getParam<unsigned int>("max_procs_per_app") !=
+          _sampler.getParam<unsigned int>("max_procs_per_row"))
+    paramError("sampler",
+               "Sampler and multiapp communicator configuration inconsistent. Please ensure that "
+               "'MultiApps/",
+               name(),
+               "/min(max)_procs_per_app' and 'Samplers/",
+               _sampler.name(),
+               "/min(max)_procs_per_row' are the same.");
+
+  init(_sampler.getNumberOfRows(),
+       _sampler.getRankConfig(_mode == StochasticTools::MultiAppMode::BATCH_RESET ||
+                              _mode == StochasticTools::MultiAppMode::BATCH_RESTORE));
 }
 
 void
 SamplerTransientMultiApp::initialSetup()
 {
-  TIME_SECTION(_perf_initial_setup);
+  TIME_SECTION("initialSetup", 2, "Setting Up SamplerTransientMultiApp");
 
   TransientMultiApp::initialSetup();
 
@@ -87,7 +97,7 @@ SamplerTransientMultiApp::initialSetup()
 bool
 SamplerTransientMultiApp::solveStep(Real dt, Real target_time, bool auto_advance)
 {
-  TIME_SECTION(_perf_solve_step);
+  TIME_SECTION("solveStep", 3, "Solving SamplerTransientMultiApp");
 
   if (_sampler.getNumberOfRows() != _number_of_sampler_rows)
     mooseError("The size of the sampler has changed; SamplerTransientMultiApp object do not "
@@ -104,8 +114,6 @@ SamplerTransientMultiApp::solveStep(Real dt, Real target_time, bool auto_advance
 bool
 SamplerTransientMultiApp::solveStepBatch(Real dt, Real target_time, bool auto_advance)
 {
-  TIME_SECTION(_perf_solve_batch_step);
-
   // Value to return
   bool last_solve_converged = true;
 
@@ -174,26 +182,6 @@ SamplerTransientMultiApp::solveStepBatch(Real dt, Real target_time, bool auto_ad
   return last_solve_converged;
 }
 
-void
-SamplerTransientMultiApp::checkRankConfig()
-{
-  // Logic:
-  //  - If the processor is not root, then the sampler shouldn't have rows
-  //  - Check number of sims versus number of local rows
-  //  - Check first sim versus first row
-  if ((!_rank_config.is_first_local_rank && _sampler.getNumberOfLocalRows() > 0) ||
-      (_rank_config.is_first_local_rank &&
-       _rank_config.num_local_sims != _sampler.getNumberOfLocalRows()) ||
-      (_rank_config.first_local_sim_index != _sampler.getLocalRowBegin()))
-    paramError("sampler",
-               "Sampler and multiapp communicator configuration inconsistent. Please ensure that "
-               "'MultiApps/",
-               name(),
-               "/min_procs_per_app' and 'Samplers/",
-               _sampler.name(),
-               "/min_procs_per_row' are the same.");
-}
-
 std::vector<std::shared_ptr<StochasticToolsTransfer>>
 SamplerTransientMultiApp::getActiveStochasticToolsTransfers(Transfer::DIRECTION direction)
 {
@@ -213,8 +201,6 @@ SamplerTransientMultiApp::getActiveStochasticToolsTransfers(Transfer::DIRECTION 
 std::string
 SamplerTransientMultiApp::getCommandLineArgsParamHelper(unsigned int local_app)
 {
-  TIME_SECTION(_perf_command_line_args);
-
   std::string args;
 
   // With multiple processors per app, there are no local rows for non-root processors
@@ -224,65 +210,12 @@ SamplerTransientMultiApp::getCommandLineArgsParamHelper(unsigned int local_app)
     // sampler data and combine them to get full command line option strings.
     updateRowData(_mode == StochasticTools::MultiAppMode::NORMAL ? local_app
                                                                  : _local_batch_app_index);
-
-    std::ostringstream oss;
     const std::vector<std::string> & cli_args_name =
         MooseUtils::split(TransientMultiApp::getCommandLineArgsParamHelper(local_app), ";");
-
-    bool has_brackets = false;
-    if (cli_args_name.size())
-    {
-      has_brackets = cli_args_name[0].find("[") != std::string::npos;
-      for (unsigned int i = 1; i < cli_args_name.size(); ++i)
-        if (has_brackets != (cli_args_name[i].find("[") != std::string::npos))
-          mooseError("If the bracket is used, it must be provided to every parameter.");
-    }
-    if (!has_brackets && cli_args_name.size() != _sampler.getNumberOfCols())
-      mooseError("Number of command line arguments does not match number of sampler columns.");
-
-    for (unsigned int i = 0; i < cli_args_name.size(); ++i)
-    {
-      if (has_brackets)
-      {
-        const std::vector<std::string> & vector_param = MooseUtils::split(cli_args_name[i], "[");
-        const std::vector<std::string> & index_string =
-            MooseUtils::split(vector_param[1].substr(0, vector_param[1].find("]")), ",");
-
-        oss << vector_param[0] << "='";
-        std::vector<unsigned int> col_count;
-        for (unsigned j = 0; j < index_string.size(); ++j)
-        {
-          if (index_string[j].find("(") != std::string::npos)
-            oss << std::stod(index_string[j].substr(index_string[j].find("(") + 1));
-          else
-          {
-            unsigned int index = MooseUtils::stringToInteger(index_string[j]);
-            if (index >= _row_data.size())
-              mooseError("The provided global column index (",
-                         index,
-                         ") for ",
-                         vector_param[0],
-                         " is out of bound.");
-            oss << Moose::stringify(_row_data[index]);
-            if (std::find(col_count.begin(), col_count.end(), index) == col_count.end())
-              col_count.push_back(index);
-          }
-          if (j != index_string.size() - 1)
-            oss << " ";
-        }
-        oss << "';";
-      }
-      else
-      {
-        oss << cli_args_name[i] << "=" << Moose::stringify(_row_data[i]) << ";";
-      }
-    }
-
-    args = oss.str();
+    args = SamplerFullSolveMultiApp::sampledCommandLineArgs(_row_data, cli_args_name);
   }
 
   _my_communicator.broadcast(args);
-
   return args;
 }
 

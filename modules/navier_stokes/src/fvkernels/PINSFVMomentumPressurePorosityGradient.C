@@ -9,6 +9,7 @@
 
 #include "PINSFVMomentumPressurePorosityGradient.h"
 #include "PINSFVSuperficialVelocityVariable.h"
+#include "NS.h"
 
 registerMooseObject("NavierStokesApp", PINSFVMomentumPressurePorosityGradient);
 
@@ -18,13 +19,14 @@ PINSFVMomentumPressurePorosityGradient::validParams()
   InputParameters params = FVElementalKernel::validParams();
   params.addClassDescription("Introduces the coupled pressure times porosity gradient term "
                              "into the Navier-Stokes porous media momentum equation.");
-  params.addRequiredCoupledVar("p", "The pressure");
+  params.addRequiredCoupledVar(NS::pressure, "The pressure");
+  params.addDeprecatedCoupledVar("p", NS::pressure, "1/1/2022");
   MooseEnum momentum_component("x=0 y=1 z=2");
   params.addRequiredParam<MooseEnum>(
       "momentum_component",
       momentum_component,
       "The component of the momentum equation that this kernel applies to.");
-  params.addRequiredCoupledVar("porosity", "Porosity auxiliary variable");
+  params.addRequiredParam<MooseFunctorName>(NS::porosity, "Porosity auxiliary variable");
 
   return params;
 }
@@ -32,8 +34,8 @@ PINSFVMomentumPressurePorosityGradient::validParams()
 PINSFVMomentumPressurePorosityGradient::PINSFVMomentumPressurePorosityGradient(
     const InputParameters & params)
   : FVElementalKernel(params),
-    _p(coupledValue("p")),
-    _eps_var(dynamic_cast<const MooseVariableFVReal *>(getFieldVar("porosity", 0))),
+    _p(coupledValue(NS::pressure)),
+    _eps(getFunctor<ADReal>(NS::porosity)),
     _index(getParam<MooseEnum>("momentum_component"))
 {
 #ifndef MOOSE_GLOBAL_AD_INDEXING
@@ -46,12 +48,10 @@ PINSFVMomentumPressurePorosityGradient::PINSFVMomentumPressurePorosityGradient(
     mooseError(
         "PINSFVMomentumPressurePorosityGradient may only be used with a superficial velocity "
         "variable, of variable type PINSFVSuperficialVelocityVariable.");
-  if (!_eps_var)
-    paramError("eps", "The porosity must be a finite volume variable");
 }
 
 ADReal
 PINSFVMomentumPressurePorosityGradient::computeQpResidual()
 {
-  return -_p[_qp] * _eps_var->adGradSln(_current_elem)(_index);
+  return -_p[_qp] * _eps.gradient(makeElemArg(_current_elem))(_index);
 }

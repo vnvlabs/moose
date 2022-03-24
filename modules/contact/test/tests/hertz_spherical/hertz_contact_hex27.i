@@ -27,7 +27,6 @@
 [GlobalParams]
   volumetric_locking_correction = false
   displacements = 'disp_x disp_y disp_z'
-  order = SECOND
 []
 
 [Mesh]#Comment
@@ -249,7 +248,7 @@
 
   solve_type = 'PJFNK'
 
-  petsc_options_iname = '-pc_type -pc_factor_mat_solver_package'
+  petsc_options_iname = '-pc_type -pc_factor_mat_solver_type'
   petsc_options_value = 'lu     superlu_dist'
 
   line_search = 'none'

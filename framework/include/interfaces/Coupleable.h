@@ -364,6 +364,13 @@ protected:
                                                        unsigned int comp = 0) const;
 
   /**
+   * Returns the values for all of a coupled array variable's components
+   * @param var_name Name of coupled array variable
+   * @return Vector of ArrayVariableValue pointers for each component of \p var_name
+   */
+  std::vector<const ArrayVariableValue *> coupledArrayValues(const std::string & var_name) const;
+
+  /**
    * Returns a *writable* reference to a coupled variable.  Note: you
    * should not have to use this very often (use coupledValue()
    * instead) but there are situations, such as writing to multiple
@@ -477,6 +484,17 @@ protected:
    */
   const ADVariableGradient & adCoupledGradient(const std::string & var_name,
                                                unsigned int comp = 0) const;
+
+  /**
+   * Returns gradient of a coupled variable's time derivative for use in Automatic Differentation
+   * @param var_name Name of coupled variable
+   * @param comp Component number for vector of coupled variables
+   * @return Reference to an ADVariableGradient containing the gradient of the coupled variable's
+   * time derivative
+   */
+  const ADVariableGradient & adCoupledGradientDot(const std::string & var_name,
+                                                  unsigned int comp = 0) const;
+
   /**
    * Returns the gradients for all of a coupled variable's components for use in Automatic
    * Differentiation
@@ -772,6 +790,16 @@ protected:
    * @return Vector of VariableValue pointers for each component of \p var_name
    */
   std::vector<const ADVariableValue *> adCoupledDots(const std::string & var_name) const;
+
+  /**
+   * Second time derivative of a coupled variable for ad simulations
+   * @param var_name Name of coupled variable
+   * @param comp Component number for vector of coupled variables
+   * @return Reference to an ADVariableValue containing the second time derivative of the coupled
+   * variable
+   */
+  const ADVariableValue & adCoupledDotDot(const std::string & var_name,
+                                          unsigned int comp = 0) const;
 
   /**
    * Time derivative of a vector coupled variable for ad simulations
@@ -1266,16 +1294,8 @@ protected:
   /**
    * Helper that that be used to retrieve a variable of arbitrary type \p T
    */
-  template <typename T, typename std::enable_if<HasMemberType_OutputShape<T>::value, int>::type = 0>
+  template <typename T>
   const T * getVarHelper(const std::string & var_name, unsigned int comp) const;
-
-  /**
-   * Reverse compatibility helper that can be used to retried a variable of type \p
-   * MooseVariableFE<T>
-   */
-  template <typename T,
-            typename std::enable_if<!HasMemberType_OutputShape<T>::value, int>::type = 0>
-  const MooseVariableFE<T> * getVarHelper(const std::string & var_name, unsigned int comp) const;
 
   /**
    * Extract pointer to a coupled variable
@@ -1418,6 +1438,9 @@ private:
   template <typename T>
   const T & getDefaultNodalValue(const std::string & var_name, unsigned int comp = 0) const;
 
+  template <typename T>
+  const Moose::Functor<T> & getDefaultFunctor(const std::string & var_name) const;
+
   /// Maximum qps for any element in this system
   unsigned int _coupleable_max_qps;
 
@@ -1434,11 +1457,10 @@ private:
   /// Whether the MooseObject is a finite volume object
   const bool _is_fv;
 
-private:
   const MooseObject * const _obj;
 };
 
-template <typename T, typename std::enable_if<HasMemberType_OutputShape<T>::value, int>::type>
+template <typename T>
 const T *
 Coupleable::getVarHelper(const std::string & var_name, unsigned int comp) const
 {
@@ -1485,11 +1507,4 @@ Coupleable::getVarHelper(const std::string & var_name, unsigned int comp) const
     mooseError(
         "Variable '", name_to_use, "' is of a different C++ type than you tried to fetch it as.");
   }
-}
-
-template <typename T, typename std::enable_if<!HasMemberType_OutputShape<T>::value, int>::type>
-const MooseVariableFE<T> *
-Coupleable::getVarHelper(const std::string & var_name, unsigned int comp) const
-{
-  return getVarHelper<MooseVariableFE<T>>(var_name, comp);
 }

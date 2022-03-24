@@ -114,26 +114,26 @@ def find_moose_executable(loc, **kwargs):
             matches = re.findall(r'APPLICATION_NAME\s*[:=]+\s*(?P<name>.+)$', content, flags=re.MULTILINE)
             name = matches[-1] if matches else None
 
-        if name is None:
-            name = os.path.basename(loc)
 
+    loc = os.path.abspath(loc)
+    # If we still don't have a name, let's try the tail of the path
+    if name is None:
+        name = os.path.basename(loc)
 
     show_error = kwargs.pop('show_error', True)
-
-    # Handle 'tests'
-    if os.path.isdir(loc):
-        if name == 'test':
-            name = 'moose_test'
+    exe = None
 
     # Check that the location exists and that it is a directory
-    exe = None
-    loc = os.path.abspath(loc)
     if not os.path.isdir(loc):
         if show_error:
             print('ERROR: The supplied path must be a valid directory:', loc)
 
     # Search for executable with the given name
     else:
+        # Handle 'tests'
+        if name == 'test':
+            name = 'moose_test'
+
         for method in methods:
             exe_name = os.path.join(loc, name + '-' + method)
             if os.path.isfile(exe_name):
@@ -392,6 +392,7 @@ def check_output(cmd, **kwargs):
     """Get output from a process"""
     kwargs.setdefault('check', True)
     kwargs.setdefault('stdout', subprocess.PIPE)
+    kwargs.setdefault('stderr', subprocess.STDOUT)
     kwargs.setdefault('encoding', 'utf-8')
     return subprocess.run(cmd, **kwargs).stdout
 

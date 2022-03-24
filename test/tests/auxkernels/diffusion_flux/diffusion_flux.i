@@ -24,10 +24,16 @@
 []
 
 [Kernels]
+  active = 'diff'
   [./diff]
     type = MatDiffusionTest # A Laplacian operator
     variable = T
     prop_name = 'thermal_conductivity'
+  [../]
+  [./diff_ad]
+    type = ADMatDiffusion # A Laplacian operator
+    variable = T
+    diffusivity = 'thermal_conductivity'
   [../]
 []
 
@@ -72,11 +78,12 @@
 []
 
 [VectorPostprocessors]
+  # avoid sampling an element variable on faces
   [./line_sample]
     type = LineValueSampler
     variable = 'T flux_x flux_y'
-    start_point = '0 0. 0'
-    end_point = '1.0 0. 0'
+    start_point = '0.01 0.01 0'
+    end_point = '0.98 0.01 0'
     num_points = 11
     sort_by = id
   [../]

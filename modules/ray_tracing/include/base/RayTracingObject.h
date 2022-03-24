@@ -28,6 +28,7 @@
 // Forward declarations
 class AuxiliarySystem;
 class NonlinearSystemBase;
+class TraceRay;
 
 /**
  * Base class for a MooseObject used in ray tracing.
@@ -60,6 +61,13 @@ public:
   const RayTracingStudy & study() const { return _study; }
 
   /**
+   * Casts the RayTracingStudy associated with this object to a study of type T
+   * with a meaningful error message if it fails
+   */
+  template <typename T>
+  T & getStudy();
+
+  /**
    * Insertion point called immediately before executing the RayTracingStudy.
    */
   virtual void preExecuteStudy(){};
@@ -79,11 +87,16 @@ protected:
    */
   void dependsOn(const std::string name) { _depend_names.insert(name); }
 
+  /// The thread id
+  const THREAD_ID _tid;
+
   /// The FEProblemBase
   FEProblemBase & _fe_problem;
 
   /// The RayTracingStudy associated with this object
   RayTracingStudy & _study;
+  /// The TraceRay object associated with this thread
+  const TraceRay & _trace_ray;
 
   /// The nonlinear system
   NonlinearSystemBase & _nl;
@@ -92,9 +105,6 @@ protected:
 
   /// The MooseMesh
   MooseMesh & _mesh;
-
-  /// The thread id
-  const THREAD_ID _tid;
 
   /// The current Elem that _current_ray is tracing through
   const Elem * const & _current_elem;
@@ -114,6 +124,24 @@ private:
   /// The current Ray that the action is being applied to
   const std::shared_ptr<Ray> * const & _current_ray;
 };
+
+template <typename T>
+T &
+RayTracingObject::getStudy()
+{
+  static_assert(std::is_base_of<RayTracingStudy, T>::value, "Not derived from a RayTracingStudy");
+
+  if (T * cast_study = dynamic_cast<T *>(&_study))
+    return *cast_study;
+
+  std::stringstream err;
+  err << "Supplied study of type " << _study.type() << " is not the required study type "
+      << MooseUtils::prettyCppType<T>();
+  if (isParamValid("study"))
+    paramError("study", err.str());
+  else
+    mooseError(err.str());
+}
 
 #define usingRayTracingObjectMembers                                                               \
   usingMooseObjectMembers;                                                                         \

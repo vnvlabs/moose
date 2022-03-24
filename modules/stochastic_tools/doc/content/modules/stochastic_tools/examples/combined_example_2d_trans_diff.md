@@ -133,11 +133,11 @@ information available within the corresponding restartable data files.
 !listing surrogates/combined/trans_diff_2d/trans_diff_surr.i block=Surrogates
 
 These surrogate models are then evaluated at the points defined in the testing sample batch.
-This is done using objects in the `VectorPostprocessors` block. Furthermore,
+This is done using objects in the `Reporters` block. Furthermore,
 the mean values and standard deviations of the QoI-s together with the $95\%$ confidence intervals
 are generated as well.
 
-!listing surrogates/combined/trans_diff_2d/trans_diff_surr.i block=VectorPostprocessors
+!listing surrogates/combined/trans_diff_2d/trans_diff_surr.i block=Reporters
 
 ## Results and Analysis
 
@@ -156,7 +156,7 @@ figures can be enlarged by clicking on them.
 !media stochastic_tools/surrogates/combined/diff_trans_2d/pc_max.svg style=width:33%;float:left id=pc_max_hist
        caption=Polynomial Chaos Expanison Surrogate.
 
-!media stochastic_tools/surrogates/combined/diff_trans_2d/pr_max.svg style=width:33%;float:left id=pc_max_hist
+!media stochastic_tools/surrogates/combined/diff_trans_2d/pr_max.svg style=width:33%;float:left id=pr_max_hist
        caption=Polynomial Regression Surrogate.
 
 !media stochastic_tools/surrogates/combined/diff_trans_2d/np_max.svg style=width:33%;float:left id=np_max_hist
@@ -178,7 +178,7 @@ the minum temperature. The corresponding histograms are presented below.
 !media stochastic_tools/surrogates/combined/diff_trans_2d/pc_min.svg style=width:33%;float:left id=pc_min_hist
        caption=Polynomial Chaos Expanison Surrogate.
 
-!media stochastic_tools/surrogates/combined/diff_trans_2d/pr_min.svg style=width:33%;float:left id=pc_min_hist
+!media stochastic_tools/surrogates/combined/diff_trans_2d/pr_min.svg style=width:33%;float:left id=pr_min_hist
        caption=Polynomial Regression Surrogate.
 
 !media stochastic_tools/surrogates/combined/diff_trans_2d/np_min.svg style=width:33%;float:left id=np_min_hist

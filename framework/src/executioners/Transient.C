@@ -22,6 +22,7 @@
 #include "MooseMesh.h"
 #include "TimeIntegrator.h"
 #include "Console.h"
+#include "AuxiliarySystem.h"
 
 #include "libmesh/implicit_system.h"
 #include "libmesh/nonlinear_implicit_system.h"
@@ -37,13 +38,13 @@
 
 registerMooseObject("MooseApp", Transient);
 
-defineLegacyParams(Transient);
-
 InputParameters
 Transient::validParams()
 {
   InputParameters params = Executioner::validParams();
   params.addClassDescription("Executioner for time varying simulations.");
+
+  params += FEProblemSolve::validParams();
 
   std::vector<Real> sync_times(1);
   sync_times[0] = -std::numeric_limits<Real>::max();
@@ -60,7 +61,7 @@ Transient::validParams()
   params.addParam<Real>("start_time", 0.0, "The start time of the simulation");
   params.addParam<Real>("end_time", 1.0e30, "The end time of the simulation");
   params.addParam<Real>("dt", 1., "The timestep size between solves");
-  params.addParam<Real>("dtmin", 2.0e-14, "The minimum timestep size in an adaptive run");
+  params.addParam<Real>("dtmin", 1.0e-13, "The minimum timestep size in an adaptive run");
   params.addParam<Real>("dtmax", 1.0e30, "The maximum timestep size in an adaptive run");
   params.addParam<bool>(
       "reset_dt", false, "Use when restarting a calculation to force a change in dt.");
@@ -96,6 +97,12 @@ Transient::validParams()
       "steady_state_start_time",
       0.0,
       "Minimum amount of time to run before checking for steady state conditions.");
+  params.addParam<bool>(
+      "normalize_solution_diff_norm_by_dt",
+      true,
+      "Whether to divide the solution difference norm by dt. If taking 'small' "
+      "time steps you probably want this to be true. If taking very 'large' timesteps in an "
+      "attempt to *reach* a steady-state, you probably want this parameter to be false.");
 
   params.addParam<std::vector<std::string>>("time_periods", "The names of periods");
   params.addParam<std::vector<Real>>("time_period_starts", "The start times of time periods");
@@ -108,7 +115,7 @@ Transient::validParams()
       "Throw error when timestep is less than dtmin instead of just aborting solve.");
   params.addParam<MooseEnum>("scheme", schemes, "Time integration scheme used.");
   params.addParam<Real>("timestep_tolerance",
-                        2.0e-14,
+                        1.0e-13,
                         "the tolerance setting for final timestep size and sync times");
 
   params.addParam<bool>("use_multiapp_dt",
@@ -118,8 +125,13 @@ Transient::validParams()
                         "default) then the minimum over the master dt "
                         "and the MultiApps is used");
 
+  params.addParam<bool>("check_aux",
+                        false,
+                        "Whether to check the auxiliary system for convergence to steady-state. If "
+                        "false, then the nonlinear system is used.");
+
   params.addParamNamesToGroup(
-      "steady_state_detection steady_state_tolerance steady_state_start_time",
+      "steady_state_detection steady_state_tolerance steady_state_start_time check_aux",
       "Steady State Detection");
 
   params.addParamNamesToGroup("start_time dtmin dtmax n_startup_steps trans_ss_check ss_check_tol "
@@ -134,7 +146,10 @@ Transient::validParams()
 Transient::Transient(const InputParameters & parameters)
   : Executioner(parameters),
     _problem(_fe_problem),
+    _feproblem_solve(*this),
     _nl(_fe_problem.getNonlinearSystemBase()),
+    _aux(_fe_problem.getAuxiliarySystem()),
+    _check_aux(getParam<bool>("check_aux")),
     _time_scheme(getParam<MooseEnum>("scheme").getEnum<Moose::TimeIntegratorType>()),
     _t_step(_problem.timeStep()),
     _time(_problem.time()),
@@ -162,10 +177,11 @@ Transient::Transient(const InputParameters & parameters)
     _target_time(declareRecoverableData<Real>("target_time", -std::numeric_limits<Real>::max())),
     _use_multiapp_dt(getParam<bool>("use_multiapp_dt")),
     _solution_change_norm(declareRecoverableData<Real>("solution_change_norm", 0.0)),
-    _sln_diff(_nl.addVector("sln_diff", false, PARALLEL)),
-    _final_timer(registerTimedSection("final", 1))
+    _sln_diff(_check_aux ? _aux.addVector("sln_diff", false, PARALLEL)
+                         : _nl.addVector("sln_diff", false, PARALLEL)),
+    _normalize_solution_diff_norm_by_dt(getParam<bool>("normalize_solution_diff_norm_by_dt"))
 {
-  _picard_solve.setInnerSolve(_feproblem_solve);
+  _fixed_point_solve->setInnerSolve(_feproblem_solve);
 
   // Handle deprecated parameters
   if (!parameters.isParamSetByAddParam("trans_ss_check"))
@@ -326,7 +342,7 @@ Transient::execute()
      * problems because Transient::endStep and Transient::postStep get called from
      * TransientMultiApp::solveStep in that case.
      */
-    if (!_picard_solve.autoAdvance())
+    if (!_fixed_point_solve->autoAdvance())
     {
       _problem.finishMultiAppStep(EXEC_TIMESTEP_BEGIN, /*recurse_through_multiapp_levels=*/true);
       _problem.finishMultiAppStep(EXEC_TIMESTEP_END, /*recurse_through_multiapp_levels=*/true);
@@ -335,7 +351,7 @@ Transient::execute()
 
   if (!_app.halfTransient())
   {
-    TIME_SECTION(_final_timer);
+    TIME_SECTION("final", 1, "Executing Final Objects");
     _problem.execMultiApps(EXEC_FINAL);
     _problem.finalizeMultiApps();
     _problem.execute(EXEC_FINAL);
@@ -382,7 +398,7 @@ Transient::incrementStepOrReject()
        * problems because Transient::endStep and Transient::postStep get called from
        * TransientMultiApp::solveStep in that case.
        */
-      if (!_picard_solve.autoAdvance())
+      if (!_fixed_point_solve->autoAdvance())
       {
         _problem.finishMultiAppStep(EXEC_TIMESTEP_BEGIN);
         _problem.finishMultiAppStep(EXEC_TIMESTEP_END);
@@ -425,24 +441,18 @@ Transient::takeStep(Real input_dt)
 
   _problem.onTimestepBegin();
 
-  for (MooseIndex(_num_grid_steps) step = 0; step <= _num_grid_steps; ++step)
+  _time_stepper->step();
+  _xfem_repeat_step = _fixed_point_solve->XFEMRepeatStep();
+
+  _last_solve_converged = _time_stepper->converged();
+
+  if (!lastSolveConverged())
   {
-    _time_stepper->step();
-    _xfem_repeat_step = _picard_solve.XFEMRepeatStep();
-
-    _last_solve_converged = _time_stepper->converged();
-
-    if (!lastSolveConverged())
-    {
-      _console << "Aborting as solve did not converge\n";
-      break;
-    }
-
-    if (step != _num_grid_steps)
-      _problem.uniformRefine();
+    _console << "Aborting as solve did not converge" << std::endl;
+    return;
   }
 
-  if (!(_problem.haveXFEM() && _picard_solve.XFEMRepeatStep()))
+  if (!(_problem.haveXFEM() && _fixed_point_solve->XFEMRepeatStep()))
   {
     if (lastSolveConverged())
       _time_stepper->acceptStep();
@@ -454,7 +464,8 @@ Transient::takeStep(Real input_dt)
 
   _time_stepper->postSolve();
 
-  _solution_change_norm = relativeSolutionDifferenceNorm() / _dt;
+  _solution_change_norm =
+      relativeSolutionDifferenceNorm() / (_normalize_solution_diff_norm_by_dt ? _dt : Real(1));
 
   return;
 }
@@ -719,8 +730,9 @@ Transient::getTimeStepperName()
 Real
 Transient::relativeSolutionDifferenceNorm()
 {
-  const NumericVector<Number> & current_solution = *_nl.currentSolution();
-  const NumericVector<Number> & old_solution = _nl.solutionOld();
+  const NumericVector<Number> & current_solution =
+      _check_aux ? _aux.solution() : *_nl.currentSolution();
+  const NumericVector<Number> & old_solution = _check_aux ? _aux.solutionOld() : _nl.solutionOld();
 
   _sln_diff = current_solution;
   _sln_diff -= old_solution;

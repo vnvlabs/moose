@@ -13,12 +13,9 @@
 #include "ActionFactory.h"
 #include "Executioner.h"
 #include "MooseRandom.h"
-#include "TimedPrint.h"
 
 // PETSc
-#ifdef LIBMESH_HAVE_PETSC
 #include "petscsys.h"
-#endif
 
 #ifdef LIBMESH_HAVE_OPENMP
 #include <omp.h>
@@ -27,9 +24,7 @@
 MooseInit::MooseInit(int argc, char * argv[], MPI_Comm COMM_WORLD_IN)
   : LibMeshInit(argc, argv, COMM_WORLD_IN)
 {
-#ifdef LIBMESH_HAVE_PETSC
-  PetscPopSignalHandler(); // get rid of Petsc error handler
-#endif
+  PetscPopSignalHandler(); // get rid of PETSc error handler
 
 // Set the number of OpenMP threads to the same as the number of threads libMesh is going to use
 #ifdef LIBMESH_HAVE_OPENMP

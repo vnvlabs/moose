@@ -24,6 +24,8 @@ class ElementIDInterface
 {
 public:
   ElementIDInterface(const MooseObject * moose_object);
+  static InputParameters validParams();
+
   virtual ~ElementIDInterface() {}
 
   /**
@@ -138,4 +140,7 @@ private:
 
   /// References to the mesh and displaced mesh (currently in the ActionWarehouse)
   std::shared_ptr<MooseMesh> & _id_mesh;
+
+  /// Name of the object using this interface
+  const std::string & _ei_name;
 };

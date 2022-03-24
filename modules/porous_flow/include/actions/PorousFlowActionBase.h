@@ -165,11 +165,11 @@ protected:
   /**
    * Adds a quadpoint volumetric strain material
    * @param displacements the names of the displacement variables
-   * @param consistent_with_displaced_mesh The volumetric strain should be consistent with the
+   * @param base_name The base_name used in the TensorMechanics strain calculator
    * displaced mesh
    */
   void addVolumetricStrainMaterial(const std::vector<VariableName> & displacements,
-                                   bool consistent_with_displaced_mesh);
+                                   const std::string & base_name);
 
   /**
    * Adds a single-component fluid Material
@@ -212,7 +212,18 @@ protected:
                         const MooseEnum & temperature_unit);
 
   /**
+   * Adds a relative-permeability Material of the constant variety (primarily to
+   * add kr = 1 in actions that add a default relatively permeability for objects
+   * that require kr even when the flow is fully saturated with a single phase)
+   * @param at_nodes whether the material is nodal
+   * @param phase the phase number of the fluid
+   * @param kr the relative permeability
+   */
+  void addRelativePermeabilityConst(bool at_nodes, unsigned phase, Real kr);
+
+  /**
    * Adds a relative-permeability Material of the Corey variety
+   * @param at_nodes whether the material is nodal
    * @param phase the phase number of the fluid
    * @param n The Corey exponent
    * @param s_res The residual saturation for this phase
@@ -223,6 +234,7 @@ protected:
 
   /**
    * Adds a relative-permeability Material of the FLAC variety
+   * @param at_nodes whether the material is nodal
    * @param phase the phase number of the fluid
    * @param m The FLAC exponent
    * @param s_res The residual saturation for this phase

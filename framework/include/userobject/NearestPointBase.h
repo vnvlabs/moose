@@ -12,43 +12,11 @@
 // MOOSE includes
 #include "ElementIntegralVariableUserObject.h"
 #include "Enumerate.h"
+#include "DelimitedFileReader.h"
+#include "LayeredBase.h"
 
 // Forward Declarations
 class UserObject;
-
-/**
- * Because this is a templated base class and template partial
- * specializations are not allowed... this class instead defines
- * a new templated function that is templated on the type of
- * UserObject that will be at each nearest point.
- *
- * If you inherit from this class... then call this function
- * to start your parameters for the new class
- */
-template <typename UserObjectType, typename BaseType>
-InputParameters
-nearestPointBaseValidParams()
-{
-  InputParameters params = validParams<BaseType>();
-
-  params.addParam<std::vector<Point>>("points",
-                                      "Computations will be lumped into values at these points.");
-  params.addParam<FileName>("points_file",
-                            "A filename that should be looked in for points. Each "
-                            "set of 3 values in that file will represent a Point.  "
-                            "This and 'points' cannot be both supplied.");
-
-  MooseEnum distnorm("point=0 radius=1", "point");
-  params.addParam<MooseEnum>(
-      "dist_norm", distnorm, "To specify whether the distance is defined based on point or radius");
-  MooseEnum axis("x=0 y=1 z=2", "z");
-  params.addParam<MooseEnum>("axis", axis, "The axis around which the radius is determined");
-
-  // Add in the valid parameters
-  params += validParams<UserObjectType>();
-
-  return params;
-}
 
 /**
  * This UserObject computes averages of a variable storing partial
@@ -79,6 +47,14 @@ public:
    * @param p The point to look for in the layers.
    */
   virtual Real spatialValue(const Point & p) const override;
+
+  /**
+   * Get the points at which the nearest operation is performed
+   * @return points
+   */
+  virtual const std::vector<Point> & getPoints() const { return _points; }
+
+  virtual const std::vector<Point> spatialPoints() const override;
 
 protected:
   /**
@@ -112,6 +88,31 @@ protected:
   using BaseType::name;
   using BaseType::processor_id;
 };
+
+template <typename UserObjectType, typename BaseType>
+InputParameters
+NearestPointBase<UserObjectType, BaseType>::validParams()
+{
+  InputParameters params = BaseType::validParams();
+
+  params.addParam<std::vector<Point>>("points",
+                                      "Computations will be lumped into values at these points.");
+  params.addParam<FileName>("points_file",
+                            "A filename that should be looked in for points. Each "
+                            "set of 3 values in that file will represent a Point.  "
+                            "This and 'points' cannot be both supplied.");
+
+  MooseEnum distnorm("point=0 radius=1", "point");
+  params.addParam<MooseEnum>(
+      "dist_norm", distnorm, "To specify whether the distance is defined based on point or radius");
+  MooseEnum axis("x=0 y=1 z=2", "z");
+  params.addParam<MooseEnum>("axis", axis, "The axis around which the radius is determined");
+
+  // Add in the valid parameters
+  params += UserObjectType::validParams();
+
+  return params;
+}
 
 template <typename UserObjectType, typename BaseType>
 NearestPointBase<UserObjectType, BaseType>::NearestPointBase(const InputParameters & parameters)
@@ -159,38 +160,11 @@ NearestPointBase<UserObjectType, BaseType>::fillPoints()
   else if (isParamValid("points_file"))
   {
     const FileName & points_file = this->template getParam<FileName>("points_file");
-    std::vector<Real> points_vec;
 
-    if (processor_id() == 0)
-    {
-      MooseUtils::checkFileReadable(points_file);
-
-      std::ifstream is(points_file.c_str());
-      std::istream_iterator<Real> begin(is), end;
-      points_vec.insert(points_vec.begin(), begin, end);
-
-      if (points_vec.size() % LIBMESH_DIM != 0)
-        mooseError(name(),
-                   ": Number of entries in 'points_file' ",
-                   points_file,
-                   " must be divisible by ",
-                   LIBMESH_DIM);
-    }
-
-    // Broadcast the vector to all processors
-    std::size_t num_points = points_vec.size();
-    _communicator.broadcast(num_points);
-    points_vec.resize(num_points);
-    _communicator.broadcast(points_vec);
-
-    for (std::size_t i = 0; i < points_vec.size(); i += LIBMESH_DIM)
-    {
-      Point point;
-      for (std::size_t j = 0; j < LIBMESH_DIM; j++)
-        point(j) = points_vec[i + j];
-
-      _points.push_back(point);
-    }
+    MooseUtils::DelimitedFileReader file(points_file, &_communicator);
+    file.setFormatFlag(MooseUtils::DelimitedFileReader::FormatFlag::ROWS);
+    file.read();
+    _points = file.getDataAsPoints();
   }
   else
     mooseError(name(), ": You need to supply either 'points' or 'points_file' parameter.");
@@ -208,7 +182,7 @@ template <typename UserObjectType, typename BaseType>
 void
 NearestPointBase<UserObjectType, BaseType>::execute()
 {
-  nearestUserObject(_current_elem->centroid())->execute();
+  nearestUserObject(_current_elem->vertex_average())->execute();
 }
 
 template <typename UserObjectType, typename BaseType>
@@ -277,4 +251,31 @@ NearestPointBase<UserObjectType, BaseType>::nearestUserObject(const Point & p) c
   }
 
   return _user_objects[closest];
+}
+
+template <typename UserObjectType, typename BaseType>
+const std::vector<Point>
+NearestPointBase<UserObjectType, BaseType>::spatialPoints() const
+{
+  std::vector<Point> points;
+
+  for (MooseIndex(_points) i = 0; i < _points.size(); ++i)
+  {
+    std::shared_ptr<LayeredBase> layered_base =
+        std::dynamic_pointer_cast<LayeredBase>(_user_objects[i]);
+    if (layered_base)
+    {
+      const auto & layers = layered_base->getLayerCenters();
+      auto direction = layered_base->direction();
+
+      for (const auto & l : layers)
+      {
+        Point pt = _points[i];
+        pt(direction) = l;
+        points.push_back(pt);
+      }
+    }
+  }
+
+  return points;
 }

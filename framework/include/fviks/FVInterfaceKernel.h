@@ -25,6 +25,7 @@
 #include "TaggingInterface.h"
 #include "NeighborCoupleableMooseVariableDependencyIntermediateInterface.h"
 #include "TwoMaterialPropertyInterface.h"
+#include "FunctorInterface.h"
 
 #include <set>
 
@@ -52,7 +53,8 @@ class FVInterfaceKernel : public MooseObject,
                           public MeshChangedInterface,
                           public TaggingInterface,
                           public NeighborCoupleableMooseVariableDependencyIntermediateInterface,
-                          public TwoMaterialPropertyInterface
+                          public TwoMaterialPropertyInterface,
+                          public FunctorInterface
 {
 public:
   /**
@@ -72,12 +74,12 @@ public:
   /**
    * Compute the residual on the supplied face
    */
-  void computeResidual(const FaceInfo & fi);
+  virtual void computeResidual(const FaceInfo & fi);
 
   /**
    * Compute the jacobian on the supplied face
    */
-  void computeJacobian(const FaceInfo & fi);
+  virtual void computeJacobian(const FaceInfo & fi);
 
 protected:
   /**
@@ -106,7 +108,7 @@ protected:
   /**
    * @return Whether the \p FaceInfo element is on the 1st side of the interface
    */
-  bool elemIsOne() const { return _elem_is_one; }
+  virtual bool elemIsOne() const { return _elem_is_one; }
 
   /**
    * @return Variable 1
@@ -122,6 +124,33 @@ protected:
    * @return The mesh this object lives on. Either undisplaced or displaced
    */
   const MooseMesh & mesh() const { return _mesh; }
+
+  /**
+   * setup data useful for this object
+   */
+  void setupData(const FaceInfo & fi);
+
+  /**
+   * Process the provided residual given \p var_num and whether this is on the neighbor side
+   */
+  void processResidual(Real resid, unsigned int var_num, bool neighbor);
+
+  /**
+   * Process the derivatives for the provided residual and dof index
+   */
+  void processDerivatives(const ADReal & resid, dof_id_type dof_index);
+
+  /**
+   * @return A structure that contains information about the face info element, face info, skewness
+   * correction and element subdomain id for use with functors
+   */
+  Moose::ElemFromFaceArg elemFromFace(bool correct_skewness = false) const;
+
+  /**
+   * @return A structure that contains information about the face info neighbor, the face info,
+   * skewness correction and the face info neighbor subdomain id for use with functors
+   */
+  Moose::ElemFromFaceArg neighborFromFace(bool correct_skenewss = false) const;
 
   /// To be consistent with FE interfaces we introduce this quadrature point member. However, for FV
   /// calculations there should every only be one qudrature point and it should be located at the
@@ -141,19 +170,23 @@ protected:
   /// Thread id
   const THREAD_ID _tid;
 
+  /// Whether the current element is associated with variable/subdomain 1 or 2
+  bool _elem_is_one;
+
+  /// The SubProblem
+  SubProblem & _subproblem;
+
+  /// The Assembly object
+  Assembly & _assembly;
+
 private:
   SystemBase & _sys;
-  SubProblem & _subproblem;
 
   MooseVariableFV<Real> & _var1;
   MooseVariableFV<Real> & _var2;
 
   std::set<SubdomainID> _subdomain1;
   std::set<SubdomainID> _subdomain2;
-
-  Assembly & _assembly;
-
-  bool _elem_is_one;
 
   const MooseMesh & _mesh;
 };

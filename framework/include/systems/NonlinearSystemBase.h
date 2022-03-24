@@ -20,7 +20,6 @@
 #include "libmesh/transient_system.h"
 #include "libmesh/nonlinear_implicit_system.h"
 #include "libmesh/linear_solver.h"
-#include "libmesh/diagonal_matrix.h"
 
 // Forward declarations
 class FEProblemBase;
@@ -38,9 +37,9 @@ class DirichletBCBase;
 class ADDirichletBCBase;
 class DGKernelBase;
 class InterfaceKernelBase;
-class ScalarKernel;
+class ScalarKernelBase;
 class DiracKernel;
-class NodalKernel;
+class NodalKernelBase;
 class Split;
 class KernelBase;
 class BoundaryCondition;
@@ -53,6 +52,8 @@ template <typename T>
 class NumericVector;
 template <typename T>
 class SparseMatrix;
+template <typename T>
+class DiagonalMatrix;
 } // namespace libMesh
 
 /**
@@ -270,13 +271,6 @@ public:
    * Form a residual vector for a given tag
    */
   void computeResidual(NumericVector<Number> & residual, TagID tag_id);
-
-  /**
-   * Finds the implicit sparsity graph between geometrically related dofs.
-   */
-  void
-  findImplicitGeometricCouplingEntries(GeometricSearchData & geom_search_data,
-                                       std::map<dof_id_type, std::vector<dof_id_type>> & graph);
 
   /**
    * Adds entries to the Jacobian in the correct positions for couplings coming from dofs being
@@ -653,6 +647,12 @@ public:
     _scaling_group_variables = scaling_group_variables;
   }
 
+  bool offDiagonalsInAutoScaling() const { return _off_diagonals_in_auto_scaling; }
+  void offDiagonalsInAutoScaling(bool off_diagonals_in_auto_scaling)
+  {
+    _off_diagonals_in_auto_scaling = off_diagonals_in_auto_scaling;
+  }
+
 #ifndef MOOSE_SPARSE_AD
   /**
    * Set the required size of the derivative vector
@@ -800,7 +800,7 @@ protected:
   ///@{
   /// Kernel Storage
   MooseObjectTagWarehouse<KernelBase> _kernels;
-  MooseObjectTagWarehouse<ScalarKernel> _scalar_kernels;
+  MooseObjectTagWarehouse<ScalarKernelBase> _scalar_kernels;
   MooseObjectTagWarehouse<DGKernelBase> _dg_kernels;
   MooseObjectTagWarehouse<InterfaceKernelBase> _interface_kernels;
 
@@ -827,7 +827,7 @@ protected:
   MooseObjectWarehouse<GeneralDamper> _general_dampers;
 
   /// NodalKernels for each thread
-  MooseObjectTagWarehouse<NodalKernel> _nodal_kernels;
+  MooseObjectTagWarehouse<NodalKernelBase> _nodal_kernels;
 
   /// Decomposition splits
   MooseObjectWarehouseBase<Split> _splits; // use base b/c there are no setup methods
@@ -846,9 +846,9 @@ protected:
 
   /// Whether or not to use a finite differenced preconditioner
   bool _use_finite_differenced_preconditioner;
-#ifdef LIBMESH_HAVE_PETSC
+
   MatFDColoring _fdcoloring;
-#endif
+
   /// Whether or not the system can be decomposed into splits
   bool _have_decomposition;
   /// Name of the top-level split of the decomposition
@@ -909,20 +909,6 @@ protected:
 
   std::vector<dof_id_type> _var_all_dof_indices;
 
-  /// Timers
-  PerfID _compute_residual_tags_timer;
-  PerfID _compute_residual_internal_timer;
-  PerfID _kernels_timer;
-  PerfID _scalar_kernels_timer;
-  PerfID _nodal_kernels_timer;
-  PerfID _nodal_kernel_bcs_timer;
-  PerfID _nodal_bcs_timer;
-  PerfID _compute_jacobian_tags_timer;
-  PerfID _compute_jacobian_blocks_timer;
-  PerfID _compute_dampers_timer;
-  PerfID _compute_dirac_timer;
-  PerfID _compute_scaling_timer;
-
   /// Flag used to indicate whether we have already computed the scaling Jacobian
   bool _computed_scaling;
 
@@ -941,10 +927,20 @@ protected:
   /// like for solid/fluid mechanics
   std::vector<std::vector<std::string>> _scaling_group_variables;
 
+  /// Whether to include off diagonals when determining automatic scaling factors
+  bool _off_diagonals_in_auto_scaling;
+
   /// A diagonal matrix used for computing scaling
-  DiagonalMatrix<Number> _scaling_matrix;
+  std::unique_ptr<DiagonalMatrix<Number>> _scaling_matrix;
 
 private:
+  /**
+   * Finds the implicit sparsity graph between geometrically related dofs.
+   */
+  void findImplicitGeometricCouplingEntries(
+      GeometricSearchData & geom_search_data,
+      std::unordered_map<dof_id_type, std::vector<dof_id_type>> & graph);
+
   /**
    * Setup group scaling containers
    */

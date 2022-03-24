@@ -18,13 +18,12 @@
 
 registerMooseObject("MooseApp", Steady);
 
-defineLegacyParams(Steady);
-
 InputParameters
 Steady::validParams()
 {
   InputParameters params = Executioner::validParams();
   params.addClassDescription("Executioner for steady-state simulations.");
+  params += FEProblemSolve::validParams();
   params.addParam<Real>("time", 0.0, "System time");
   return params;
 }
@@ -32,12 +31,12 @@ Steady::validParams()
 Steady::Steady(const InputParameters & parameters)
   : Executioner(parameters),
     _problem(_fe_problem),
+    _feproblem_solve(*this),
     _system_time(getParam<Real>("time")),
     _time_step(_problem.timeStep()),
-    _time(_problem.time()),
-    _final_timer(registerTimedSection("final", 1))
+    _time(_problem.time())
 {
-  _picard_solve.setInnerSolve(_feproblem_solve);
+  _fixed_point_solve->setInnerSolve(_feproblem_solve);
 
   _time = _system_time;
 }
@@ -83,18 +82,12 @@ Steady::execute()
 #endif // LIBMESH_ENABLE_AMR
     _problem.timestepSetup();
 
-    for (MooseIndex(_num_grid_steps) grid_step = 0; grid_step <= _num_grid_steps; ++grid_step)
+    _last_solve_converged = _fixed_point_solve->solve();
+
+    if (!lastSolveConverged())
     {
-      _last_solve_converged = _picard_solve.solve();
-
-      if (!lastSolveConverged())
-      {
-        _console << "Aborting as solve did not converge\n";
-        break;
-      }
-
-      if (grid_step != _num_grid_steps)
-        _problem.uniformRefine();
+      _console << "Aborting as solve did not converge" << std::endl;
+      break;
     }
 
     _problem.computeIndicators();
@@ -116,9 +109,10 @@ Steady::execute()
 #endif
 
   {
-    TIME_SECTION(_final_timer)
+    TIME_SECTION("final", 1, "Executing Final Objects")
     _problem.execMultiApps(EXEC_FINAL);
     _problem.finalizeMultiApps();
+    _problem.postExecute();
     _problem.execute(EXEC_FINAL);
     _time = _time_step;
     _problem.outputStep(EXEC_FINAL);

@@ -10,8 +10,7 @@
 #pragma once
 
 #include "GeneralReporter.h"
-#include "Calculators.h"
-#include "BootstrapCalculators.h"
+#include "VectorCalculators.h"
 
 #include "nlohmann/json.h"
 
@@ -42,7 +41,7 @@ public:
                             unsigned int ci_seed);
 
   virtual void finalize() override;
-  virtual void store(nlohmann::json & json) const override;
+  virtual void storeInfo(nlohmann::json & json) const override;
 
 private:
   /// Data used for the statistic calculation
@@ -52,11 +51,10 @@ private:
   const ReporterProducerEnum & _data_mode;
 
   /// Storage for the Calculator object for the desired stat, this is created in constructor
-  std::unique_ptr<const StochasticTools::Calculator<InType, OutType>> _calc_ptr;
+  std::unique_ptr<StochasticTools::Calculator<InType, OutType>> _calc_ptr;
 
   /// Storage for the BootstrapCalculator for the desired confidence interval calculations (optional)
-  std::unique_ptr<const StochasticTools::BootstrapCalculator<InType, OutType>> _ci_calc_ptr =
-      nullptr;
+  std::unique_ptr<StochasticTools::BootstrapCalculator<InType, OutType>> _ci_calc_ptr = nullptr;
 };
 
 template <typename InType, typename OutType>
@@ -110,9 +108,9 @@ ReporterStatisticsContext<InType, OutType>::finalize()
 
 template <typename InType, typename OutType>
 void
-ReporterStatisticsContext<InType, OutType>::store(nlohmann::json & json) const
+ReporterStatisticsContext<InType, OutType>::storeInfo(nlohmann::json & json) const
 {
-  ReporterGeneralContext<std::pair<OutType, std::vector<OutType>>>::store(json);
+  ReporterGeneralContext<std::pair<OutType, std::vector<OutType>>>::storeInfo(json);
   json["stat"] = _calc_ptr->name();
 }
 

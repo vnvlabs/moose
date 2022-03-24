@@ -61,11 +61,13 @@ PowerLawCreepStressUpdate::computeStressInitialize(const Real & /*effective_tria
   _exp_time = std::pow(_t - _start_time, _m_exponent);
 }
 
-Real
-PowerLawCreepStressUpdate::computeResidual(const Real & effective_trial_stress, const Real & scalar)
+template <typename ScalarType>
+ScalarType
+PowerLawCreepStressUpdate::computeResidualInternal(const Real & effective_trial_stress,
+                                                   const ScalarType & scalar)
 {
-  const Real stress_delta = effective_trial_stress - _three_shear_modulus * scalar;
-  const Real creep_rate =
+  const ScalarType stress_delta = effective_trial_stress - _three_shear_modulus * scalar;
+  const ScalarType creep_rate =
       _coefficient * std::pow(stress_delta, _n_exponent) * _exponential * _exp_time;
   return creep_rate * _dt - scalar;
 }
@@ -94,8 +96,24 @@ PowerLawCreepStressUpdate::computeStrainEnergyRateDensity(
   return creep_factor * stress[_qp].doubleContraction((strain_rate)[_qp]);
 }
 
+void
+PowerLawCreepStressUpdate::computeStressFinalize(const RankTwoTensor & plastic_strain_increment)
+{
+  _creep_strain[_qp] += plastic_strain_increment;
+}
+
+void
+PowerLawCreepStressUpdate::resetIncrementalMaterialProperties()
+{
+  _creep_strain[_qp] = _creep_strain_old[_qp];
+}
+
 bool
 PowerLawCreepStressUpdate::substeppingCapabilityEnabled()
 {
   return getParam<bool>("use_substep");
 }
+
+template Real PowerLawCreepStressUpdate::computeResidualInternal<Real>(const Real &, const Real &);
+template ChainedReal
+PowerLawCreepStressUpdate::computeResidualInternal<ChainedReal>(const Real &, const ChainedReal &);

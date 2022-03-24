@@ -19,8 +19,6 @@
 
 registerMooseAction("MooseApp", SetupDebugAction, "add_output");
 
-defineLegacyParams(SetupDebugAction);
-
 InputParameters
 SetupDebugAction::validParams()
 {
@@ -31,6 +29,7 @@ SetupDebugAction::validParams()
       "show_var_residual_norms",
       false,
       "Print the residual norms of the individual solution variables at each nonlinear iteration");
+  params.addParam<bool>("show_action_dependencies", false, "Print out the action dependencies");
   params.addParam<bool>("show_actions", false, "Print out the actions being executed");
   params.addParam<bool>(
       "show_parser", false, "Shows parser block extraction and debugging information");
@@ -54,6 +53,7 @@ SetupDebugAction::validParams()
 
 SetupDebugAction::SetupDebugAction(InputParameters parameters) : Action(parameters)
 {
+  _awh.showActionDependencies(getParam<bool>("show_action_dependencies"));
   _awh.showActions(getParam<bool>("show_actions"));
   _awh.showParser(getParam<bool>("show_parser"));
 }
@@ -111,7 +111,7 @@ SetupDebugAction::act()
       paramError("pid_aux", "Variable with the name \"pid\" already exists");
 
     auto fe_type = FEType(CONSTANT, MONOMIAL);
-    auto type = AddAuxVariableAction::determineType(fe_type, 1);
+    auto type = AddAuxVariableAction::variableType(fe_type);
     auto var_params = _factory.getValidParams(type);
     _problem->addAuxVariable(type, "pid", var_params);
 

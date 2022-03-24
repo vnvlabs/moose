@@ -12,9 +12,7 @@
 #include <algorithm>
 #include <limits>
 
-registerMooseObject("MooseApp", NodalMaxValue);
-
-defineLegacyParams(NodalMaxValue);
+registerMooseObjectReplaced("MooseApp", NodalMaxValue, "09/27/2021 00:00", NodalExtremeValue);
 
 InputParameters
 NodalMaxValue::validParams()

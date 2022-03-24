@@ -30,8 +30,6 @@ ElementQualityChecker::FailureMessageType()
 
 registerMooseObject("MooseApp", ElementQualityChecker);
 
-defineLegacyParams(ElementQualityChecker);
-
 InputParameters
 ElementQualityChecker::validParams()
 {
@@ -194,6 +192,8 @@ ElementQualityChecker::finalize()
         mooseError("Unknown failure type!");
     }
   }
+
+  _console << std::flush;
 }
 
 bool

@@ -28,8 +28,6 @@
 
 registerMooseObject("MooseApp", MultiAppUserObjectTransfer);
 
-defineLegacyParams(MultiAppUserObjectTransfer);
-
 InputParameters
 MultiAppUserObjectTransfer::validParams()
 {
@@ -186,7 +184,7 @@ MultiAppUserObjectTransfer::execute()
               // grap sample points
               // for constant shape function, we take the element centroid
               if (is_constant)
-                points.push_back(elem->centroid());
+                points.push_back(elem->vertex_average());
               // for higher order method, we take all nodes of element
               // this works for the first order L2 Lagrange.
               else
@@ -342,7 +340,7 @@ MultiAppUserObjectTransfer::execute()
             // grap sample points
             // for constant shape function, we take the element centroid
             if (is_constant)
-              points.push_back(elem->centroid());
+              points.push_back(elem->vertex_average());
             // for higher order method, we take all nodes of element
             // this works for the first order L2 Lagrange.
             else
@@ -455,7 +453,7 @@ MultiAppUserObjectTransfer::execute()
             // grap sample points
             // for constant shape function, we take the element centroid
             if (is_constant)
-              points.push_back(elem->centroid());
+              points.push_back(elem->vertex_average());
             // for higher order method, we take all nodes of element
             // this works for the first order L2 Lagrange.
             else

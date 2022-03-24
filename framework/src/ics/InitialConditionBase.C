@@ -12,14 +12,13 @@
 #include "MooseVariableFE.h"
 #include "UserObject.h"
 
-defineLegacyParams(InitialConditionBase);
-
 InputParameters
 InitialConditionBase::validParams()
 {
   InputParameters params = MooseObject::validParams();
   params += BlockRestrictable::validParams();
   params += BoundaryRestrictable::validParams();
+  params += MaterialPropertyInterface::validParams();
 
   params.addRequiredParam<VariableName>("variable",
                                         "The variable this initial condition is "
@@ -45,6 +44,7 @@ InitialConditionBase::InitialConditionBase(const InputParameters & parameters)
                    ->getVariable(parameters.get<THREAD_ID>("_tid"),
                                  parameters.get<VariableName>("variable"))
                    .isNodal()),
+    MaterialPropertyInterface(this, blockIDs(), Moose::EMPTY_BOUNDARY_IDS),
     FunctionInterface(this),
     UserObjectInterface(this),
     PostprocessorInterface(this),

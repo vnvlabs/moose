@@ -16,8 +16,6 @@
 
 registerMooseObject("MooseApp", AStableDirk4);
 
-defineLegacyParams(AStableDirk4);
-
 InputParameters
 AStableDirk4::validParams()
 {
@@ -98,7 +96,9 @@ AStableDirk4::computeTimeDerivatives()
 }
 
 void
-AStableDirk4::computeADTimeDerivatives(DualReal & ad_u_dot, const dof_id_type & dof) const
+AStableDirk4::computeADTimeDerivatives(DualReal & ad_u_dot,
+                                       const dof_id_type & dof,
+                                       DualReal & /*ad_u_dotdot*/) const
 {
   computeTimeDerivativeHelper(ad_u_dot, _solution_old(dof));
 }
@@ -136,12 +136,12 @@ AStableDirk4::solve()
 
       if (current_stage < 4)
       {
-        _console << "Stage " << _stage << "\n";
+        _console << "Stage " << _stage << std::endl;
         _fe_problem.time() = time_old + _c[_stage - 1] * _dt;
       }
       else
       {
-        _console << "Update Stage.\n";
+        _console << "Update Stage." << std::endl;
         _fe_problem.time() = time_old + _dt;
       }
 

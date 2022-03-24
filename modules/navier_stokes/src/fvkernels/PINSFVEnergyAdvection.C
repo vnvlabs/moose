@@ -16,19 +16,17 @@ registerMooseObject("NavierStokesApp", PINSFVEnergyAdvection);
 InputParameters
 PINSFVEnergyAdvection::validParams()
 {
-  auto params = PINSFVMomentumAdvection::validParams();
+  auto params = INSFVAdvectionKernel::validParams();
   params.addClassDescription("Advects energy, e.g. rho*cp*T. A user may still override what "
                              "quantity is advected, but the default is rho*cp*T");
-  params.set<MaterialPropertyName>("advected_quantity") = "rho_cp_temp";
+  params.addParam<MooseFunctorName>(
+      "advected_quantity", "rho_cp_temp", "The heat quantity to advect.");
   return params;
 }
 
 PINSFVEnergyAdvection::PINSFVEnergyAdvection(const InputParameters & params)
-  : PINSFVMomentumAdvection(params)
+  : INSFVAdvectionKernel(params), _adv_quant(getFunctor<ADReal>("advected_quantity"))
 {
-  if (!dynamic_cast<const PINSFVSuperficialVelocityVariable *>(_u_var))
-    mooseError("PINSFVEnergyAdvection may only be used with a superficial advective velocity, "
-               "of variable type PINSFVSuperficialVelocityVariable.");
   if (!dynamic_cast<INSFVEnergyVariable *>(&_var))
     mooseError("PINSFVEnergyAdvection may only be used with a fluid temperature variable, "
                "of variable type INSFVEnergyVariable.");
@@ -37,17 +35,19 @@ PINSFVEnergyAdvection::PINSFVEnergyAdvection(const InputParameters & params)
 ADReal
 PINSFVEnergyAdvection::computeQpResidual()
 {
-  ADRealVectorValue v;
   ADReal adv_quant_interface;
 
+  const auto elem_face = elemFromFace();
+  const auto neighbor_face = neighborFromFace();
+
   // Velocity interpolation
-  this->interpolate(_velocity_interp_method, v, _vel_elem[_qp], _vel_neighbor[_qp]);
+  const auto v = _rc_vel_provider.getVelocity(_velocity_interp_method, *_face_info, _tid);
 
   // Interpolation of advected quantity
   Moose::FV::interpolate(_advected_interp_method,
                          adv_quant_interface,
-                         _adv_quant_elem[_qp],
-                         _adv_quant_neighbor[_qp],
+                         _adv_quant(elem_face),
+                         _adv_quant(neighbor_face),
                          v,
                          *_face_info,
                          true);

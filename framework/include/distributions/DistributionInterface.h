@@ -11,14 +11,11 @@
 
 #include "InputParameters.h"
 #include "ParallelUniqueId.h"
-#include "FEProblemBase.h"
+#include "MooseObject.h"
 
 // Forward declarations
 class Distribution;
-class DistributionInterface;
-
-template <>
-InputParameters validParams<DistributionInterface>();
+class FEProblemBase;
 
 /**
  * Interface for objects that need to use distributions

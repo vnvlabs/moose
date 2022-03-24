@@ -8,83 +8,56 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "PINSFVMomentumFriction.h"
-#include "PINSFVSuperficialVelocityVariable.h"
+#include "NS.h"
+#include "SystemBase.h"
+#include "MooseVariableFV.h"
 
 registerMooseObject("NavierStokesApp", PINSFVMomentumFriction);
 
 InputParameters
 PINSFVMomentumFriction::validParams()
 {
-  InputParameters params = FVElementalKernel::validParams();
-  params.addClassDescription("Computes a friction force term on fluid in porous media in the "
-                             "Navier Stokes i-th momentum equation.");
-  MooseEnum momentum_component("x=0 y=1 z=2");
-  params.addRequiredParam<MooseEnum>(
-      "momentum_component",
-      momentum_component,
-      "The component of the momentum equation that this kernel applies to.");
-  params.addParam<MaterialPropertyName>("Darcy_name",
-                                        "Name of the Darcy coefficients material property.");
-  params.addParam<MaterialPropertyName>("Forchheimer_name",
-                                        "Name of the Forchheimer coefficients material property.");
-  params.addRequiredCoupledVar("porosity", "Porosity variable.");
-
-  params.addParam<MaterialPropertyName>("momentum_name",
-                                        "Name of the superficial momentum material property for "
-                                        "the Darcy and Forchheimer friction terms.");
-  params.addParam<Real>("rho", "Constant density to use with incompressible flow.");
-
+  InputParameters params = INSFVElementalKernel::validParams();
+  params.addClassDescription(
+      "Computes a friction force term on fluid in porous media in the "
+      "Navier Stokes i-th momentum equation in Rhie-Chow (incompressible) contexts.");
+  params.addParam<MooseFunctorName>("Darcy_name", "Name of the Darcy coefficients property.");
+  params.addParam<MooseFunctorName>("Forchheimer_name",
+                                    "Name of the Forchheimer coefficients property.");
+  params.addParam<MooseFunctorName>(NS::porosity, NS::porosity, "the porosity");
+  params.addRequiredParam<MooseFunctorName>(NS::density, "The density.");
   return params;
 }
 
 PINSFVMomentumFriction::PINSFVMomentumFriction(const InputParameters & params)
-  : FVElementalKernel(params),
-    _component(getParam<MooseEnum>("momentum_component")),
-    _cL(isParamValid("Darcy_name") ? &getADMaterialProperty<RealVectorValue>("Darcy_name")
-                                   : nullptr),
-    _cQ(isParamValid("Forchheimer_name")
-            ? &getADMaterialProperty<RealVectorValue>("Forchheimer_name")
-            : nullptr),
+  : INSFVElementalKernel(params),
+    _cL(isParamValid("Darcy_name") ? &getFunctor<ADRealVectorValue>("Darcy_name") : nullptr),
+    _cQ(isParamValid("Forchheimer_name") ? &getFunctor<ADRealVectorValue>("Forchheimer_name")
+                                         : nullptr),
     _use_Darcy_friction_model(isParamValid("Darcy_name")),
     _use_Forchheimer_friction_model(isParamValid("Forchheimer_name")),
-    _eps(coupledValue("porosity")),
-    _momentum(isParamValid("momentum_name") ? &getADMaterialProperty<Real>("momentum_name")
-                                            : nullptr),
-    _rho(isParamValid("rho") ? getParam<Real>("rho") : 0)
+    _eps(getFunctor<ADReal>(NS::porosity)),
+    _rho(getFunctor<ADReal>(NS::density))
 {
-  if (!dynamic_cast<PINSFVSuperficialVelocityVariable *>(&_var))
-    mooseError("PINSFVMomentumFriction may only be used with a superficial velocity "
-               "variable, of variable type PINSFVSuperficialVelocityVariable.");
-
   if (!_use_Darcy_friction_model && !_use_Forchheimer_friction_model)
     mooseError("At least one friction model needs to be specified.");
-
-  if ((_use_Darcy_friction_model || _use_Forchheimer_friction_model) && !_rho &&
-      !isParamValid("momentum_name"))
-    mooseError(
-        "The density (rho) or the momentum material property name should be specified to use "
-        "the Darcy or Forchheimer friction models.");
 }
 
-ADReal
-PINSFVMomentumFriction::computeQpResidual()
+void
+PINSFVMomentumFriction::gatherRCData(const Elem & elem)
 {
   ADReal friction_term = 0;
+  const auto elem_arg = makeElemArg(&elem);
 
-  if (!_momentum)
-  {
-    if (_use_Darcy_friction_model)
-      friction_term += (*_cL)[_qp](_component) * _rho * _u[_qp] / _eps[_qp];
-    if (_use_Forchheimer_friction_model)
-      friction_term += (*_cQ)[_qp](_component) * _rho * _u[_qp] / _eps[_qp];
-  }
-  else
-  {
-    if (_use_Darcy_friction_model)
-      friction_term += (*_cL)[_qp](_component) * (*_momentum)[_qp] / _eps[_qp];
-    if (_use_Forchheimer_friction_model)
-      friction_term += (*_cQ)[_qp](_component) * (*_momentum)[_qp] / _eps[_qp];
-  }
+  if (_use_Darcy_friction_model)
+    friction_term += (*_cL)(elem_arg)(_index)*_rho(elem_arg) / _eps(elem_arg);
+  if (_use_Forchheimer_friction_model)
+    friction_term += (*_cQ)(elem_arg)(_index)*_rho(elem_arg) / _eps(elem_arg);
 
-  return friction_term;
+  const auto coefficient = friction_term * _assembly.elementVolume(&elem);
+
+  _rc_uo.addToA(&elem, _index, coefficient);
+
+  const auto dof_number = elem.dof_number(_sys.number(), _var.number(), 0);
+  processResidual(coefficient * _u_functor(elem_arg), dof_number);
 }

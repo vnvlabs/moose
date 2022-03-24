@@ -12,7 +12,8 @@
 #include "INSFVMomentumGravity.h"
 
 /**
- * Imposes a gravitational force on the momentum equation in porous media.
+ * Imposes a gravitational force on the momentum equation in porous media in Rhie-Chow
+ * (incompressible) contexts
  */
 class PINSFVMomentumGravity : public INSFVMomentumGravity
 {
@@ -24,5 +25,5 @@ protected:
   ADReal computeQpResidual() override;
 
   /// the porosity
-  const VariableValue & _eps;
+  const Moose::Functor<ADReal> & _eps;
 };

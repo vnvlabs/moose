@@ -32,20 +32,27 @@ class MooseEnumItem;
 class ExecFlagEnum;
 class MooseVariableFieldBase;
 
-#ifdef LIBMESH_HAVE_PETSC
 void MooseVecView(NumericVector<Number> & vector);
 void MooseVecView(const NumericVector<Number> & vector);
 void MooseMatView(SparseMatrix<Number> & mat);
 void MooseMatView(const SparseMatrix<Number> & mat);
-#endif
 
 /**
- * MOOSE now contains C++11 code, so give a reasonable error message
- * stating the minimum required compiler versions.
+ * MOOSE now contains C++17 code, so give a reasonable error message
+ * stating what the user can do to address this in their environment if C++17
+ * compatibility isn't found.
  */
-#ifndef LIBMESH_HAVE_CXX11
-#error MOOSE requires a C++11 compatible compiler (GCC >= 4.8.4, Clang >= 3.5.1). Please update your compiler and try again.
-#endif
+namespace Moose
+{
+static_assert(__cplusplus >= 201703L,
+              "MOOSE requires a C++17 compatible compiler (GCC >= 7.5.0, Clang >= 5.0.2). Please "
+              "update your compiler or, if compatible, add '-std=c++17' to your compiler flags "
+              "and try again. If using the MOOSE conda package, please attempt a MOOSE environment "
+              "update (using `mamba update --all`). If this update is not successful, please "
+              "create a new MOOSE environment (see "
+              "https://mooseframework.inl.gov/getting_started/installation/"
+              "conda.html#uninstall-conda-moose-environment).");
+}
 
 /**
  * Testing a condition on a local CPU that need to be propagated across all processes.
@@ -113,7 +120,7 @@ extern const ExecFlagType EXEC_SAME_AS_MULTIAPP;
 extern const ExecFlagType EXEC_PRE_MULTIAPP_SETUP;
 extern const ExecFlagType EXEC_TRANSFER;
 extern const ExecFlagType EXEC_PRE_KERNELS;
-
+extern const ExecFlagType EXEC_ALWAYS;
 namespace Moose
 {
 

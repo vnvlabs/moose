@@ -293,6 +293,20 @@ public:
     return _ad_grad_u;
   }
 
+  const ADTemplateVariableGradient<OutputType> & adGradSlnDot() const
+  {
+    _need_ad = _need_ad_grad_u_dot = true;
+
+    if (!_time_integrator)
+      // If we don't have a time integrator (this will be the case for variables that are a part of
+      // the AuxiliarySystem) then we have no way to calculate _ad_grad_u_dot and we are just going
+      // to copy the values from _grad_u_dot. Of course in order to be able to do that we need to
+      // calculate _grad_u_dot
+      _need_grad_dot = true;
+
+    return _ad_grad_u_dot;
+  }
+
   const ADTemplateVariableSecond<OutputType> & adSecondSln() const
   {
     _need_ad = _need_ad_second_u = true;
@@ -301,19 +315,9 @@ public:
     return _ad_second_u;
   }
 
-  const ADTemplateVariableValue<OutputType> & adUDot() const
-  {
-    _need_ad = _need_ad_u_dot = true;
+  const ADTemplateVariableValue<OutputType> & adUDot() const;
 
-    if (!_time_integrator)
-      // If we don't have a time integrator (this will be the case for variables that are a part of
-      // the AuxiliarySystem) then we have no way to calculate _ad_u_dot and we are just going to
-      // copy the values from _u_dot. Of course in order to be able to do that we need to calculate
-      // _u_dot
-      _need_u_dot = true;
-
-    return _ad_u_dot;
-  }
+  const ADTemplateVariableValue<OutputType> & adUDotDot() const;
 
   const FieldVariableValue & uDot() const;
 
@@ -580,6 +584,7 @@ private:
   mutable bool _need_u_dot;
   mutable bool _need_ad_u_dot;
   mutable bool _need_u_dotdot;
+  mutable bool _need_ad_u_dotdot;
   mutable bool _need_u_dot_old;
   mutable bool _need_u_dotdot_old;
   mutable bool _need_du_dot_du;
@@ -609,6 +614,7 @@ private:
   mutable bool _need_ad;
   mutable bool _need_ad_u;
   mutable bool _need_ad_grad_u;
+  mutable bool _need_ad_grad_u_dot;
   mutable bool _need_ad_second_u;
 
   /// local solution flags
@@ -678,7 +684,10 @@ private:
   ADTemplateVariableSecond<OutputType> _ad_second_u;
   MooseArray<ADReal> _ad_dof_values;
   MooseArray<ADReal> _ad_dofs_dot;
+  MooseArray<ADReal> _ad_dofs_dotdot;
   ADTemplateVariableValue<OutputType> _ad_u_dot;
+  ADTemplateVariableValue<OutputType> _ad_u_dotdot;
+  ADTemplateVariableGradient<OutputType> _ad_grad_u_dot;
 
   // time derivatives
 
@@ -788,6 +797,9 @@ private:
 
   /// The current element side
   const unsigned int & _current_side;
+
+  /// A dummy ADReal variable
+  ADReal _ad_real_dummy = 0;
 };
 
 /////////////////////// General template definitions //////////////////////////////////////
@@ -806,6 +818,38 @@ MooseVariableData<OutputType>::adNodalValue() const
 {
   _need_ad = true;
   return _ad_nodal_value;
+}
+
+template <typename OutputType>
+const ADTemplateVariableValue<OutputType> &
+MooseVariableData<OutputType>::adUDot() const
+{
+  _need_ad = _need_ad_u_dot = true;
+
+  if (!_time_integrator)
+    // If we don't have a time integrator (this will be the case for variables that are a part of
+    // the AuxiliarySystem) then we have no way to calculate _ad_u_dot and we are just going to
+    // copy the values from _u_dot. Of course in order to be able to do that we need to calculate
+    // _u_dot
+    _need_u_dot = true;
+
+  return _ad_u_dot;
+}
+
+template <typename OutputType>
+const ADTemplateVariableValue<OutputType> &
+MooseVariableData<OutputType>::adUDotDot() const
+{
+  _need_ad = _need_ad_u_dotdot = true;
+
+  if (!_time_integrator)
+    // If we don't have a time integrator (this will be the case for variables that are a part
+    // of the AuxiliarySystem) then we have no way to calculate _ad_u_dotdot and we are just
+    // going to copy the values from _u_dotdot. Of course in order to be able to do that we need
+    // to calculate _u_dotdot
+    _need_u_dotdot = true;
+
+  return _ad_u_dotdot;
 }
 
 ////////////////////////// Forward declaration of fully specialized templates //////////////////

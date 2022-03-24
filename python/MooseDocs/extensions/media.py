@@ -21,7 +21,7 @@ def make_extension(**kwargs):
 
 Image = tokens.newToken('Image', src='', tex='', dark='')
 Video = tokens.newToken('Video', src='', tex='', youtube=False,
-                        controls=True, autoplay=True, loop=True, tstart=None, tstop=None)
+                        controls=True, poster=None, autoplay=True, loop=True, tstart=None, tstop=None)
 
 class MediaExtension(command.CommandExtension):
     """
@@ -35,10 +35,10 @@ class MediaExtension(command.CommandExtension):
         return config
 
     def initPage(self, page):
-        page[self.name] = dict(prefix=self.get('prefix'))
+        page[self.name] = dict()
 
     def preRead(self, page):
-        page['prefix'] = page[self.name]['prefix']
+        page['prefix'] = page[self.name].get('prefix', self.get('prefix'))
 
     def extend(self, reader, renderer):
         self.requires(command, floats)
@@ -84,14 +84,14 @@ class ImageCommand(command.CommandComponent):
         settings.update(floats.caption_settings())
         return settings
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
 
-        flt = floats.create_float(parent, self.extension, self.reader, page, self.settings,
-                                  bottom=True, **self.attributes)
-        img = Image(flt, src=info['subcommand'], dark=self.settings['dark_src'],
-                    tex=self.settings['latex_src'])
+        flt = floats.create_float(parent, self.extension, self.reader, page, settings,
+                                  bottom=True, **self.attributes(settings))
+        img = Image(flt, src=info['subcommand'], dark=settings['dark_src'],
+                    tex=settings['latex_src'])
         if flt is parent:
-            img.attributes.update(**self.attributes)
+            img.attributes.update(**self.attributes(settings))
         return parent
 
 class VideoCommand(command.CommandComponent):
@@ -111,23 +111,23 @@ class VideoCommand(command.CommandComponent):
         settings.update(floats.caption_settings())
         return settings
 
-    def createToken(self, parent, info, page):
-        flt = floats.create_float(parent, self.extension, self.reader, page, self.settings,
-                                  bottom=True, img=True, **self.attributes)
+    def createToken(self, parent, info, page, settings):
+        flt = floats.create_float(parent, self.extension, self.reader, page, settings,
+                                  bottom=True, img=True, **self.attributes(settings))
 
         vid = Video(flt,
                     src=info['subcommand'],
                     youtube='www.youtube.com' in info['subcommand'],
-                    tex=self.settings['latex_src'],
-                    controls=self.settings['controls'],
-                    poster=self.settings['poster'],
-                    loop=self.settings['loop'],
-                    autoplay=self.settings['autoplay'],
-                    tstart=self.settings['tstart'],
-                    tstop=self.settings['tstop'])
+                    tex=settings['latex_src'],
+                    controls=settings['controls'],
+                    poster=settings['poster'],
+                    loop=settings['loop'],
+                    autoplay=settings['autoplay'],
+                    tstart=settings['tstart'],
+                    tstop=settings['tstop'])
 
         if flt is parent:
-            vid.attributes.update(**self.attributes)
+            vid.attributes.update(**self.attributes(settings))
 
         return parent
 
@@ -212,13 +212,19 @@ class RenderVideo(components.RenderComponent):
         elif tstop:
             src += '#t=0,{}'.format(tstop)
 
-        video = html.Tag(parent, 'video', token, class_='moose-video')
+        # Need to place HTML video elements in their own div element so that the controls render
+        # properly (they can overlap with the video container and cause weird looking artifacts).
+        div = html.Tag(parent, 'div', token, class_='moose-video-div')
+        video = html.Tag(div, 'video', class_='moose-video')
         _, ext = os.path.splitext(src)
         source = html.Tag(video, 'source', src=src)
 
         source["type"] = "video/{}".format(ext[1:])
 
+        # Set attributes for HTML video element
         video['width'] = '100%'
+        if token['poster'] is not None:
+            video['poster'] = "/" + self.translator.findPage(token['poster']).local
 
         # Ensure that bool flags are boolean
         for key in ['controls', 'loop', 'autoplay']:

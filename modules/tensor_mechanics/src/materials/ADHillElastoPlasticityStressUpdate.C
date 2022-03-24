@@ -25,18 +25,12 @@ ADHillElastoPlasticityStressUpdate::validParams()
   params.addRequiredParam<Real>("yield_stress",
                                 "Yield stress (constant value) for anisotropic plasticity");
 
-  params.addRequiredRangeCheckedParam<std::vector<Real>>("hill_constants",
-                                                         "hill_constants_size = 6",
-                                                         "Hill material constants in order: F, "
-                                                         "G, H, L, M, N");
-
   return params;
 }
 
 ADHillElastoPlasticityStressUpdate::ADHillElastoPlasticityStressUpdate(
     const InputParameters & parameters)
   : ADAnisotropicReturnPlasticityStressUpdateBase(parameters),
-    _hill_constants(6),
     _qsigma(0.0),
     _eigenvalues_hill(6),
     _eigenvectors_hill(6, 6),
@@ -59,30 +53,8 @@ ADHillElastoPlasticityStressUpdate::ADHillElastoPlasticityStressUpdate(
     _hardening_slope(0.0),
     _yield_condition(1.0),
     _yield_stress(getParam<Real>("yield_stress")),
-    _hill_tensor(6, 6)
+    _hill_tensor(getMaterialPropertyByName<DenseMatrix<Real>>(_base_name + "hill_tensor"))
 {
-  _hill_constants = getParam<std::vector<Real>>("hill_constants");
-
-  // Hill constants, some constraints apply
-  const Real & F = _hill_constants[0];
-  const Real & G = _hill_constants[1];
-  const Real & H = _hill_constants[2];
-  const Real & L = _hill_constants[3];
-  const Real & M = _hill_constants[4];
-  const Real & N = _hill_constants[5];
-
-  _hill_tensor.zero();
-
-  _hill_tensor(0, 0) = G + H;
-  _hill_tensor(1, 1) = F + H;
-  _hill_tensor(2, 2) = F + G;
-  _hill_tensor(0, 1) = _hill_tensor(1, 0) = -H;
-  _hill_tensor(0, 2) = _hill_tensor(2, 0) = -G;
-  _hill_tensor(1, 2) = _hill_tensor(2, 1) = -F;
-
-  _hill_tensor(3, 3) = 2.0 * N;
-  _hill_tensor(4, 4) = 2.0 * L;
-  _hill_tensor(5, 5) = 2.0 * M;
 }
 
 void
@@ -194,7 +166,8 @@ ADHillElastoPlasticityStressUpdate::computeElasticityTensorEigenDecomposition()
   ADDenseMatrix eigenvectors_elasticity_transpose(6, 6);
   _elasticity_eigenvectors[_qp].get_transpose(eigenvectors_elasticity_transpose);
 
-  ADDenseMatrix b_matrix(_hill_tensor);
+  ADDenseMatrix b_matrix(6, 6);
+  b_matrix = _hill_tensor[_qp];
 
   // Right multiply by matrix of eigenvectors transpose
   b_matrix.right_multiply(_elasticity_eigenvectors[_qp]);
@@ -207,16 +180,56 @@ ADHillElastoPlasticityStressUpdate::computeElasticityTensorEigenDecomposition()
     for (unsigned int index_j = 0; index_j < dimension; index_j++)
       B_eigen(index_i, index_j) = MetaPhysicL::raw_value(b_matrix(index_i, index_j));
 
-  Eigen::SelfAdjointEigenSolver<AnisotropyMatrixReal> es_b(B_eigen);
+  if (isBlockDiagonal(B_eigen))
+  {
+    Eigen::SelfAdjointEigenSolver<AnisotropyMatrixRealBlock> es_b_left(B_eigen.block<3, 3>(0, 0));
+    Eigen::SelfAdjointEigenSolver<AnisotropyMatrixRealBlock> es_b_right(B_eigen.block<3, 3>(3, 3));
 
-  auto lambda_b = es_b.eigenvalues();
-  auto v_b = es_b.eigenvectors();
-  for (unsigned int index_i = 0; index_i < dimension; index_i++)
-    _b_eigenvalues[_qp](index_i) = lambda_b(index_i);
+    auto lambda_b_left = es_b_left.eigenvalues();
+    auto v_b_left = es_b_left.eigenvectors();
 
-  for (unsigned int index_i = 0; index_i < dimension; index_i++)
-    for (unsigned int index_j = 0; index_j < dimension; index_j++)
-      _b_eigenvectors[_qp](index_i, index_j) = v_b(index_i, index_j);
+    auto lambda_b_right = es_b_right.eigenvalues();
+    auto v_b_right = es_b_right.eigenvectors();
+
+    _b_eigenvalues[_qp](0) = lambda_b_left(0);
+    _b_eigenvalues[_qp](1) = lambda_b_left(1);
+    _b_eigenvalues[_qp](2) = lambda_b_left(2);
+    _b_eigenvalues[_qp](3) = lambda_b_right(0);
+    _b_eigenvalues[_qp](4) = lambda_b_right(1);
+    _b_eigenvalues[_qp](5) = lambda_b_right(2);
+
+    _b_eigenvectors[_qp](0, 0) = v_b_left(0, 0);
+    _b_eigenvectors[_qp](0, 1) = v_b_left(0, 1);
+    _b_eigenvectors[_qp](0, 2) = v_b_left(0, 2);
+    _b_eigenvectors[_qp](1, 0) = v_b_left(1, 0);
+    _b_eigenvectors[_qp](1, 1) = v_b_left(1, 1);
+    _b_eigenvectors[_qp](1, 2) = v_b_left(1, 2);
+    _b_eigenvectors[_qp](2, 0) = v_b_left(2, 0);
+    _b_eigenvectors[_qp](2, 1) = v_b_left(2, 1);
+    _b_eigenvectors[_qp](2, 2) = v_b_left(2, 2);
+    _b_eigenvectors[_qp](3, 3) = v_b_right(0, 0);
+    _b_eigenvectors[_qp](3, 4) = v_b_right(0, 1);
+    _b_eigenvectors[_qp](3, 5) = v_b_right(0, 2);
+    _b_eigenvectors[_qp](4, 3) = v_b_right(1, 0);
+    _b_eigenvectors[_qp](4, 4) = v_b_right(1, 1);
+    _b_eigenvectors[_qp](4, 5) = v_b_right(1, 2);
+    _b_eigenvectors[_qp](5, 3) = v_b_right(2, 0);
+    _b_eigenvectors[_qp](5, 4) = v_b_right(2, 1);
+    _b_eigenvectors[_qp](5, 5) = v_b_right(2, 2);
+  }
+  else
+  {
+    Eigen::SelfAdjointEigenSolver<AnisotropyMatrixReal> es_b(B_eigen);
+
+    auto lambda_b = es_b.eigenvalues();
+    auto v_b = es_b.eigenvectors();
+    for (unsigned int index_i = 0; index_i < dimension; index_i++)
+      _b_eigenvalues[_qp](index_i) = lambda_b(index_i);
+
+    for (unsigned int index_i = 0; index_i < dimension; index_i++)
+      for (unsigned int index_j = 0; index_j < dimension; index_j++)
+        _b_eigenvectors[_qp](index_i, index_j) = v_b(index_i, index_j);
+  }
 
   _alpha_matrix[_qp] = sqrt_Delta;
   _alpha_matrix[_qp].right_multiply(_b_eigenvectors[_qp]);
@@ -370,7 +383,7 @@ ADHillElastoPlasticityStressUpdate::computeStrainFinalize(
   stress_vector(4) = stress(1, 2);
   stress_vector(5) = stress(0, 2);
 
-  _hill_tensor.vector_mult(hill_stress, stress_vector);
+  _hill_tensor[_qp].vector_mult(hill_stress, stress_vector);
   hill_stress.scale(delta_gamma);
   inelasticStrainIncrement_vector = hill_stress;
 
@@ -384,21 +397,10 @@ ADHillElastoPlasticityStressUpdate::computeStrainFinalize(
   inelasticStrainIncrement(0, 2) = inelasticStrainIncrement(2, 0) =
       inelasticStrainIncrement_vector(5) / 2.0;
 
-  // Calculate appropriate equivalent plastic strain
-  const Real & F = _hill_constants[0];
-  const Real & G = _hill_constants[1];
-  const Real & H = _hill_constants[2];
-  const Real & L = _hill_constants[3];
-  const Real & M = _hill_constants[4];
-  const Real & N = _hill_constants[5];
-
-  ADReal eq_plastic_strain_inc = (F * Utility::pow<2>(inelasticStrainIncrement(0, 0)) +
-                                  G * Utility::pow<2>(inelasticStrainIncrement(1, 1)) +
-                                  H * Utility::pow<2>(inelasticStrainIncrement(2, 2))) /
-                                     (F * G + F * H + G * H) +
-                                 2.0 * Utility::pow<2>(inelasticStrainIncrement(1, 2)) / L +
-                                 2.0 * Utility::pow<2>(inelasticStrainIncrement(2, 0)) / M +
-                                 2.0 * Utility::pow<2>(inelasticStrainIncrement(0, 1)) / N;
+  // Calculate equivalent plastic strain
+  ADDenseVector Mepsilon(6);
+  _hill_tensor[_qp].vector_mult(Mepsilon, inelasticStrainIncrement_vector);
+  ADReal eq_plastic_strain_inc = Mepsilon.dot(inelasticStrainIncrement_vector);
 
   if (eq_plastic_strain_inc > 0.0)
     eq_plastic_strain_inc = std::sqrt(eq_plastic_strain_inc);

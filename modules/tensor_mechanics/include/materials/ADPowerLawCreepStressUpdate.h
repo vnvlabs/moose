@@ -34,13 +34,26 @@ public:
 
   virtual bool substeppingCapabilityEnabled() override;
 
+  virtual void resetIncrementalMaterialProperties() override;
+
 protected:
   virtual void computeStressInitialize(const ADReal & effective_trial_stress,
                                        const ADRankFourTensor & elasticity_tensor) override;
+
+  virtual void computeStressFinalize(const ADRankTwoTensor & plastic_strain_increment) override;
+
   virtual ADReal computeResidual(const ADReal & effective_trial_stress,
-                                 const ADReal & scalar) override;
+                                 const ADReal & scalar) override
+  {
+    return computeResidualInternal<ADReal>(effective_trial_stress, scalar);
+  }
   virtual ADReal computeDerivative(const ADReal & effective_trial_stress,
                                    const ADReal & scalar) override;
+  virtual ChainedADReal computeResidualAndDerivative(const ADReal & effective_trial_stress,
+                                                     const ChainedADReal & scalar) override
+  {
+    return computeResidualInternal<ChainedADReal>(effective_trial_stress, scalar);
+  }
 
   /// Temperature variable value
   const ADVariableValue * const _temperature;
@@ -68,4 +81,9 @@ protected:
 
   /// Exponential calculated from current time
   Real _exp_time;
+
+private:
+  template <typename ScalarType>
+  ScalarType computeResidualInternal(const ADReal & effective_trial_stress,
+                                     const ScalarType & scalar);
 };

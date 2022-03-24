@@ -6,7 +6,17 @@ velocity_interp_method='rc'
 restricted_blocks = '1'
 
 [GlobalParams]
-  two_term_boundary_expansion = true
+  rhie_chow_user_object = 'rc'
+[]
+
+[UserObjects]
+  [rc]
+    type = INSFVRhieChowInterpolator
+    u = u
+    v = v
+    block = ${restricted_blocks}
+    pressure = pressure
+  []
 []
 
 [Mesh]
@@ -77,75 +87,56 @@ restricted_blocks = '1'
     variable = pressure
     advected_interp_method = ${advected_interp_method}
     velocity_interp_method = ${velocity_interp_method}
-    vel = 'velocity'
-    pressure = pressure
-    u = u
-    v = v
-    mu = ${mu}
     rho = ${rho}
   []
 
   [u_advection]
     type = INSFVMomentumAdvection
     variable = u
-    advected_quantity = 'rhou'
-    vel = 'velocity'
     advected_interp_method = ${advected_interp_method}
     velocity_interp_method = ${velocity_interp_method}
-    pressure = pressure
-    u = u
-    v = v
-    mu = ${mu}
     rho = ${rho}
+    momentum_component = 'x'
   []
   [u_viscosity]
-    type = FVDiffusion
+    type = INSFVMomentumDiffusion
     variable = u
-    coeff = ${mu}
+    mu = ${mu}
+    momentum_component = 'x'
   []
   [u_pressure]
     type = INSFVMomentumPressure
     variable = u
     momentum_component = 'x'
-    p = pressure
+    pressure = pressure
   []
 
   [v_advection]
     type = INSFVMomentumAdvection
     variable = v
-    advected_quantity = 'rhov'
-    vel = 'velocity'
     advected_interp_method = ${advected_interp_method}
     velocity_interp_method = ${velocity_interp_method}
-    pressure = pressure
-    u = u
-    v = v
-    mu = ${mu}
     rho = ${rho}
+    momentum_component = 'y'
   []
   [v_viscosity]
-    type = FVDiffusion
+    type = INSFVMomentumDiffusion
     variable = v
-    coeff = ${mu}
+    mu = ${mu}
+    momentum_component = 'y'
   []
   [v_pressure]
     type = INSFVMomentumPressure
     variable = v
     momentum_component = 'y'
-    p = pressure
+    pressure = pressure
   []
 
   [energy_advection]
     type = INSFVEnergyAdvection
     variable = temperature
-    vel = 'velocity'
     velocity_interp_method = ${velocity_interp_method}
     advected_interp_method = ${advected_interp_method}
-    pressure = pressure
-    u = u
-    v = v
-    mu = ${mu}
-    rho = ${rho}
   []
   [energy_diffusion]
     type = FVDiffusion
@@ -161,14 +152,8 @@ restricted_blocks = '1'
   [scalar_advection]
     type = INSFVScalarFieldAdvection
     variable = scalar
-    vel = 'velocity'
     velocity_interp_method = ${velocity_interp_method}
     advected_interp_method = ${advected_interp_method}
-    pressure = pressure
-    u = u
-    v = v
-    mu = ${mu}
-    rho = ${rho}
   []
   [scalar_diffusion]
     type = FVDiffusion
@@ -252,16 +237,13 @@ restricted_blocks = '1'
 
 [Materials]
   [ins_fv]
-    type = INSFVMaterial
-    u = 'u'
-    v = 'v'
-    pressure = 'pressure'
+    type = INSFVEnthalpyMaterial
     temperature = 'temperature'
     rho = ${rho}
     block = ${restricted_blocks}
   []
   [const]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     prop_names = 'cp'
     prop_values = '2'
   []

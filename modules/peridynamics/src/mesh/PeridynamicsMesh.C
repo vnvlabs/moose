@@ -104,7 +104,7 @@ PeridynamicsMesh::PeridynamicsMesh(const InputParameters & parameters)
 std::unique_ptr<MooseMesh>
 PeridynamicsMesh::safeClone() const
 {
-  return libmesh_make_unique<PeridynamicsMesh>(*this);
+  return std::make_unique<PeridynamicsMesh>(*this);
 }
 
 void
@@ -140,8 +140,8 @@ void
 PeridynamicsMesh::createPeridynamicsMeshData(
     MeshBase & fe_mesh,
     std::set<dof_id_type> converted_elem_id,
-    std::multimap<SubdomainID, SubdomainID> connect_block_id_pairs,
-    std::multimap<SubdomainID, SubdomainID> non_connect_block_id_pairs)
+    std::multimap<SubdomainID, SubdomainID> bonding_block_pairs,
+    std::multimap<SubdomainID, SubdomainID> non_bonding_block_pairs)
 {
   _dim = fe_mesh.mesh_dimension();
   _n_pdnodes = converted_elem_id.size();
@@ -171,14 +171,14 @@ PeridynamicsMesh::createPeridynamicsMeshData(
     for (unsigned int j = 0; j < fe_elem->n_neighbors(); ++j)
       if (fe_elem->neighbor_ptr(j) != nullptr)
       {
-        dist_sum += (fe_elem->centroid() - fe_elem->neighbor_ptr(j)->centroid()).norm();
+        dist_sum += (fe_elem->vertex_average() - fe_elem->neighbor_ptr(j)->vertex_average()).norm();
         n_fe_neighbors++;
       }
       else // this side is on boundary and calculate the distance to the centroid
       {
         Real dist = 0.0;
         std::vector<unsigned int> nid = fe_elem->nodes_on_side(j);
-        Point p0 = fe_elem->centroid();
+        Point p0 = fe_elem->vertex_average();
         Point p1 = fe_elem->point(nid[0]);
         if (fe_elem->dim() == 2) // 2D elems
         {
@@ -201,7 +201,7 @@ PeridynamicsMesh::createPeridynamicsMeshData(
         _boundary_node_offset.insert(std::make_pair(id, -dist));
       }
 
-    _pdnode_coord[id] = fe_elem->centroid();
+    _pdnode_coord[id] = fe_elem->vertex_average();
     _pdnode_average_spacing[id] = dist_sum / n_fe_neighbors;
     _pdnode_horizon_radius[id] =
         (_has_horizon_number ? _horizon_number * dist_sum / n_fe_neighbors : _horizon_radius);
@@ -217,7 +217,7 @@ PeridynamicsMesh::createPeridynamicsMeshData(
   }
 
   // search node neighbors and create other nodal data
-  createNodeHorizBasedData(connect_block_id_pairs, non_connect_block_id_pairs);
+  createNodeHorizBasedData(bonding_block_pairs, non_bonding_block_pairs);
 
   createNeighborHorizonBasedData(); // applies to non-ordinary state-based model only.
 
@@ -241,8 +241,8 @@ PeridynamicsMesh::createPeridynamicsMeshData(
 
 void
 PeridynamicsMesh::createNodeHorizBasedData(
-    std::multimap<SubdomainID, SubdomainID> connect_block_id_pairs,
-    std::multimap<SubdomainID, SubdomainID> non_connect_block_id_pairs)
+    std::multimap<SubdomainID, SubdomainID> bonding_block_pairs,
+    std::multimap<SubdomainID, SubdomainID> non_bonding_block_pairs)
 {
   // search neighbors
   for (unsigned int i = 0; i < _n_pdnodes; ++i)
@@ -254,13 +254,13 @@ PeridynamicsMesh::createNodeHorizBasedData(
       if (dis <= 1.0001 * _pdnode_horizon_radius[i] && j != i)
       {
         bool is_interface = false;
-        if (!connect_block_id_pairs.empty())
+        if (!bonding_block_pairs.empty())
           is_interface =
-              checkInterface(_pdnode_blockID[i], _pdnode_blockID[j], connect_block_id_pairs);
+              checkInterface(_pdnode_blockID[i], _pdnode_blockID[j], bonding_block_pairs);
 
-        if (!non_connect_block_id_pairs.empty())
+        if (!non_bonding_block_pairs.empty())
           is_interface =
-              !checkInterface(_pdnode_blockID[i], _pdnode_blockID[j], non_connect_block_id_pairs);
+              !checkInterface(_pdnode_blockID[i], _pdnode_blockID[j], non_bonding_block_pairs);
 
         if (_pdnode_blockID[i] == _pdnode_blockID[j] || is_interface)
         {
@@ -527,13 +527,15 @@ PeridynamicsMesh::checkPointInsideRectangle(
     Real a = rec_p2(1) - rec_p1(1);
     Real b = rec_p1(0) - rec_p2(0);
     Real c = rec_p2(0) * rec_p1(1) - rec_p2(1) * rec_p1(0);
-    inside *= std::abs(a * point(0) + b * point(1) + c) / crack_length < rec_height / 2.0;
+    inside =
+        inside && (std::abs(a * point(0) + b * point(1) + c) / crack_length < rec_height / 2.0);
 
     a = rec_p2(0) - rec_p1(0);
     b = rec_p2(1) - rec_p1(1);
     c = 0.5 * (rec_p1(1) * rec_p1(1) - rec_p2(1) * rec_p2(1) - rec_p2(0) * rec_p2(0) +
                rec_p1(0) * rec_p1(0));
-    inside *= std::abs(a * point(0) + b * point(1) + c) / crack_length < (tol + crack_length) / 2.0;
+    inside = inside && (std::abs(a * point(0) + b * point(1) + c) / crack_length <
+                        (tol + crack_length) / 2.0);
   }
 
   return inside;

@@ -21,6 +21,7 @@
 #include "libmesh/point.h"
 #include "libmesh/fe_base.h"
 #include "libmesh/numeric_vector.h"
+#include "libmesh/elem_side_builder.h"
 
 #include "DualRealOps.h"
 
@@ -73,6 +74,13 @@ class NodeFaceConstraint;
 /// Real or ADPoint and ADReal.
 template <typename P, typename C>
 void coordTransformFactor(const SubProblem & s,
+                          SubdomainID sub_id,
+                          const P & point,
+                          C & factor,
+                          SubdomainID neighbor_sub_id = libMesh::Elem::invalid_subdomain_id);
+
+template <typename P, typename C>
+void coordTransformFactor(const MooseMesh & mesh,
                           SubdomainID sub_id,
                           const P & point,
                           C & factor,
@@ -338,6 +346,9 @@ public:
     return _ad_q_points_face;
   }
 
+  template <bool is_ad>
+  const MooseArray<MooseADWrapper<Point, is_ad>> & genericQPoints() const;
+
   /**
    * Return the current element
    * @return A _reference_.  Make sure to store this as a reference!
@@ -415,12 +426,12 @@ public:
   /*
    * @return The current lower-dimensional element volume
    */
-  const Real & lowerDElemVolume() const { return _current_lower_d_elem_volume; }
+  const Real & lowerDElemVolume() const;
 
   /*
    * @return The current neighbor lower-dimensional element volume
    */
-  const Real & neighborLowerDElemVolume() const { return _current_neighbor_lower_d_elem_volume; }
+  const Real & neighborLowerDElemVolume() const;
 
   /**
    * Return the current subdomain ID
@@ -479,23 +490,19 @@ public:
   const Node * const & nodeNeighbor() const { return _current_neighbor_node; }
 
   /**
-   * Creates volume, face and arbitrary qrules based on the orders passed in
-   * that apply to all subdomains. order is used for arbitrary volume
-   * quadrature rules, while volume_order and face_order are for elem and face
-   * quadrature respectively.
-   */
-  void createQRules(QuadratureType type, Order order, Order volume_order, Order face_order);
-
-  /**
    * Creates block-specific volume, face and arbitrary qrules based on the
-   * orders passed in.  Any quadrature rules specified using this function
-   * override those created via in the non-block-specific/global createQRules
-   * function. order is used for arbitrary volume quadrature rules, while
-   * volume_order and face_order are for elem and face quadrature
-   * respectively.
+   * orders and the flag of whether or not to allow negative qweights passed in.
+   * Any quadrature rules specified using this function override those created
+   * via in the non-block-specific/global createQRules function. order is used
+   * for arbitrary volume quadrature rules, while volume_order and face_order
+   * are for elem and face quadrature respectively.
    */
-  void createQRules(
-      QuadratureType type, Order order, Order volume_order, Order face_order, SubdomainID block);
+  void createQRules(QuadratureType type,
+                    Order order,
+                    Order volume_order,
+                    Order face_order,
+                    SubdomainID block,
+                    bool allow_negative_qweights = true);
 
   /**
    * Increases the element/volume quadrature order for the specified mesh
@@ -533,6 +540,26 @@ public:
    * @param dim The spatial dimension of the qrule
    */
   void setFaceQRule(QBase * qrule, unsigned int dim);
+
+  /**
+   * Specifies a custom qrule for integration on mortar segment mesh
+   *
+   * Used to properly integrate QUAD face elements using quadrature on TRI mortar segment elements.
+   * For example, to exactly integrate a FIRST order QUAD element, SECOND order quadrature on TRI
+   * mortar segments is needed.
+   */
+  void setMortarQRule(Order order);
+
+  /**
+   * Indicates that dual shape functions are used for mortar constraint
+   */
+  void activateDual() { _need_dual = true; }
+
+  /**
+   * Indicates whether dual shape functions are used (computation is now repeated on each element
+   * so expense of computing dual shape functions is no longer trivial)
+   */
+  bool needDual() const { return _need_dual; }
 
 private:
   /**
@@ -582,6 +609,11 @@ public:
                              const std::vector<Real> * const weights = nullptr);
 
   /**
+   * Reintialize dual basis coefficients based on a customized quadrature rule
+   */
+  void reinitDual(const Elem * elem, const std::vector<Point> & pts, const std::vector<Real> & JxW);
+
+  /**
    * Reinitialize FE data for a lower dimenesional element with a given set of reference points
    */
   void reinitLowerDElem(const Elem * elem,
@@ -612,7 +644,7 @@ private:
   /**
    * compute AD things on an element face
    */
-  void computeADFace(const Elem * elem, unsigned int side);
+  void computeADFace(const Elem & elem, const unsigned int side);
 
 public:
   /**
@@ -893,16 +925,6 @@ public:
                                 const DofMap & dof_map,
                                 const std::vector<dof_id_type> & idof_indices,
                                 const std::vector<dof_id_type> & jdof_indices);
-
-  /**
-   * Add *all* portions of the Jacobian, e.g. LowerLower, LowerSecondary, LowerPrimary,
-   * SecondaryLower, SecondarySecondary, SecondaryPrimary, PrimaryLower, PrimarySecondary,
-   * PrimaryPrimary for mortar-like objects. Primary indicates the interior parent element on the
-   * primary side of the mortar interface. Secondary indicates the interior parent element on the
-   * secondary side of the interface. Lower denotes the lower-dimensional element living on the
-   * secondary side of the mortar interface; it's the boundary face of the \p Secondary element.
-   */
-  void addJacobianMortar();
 
   /**
    * Add *all* portions of the Jacobian except PrimaryPrimary, e.g. LowerLower, LowerSecondary,
@@ -1649,9 +1671,18 @@ public:
   }
 
   /**
+   * This simply caches the residual value for the corresponding index for the provided
+   * \p vector_tags, and applies any scaling factors. The scaling factor is defined in
+   * _scaling_vector if global AD indexing is used. Otherwise, a uniform scaling factor of 1.0 is
+   * used.
+   */
+  void processResidual(Real residual, dof_id_type dof_index, const std::set<TagID> & vector_tags);
+
+  /**
    * This method is only meant to be called if MOOSE is configured to use global AD indexing.
    * This simply caches the derivative values for the corresponding column indices for the provided
-   * \p matrix_tags. If called when using local AD indexing, this method will simply error
+   * \p matrix_tags, and applies any scaling factors. If called when using local AD indexing, this
+   * method will simply error
    */
   void processDerivatives(const ADReal & residual,
                           dof_id_type dof_index,
@@ -1692,9 +1723,13 @@ public:
                           LocalFunctor & local_functor);
 
 #ifdef MOOSE_GLOBAL_AD_INDEXING
+  void processUnconstrainedDerivatives(const std::vector<ADReal> & residuals,
+                                       const std::vector<dof_id_type> & row_indices,
+                                       const std::set<TagID> & matrix_tags);
+
   /**
-   * signals this object that a vector containing variable scaling factors should be used when doing
-   * residual and matrix assembly
+   * signals this object that a vector containing variable scaling factors should be used when
+   * doing residual and matrix assembly
    */
   void hasScalingVector();
 #endif
@@ -1725,7 +1760,7 @@ protected:
    */
   void reinitFEFace(const Elem * elem, unsigned int side);
 
-  void computeFaceMap(unsigned dim, const std::vector<Real> & qw, const Elem * side);
+  void computeFaceMap(const Elem & elem, const unsigned int side, const std::vector<Real> & qw);
 
   void reinitFEFaceNeighbor(const Elem * neighbor, const std::vector<Point> & reference_points);
 
@@ -2257,6 +2292,8 @@ private:
   mutable std::map<unsigned int, std::map<FEType, FEVectorBase *>> _vector_fe_lower;
   /// Vector FE objects for lower dimensional elements
   mutable std::map<unsigned int, std::map<FEType, const FEVectorBase *>> _const_vector_fe_lower;
+  /// helper object for transforming coordinates for lower dimensional element quadrature points
+  std::map<unsigned int, FEBase **> _holder_fe_lower_helper;
 
   /// quadrature rule used on neighbors. Note that this const version is required because our getter
   /// APIs return a const QBase * const &. Without the const QBase * member we would be casting the
@@ -2289,6 +2326,8 @@ private:
   QBase * _qrule_msm;
   /// A pointer to const qrule_msm
   const QBase * _const_qrule_msm;
+  /// Flag specifying whether a custom quadrature rule has been specified for mortar segment mesh
+  bool _custom_mortar_qrule;
 
 private:
   /// quadrature rule used on lower dimensional elements. This should always be the same as the face
@@ -2340,10 +2379,16 @@ protected:
   const Elem * _current_lower_d_elem;
   /// The current neighboring lower dimensional element
   const Elem * _current_neighbor_lower_d_elem;
+  /// Whether we need to compute the lower dimensional element volume
+  mutable bool _need_lower_d_elem_volume;
   /// The current lower dimensional element volume
   Real _current_lower_d_elem_volume;
+  /// Whether we need to compute the neighboring lower dimensional element volume
+  mutable bool _need_neighbor_lower_d_elem_volume;
   /// The current neighboring lower dimensional element volume
   Real _current_neighbor_lower_d_elem_volume;
+  /// Whether dual shape functions need to be computed for mortar constraints
+  bool _need_dual;
 
   /// This will be filled up with the physical points passed into reinitAtPhysical() if it is called.  Invalid at all other times.
   MooseArray<Point> _current_physical_points;
@@ -2564,6 +2609,13 @@ protected:
   /// The map from global index to variable scaling factor
   const NumericVector<Real> * _scaling_vector = nullptr;
 #endif
+
+  /// In place side element builder for _current_side_elem
+  ElemSideBuilder _current_side_elem_builder;
+  /// In place side element builder for _current_neighbor_side_elem
+  ElemSideBuilder _current_neighbor_side_elem_builder;
+  /// In place side element builder for computeFaceMap()
+  ElemSideBuilder _compute_face_map_side_elem_builder;
 };
 
 template <typename OutputType>
@@ -2771,10 +2823,18 @@ Assembly::processDerivatives(const std::vector<ADReal> & residuals,
     auto current_dofs_set = std::set<dof_id_type>(resid_it->derivatives().nude_indices().begin(),
                                                   resid_it->derivatives().nude_indices().end());
     mooseAssert(compare_dofs_set == current_dofs_set,
-                "We're going to see whether the dof sets are the same");
+                "We're going to see whether the dof sets are the same. IIRC the degree of freedom "
+                "dependence (as indicated by the dof index set held by the ADReal) has to be the "
+                "same for every residual passed to this method otherwise constrain_element_matrix "
+                "will not work.");
   }
 #endif
   auto column_indices = std::vector<dof_id_type>(compare_dofs.begin(), compare_dofs.end());
+
+  // If there's no derivatives then there is nothing to do. Moreover, if we pass zero size column
+  // indices to constrain_element_matrix then we will potentially get errors out of BLAS
+  if (!column_indices.size())
+    return;
 
   DenseMatrix<Number> element_matrix(row_indices.size(), column_indices.size());
   for (const auto i : index_range(row_indices))
@@ -2797,4 +2857,18 @@ Assembly::processDerivatives(const std::vector<ADReal> & residuals,
 #else
   local_functor(residuals, input_row_indices, matrix_tags);
 #endif
+}
+
+inline const Real &
+Assembly::lowerDElemVolume() const
+{
+  _need_lower_d_elem_volume = true;
+  return _current_lower_d_elem_volume;
+}
+
+inline const Real &
+Assembly::neighborLowerDElemVolume() const
+{
+  _need_neighbor_lower_d_elem_volume = true;
+  return _current_neighbor_lower_d_elem_volume;
 }

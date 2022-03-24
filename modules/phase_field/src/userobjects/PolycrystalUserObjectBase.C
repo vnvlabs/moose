@@ -12,7 +12,6 @@
 #include "NonlinearSystemBase.h"
 #include "MooseMesh.h"
 #include "MooseVariable.h"
-#include "TimedPrint.h"
 
 #include <vector>
 #include <map>
@@ -41,9 +40,8 @@ PolycrystalUserObjectBase::validParams()
       "ElementSideNeighborLayers",
       Moose::RelationshipManagerType::GEOMETRIC,
 
-      [](const InputParameters & /*obj_params*/, InputParameters & rm_params) {
-        rm_params.set<unsigned short>("layers") = 2;
-      }
+      [](const InputParameters & /*obj_params*/, InputParameters & rm_params)
+      { rm_params.set<unsigned short>("layers") = 2; }
 
   );
 
@@ -70,9 +68,7 @@ PolycrystalUserObjectBase::PolycrystalUserObjectBase(const InputParameters & par
     _op_num(_vars.size()),
     _coloring_algorithm(getParam<MooseEnum>("coloring_algorithm")),
     _colors_assigned(false),
-    _output_adjacency_matrix(getParam<bool>("output_adjacency_matrix")),
-    _execute_timer(registerTimedSection("execute", 1)),
-    _finalize_timer(registerTimedSection("finalize", 1))
+    _output_adjacency_matrix(getParam<bool>("output_adjacency_matrix"))
 {
   mooseAssert(_single_map_mode, "Do not turn off single_map_mode with this class");
 }
@@ -119,8 +115,7 @@ PolycrystalUserObjectBase::execute()
   else if (!_fe_problem.hasInitialAdaptivity())
     return;
 
-  TIME_SECTION(_execute_timer);
-  CONSOLE_TIMED_PRINT("Computing Polycrystal Initial Condition");
+  TIME_SECTION("execute", 2, "Computing Polycrystal Initial Condition");
 
   /**
    * We need one map per grain when creating the initial condition to support overlapping features.
@@ -140,7 +135,7 @@ PolycrystalUserObjectBase::execute()
    *    the flood routine on the same entity as long as new discoveries are being made. We know
    *    this information from the return value of flood.
    */
-  for (const auto & current_elem : _fe_problem.getEvaluableElementRange())
+  for (const auto & current_elem : _fe_problem.getNonlinearEvaluableElementRange())
   {
     // Loop over elements or nodes
     if (_is_elemental)
@@ -166,8 +161,7 @@ PolycrystalUserObjectBase::finalize()
   if (_colors_assigned && !_fe_problem.hasInitialAdaptivity())
     return;
 
-  TIME_SECTION(_finalize_timer);
-  CONSOLE_TIMED_PRINT("Finalizing Polycrystal Initial Condition");
+  TIME_SECTION("finalize", 2, "Finalizing Polycrystal Initial Condition");
 
   // TODO: Possibly retrieve the halo thickness from the active GrainTracker object?
   constexpr unsigned int halo_thickness = 2;
@@ -179,7 +173,7 @@ PolycrystalUserObjectBase::finalize()
   if (!_colors_assigned)
   {
     // Resize the color assignment vector here. All ranks need a copy of this
-    _grain_to_op.resize(_feature_count, PolycrystalUserObjectBase::INVALID_COLOR);
+    _grain_idx_to_op.resize(_feature_count, PolycrystalUserObjectBase::INVALID_COLOR);
     if (_is_primary)
     {
       buildGrainAdjacencyMatrix();
@@ -190,15 +184,14 @@ PolycrystalUserObjectBase::finalize()
         printGrainAdjacencyMatrix();
     }
 
-    // Communicate the coloring with all ranks
+    // Communicate the coloring map with all ranks
     _communicator.broadcast(_grain_to_op);
 
     /**
-     * All ranks: Update the variable indices based on the graph coloring algorithm. Here we index
-     * into the _grain_to_op vector based on the grain_id to obtain the right assignment.
+     * All ranks: Update the variable indices based on the graph coloring algorithm.
      */
-    for (auto & grain : _feature_sets)
-      grain._var_index = _grain_to_op[grain._id];
+    for (auto & feature : _feature_sets)
+      feature._var_index = _grain_to_op.at(feature._id);
   }
 
   _colors_assigned = true;
@@ -271,17 +264,14 @@ PolycrystalUserObjectBase::isNewFeatureOrConnectedRegion(const DofObject * dof_o
   {
     for (auto grain_id : grains_it->second)
     {
-      mooseAssert(!_colors_assigned || grain_id < _grain_to_op.size(), "grain_id out of range");
-      auto map_num = _colors_assigned ? _grain_to_op[grain_id] : grain_id;
+      auto map_it = _grain_to_op.find(grain_id);
+      mooseAssert(!_colors_assigned || map_it != _grain_to_op.end(), "grain_id missing");
+      auto map_num = _colors_assigned ? map_it->second : grain_id;
+
       if (_entities_visited[map_num].find(entity_id) == _entities_visited[map_num].end())
       {
         saved_grain_id = grain_id;
-
-        if (!_colors_assigned)
-          current_index = grain_id;
-        else
-          current_index = _grain_to_op[grain_id];
-
+        current_index = map_num;
         break;
       }
     }
@@ -413,18 +403,17 @@ PolycrystalUserObjectBase::buildGrainAdjacencyMatrix()
 {
   mooseAssert(_is_primary, "This routine should only be called on the primary rank");
 
-  _adjacency_matrix = libmesh_make_unique<DenseMatrix<Real>>(_feature_count, _feature_count);
-  for (auto & grain1 : _feature_sets)
+  _adjacency_matrix = std::make_unique<DenseMatrix<Real>>(_feature_count, _feature_count);
+  for (MooseIndex(_feature_sets) i = 0; i < _feature_sets.size(); ++i)
   {
-    for (auto & grain2 : _feature_sets)
+    for (MooseIndex(_feature_sets) j = i + 1; j < _feature_sets.size(); ++j)
     {
-      if (&grain1 == &grain2)
-        continue;
-
-      if (grain1.boundingBoxesIntersect(grain2) && grain1.halosIntersect(grain2))
+      if (_feature_sets[i].boundingBoxesIntersect(_feature_sets[j]) &&
+          _feature_sets[i].halosIntersect(_feature_sets[j]))
       {
-        (*_adjacency_matrix)(grain1._id, grain2._id) = 1.;
-        (*_adjacency_matrix)(grain1._id, grain2._id) = 1.;
+        // Our grain adjacency matrix is symmetrical
+        (*_adjacency_matrix)(i, j) = 1;
+        (*_adjacency_matrix)(j, i) = 1;
       }
     }
   }
@@ -453,14 +442,13 @@ PolycrystalUserObjectBase::assignOpsToGrains()
   }
   else // PETSc Coloring algorithms
   {
-#ifdef LIBMESH_HAVE_PETSC
     const std::string & ca_str = _coloring_algorithm;
     Real * am_data = _adjacency_matrix->get_values().data();
 
     try
     {
       Moose::PetscSupport::colorAdjacencyMatrix(
-          am_data, _feature_count, _vars.size(), _grain_to_op, ca_str.c_str());
+          am_data, _feature_count, _vars.size(), _grain_idx_to_op, ca_str.c_str());
     }
     catch (std::runtime_error & e)
     {
@@ -469,10 +457,15 @@ PolycrystalUserObjectBase::assignOpsToGrains()
                  "variables to hold a\nvalid polycrystal initial condition (no grains represented "
                  "by the same variable should be allowed to\ntouch, ~8 for 2D, ~25 for 3D)?");
     }
-#else
-    mooseError("Selected coloring algorithm requires PETSc");
-#endif
   }
+
+  /**
+   * Now we have a vector giving us a coloring based on the indices in our features, but we need to
+   * build a map in case our features have non-contiguous IDs.
+   */
+  mooseAssert(_grain_to_op.empty(), "grain_to_op data structure should be empty here");
+  for (MooseIndex(_grain_idx_to_op) i = 0; i < _grain_idx_to_op.size(); ++i)
+    _grain_to_op.emplace_hint(_grain_to_op.end(), _feature_sets[i]._id, _grain_idx_to_op[i]);
 
   Moose::perf_log.pop("assignOpsToGrains()", "PolycrystalICTools");
 }
@@ -493,13 +486,13 @@ PolycrystalUserObjectBase::colorGraph(unsigned int vertex)
 
     if (isGraphValid(vertex, color))
     {
-      _grain_to_op[vertex] = color;
+      _grain_idx_to_op[vertex] = color;
 
       if (colorGraph(vertex + 1))
         return true;
 
       // Backtrack...
-      _grain_to_op[vertex] = PolycrystalUserObjectBase::INVALID_COLOR;
+      _grain_idx_to_op[vertex] = PolycrystalUserObjectBase::INVALID_COLOR;
     }
   }
 
@@ -511,7 +504,7 @@ PolycrystalUserObjectBase::isGraphValid(unsigned int vertex, unsigned int color)
 {
   // See if the proposed color is valid based on the current neighbor colors
   for (unsigned int neighbor = 0; neighbor < _feature_count; ++neighbor)
-    if ((*_adjacency_matrix)(vertex, neighbor) && color == _grain_to_op[neighbor])
+    if ((*_adjacency_matrix)(vertex, neighbor) && color == _grain_idx_to_op[neighbor])
       return false;
   return true;
 }
@@ -528,7 +521,7 @@ PolycrystalUserObjectBase::printGrainAdjacencyMatrix() const
   }
 
   _console << "Grain to OP assignments:\n";
-  for (auto op : _grain_to_op)
+  for (auto op : _grain_idx_to_op)
     _console << op << "  ";
   _console << '\n' << std::endl;
 }

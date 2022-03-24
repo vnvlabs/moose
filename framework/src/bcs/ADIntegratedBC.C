@@ -45,6 +45,7 @@ ADIntegratedBCTempl<T>::ADIntegratedBCTempl(const InputParameters & parameters)
     _grad_u(_var.adGradSln()),
     _ad_JxW(_assembly.adJxWFace()),
     _ad_coord(_assembly.adCoordTransformation()),
+    _phi(_assembly.phi(_var)),
     _use_displaced_mesh(getParam<bool>("use_displaced_mesh"))
 {
   _subproblem.haveADObjects(true);
@@ -195,21 +196,22 @@ ADIntegratedBCTempl<T>::computeADJacobian(
   computeResidualsForJacobian();
 
   auto local_functor =
-      [&](const std::vector<ADReal> &, const std::vector<dof_id_type> &, const std::set<TagID> &) {
-        for (const auto & it : coupling_entries)
-        {
-          MooseVariableFEBase & ivariable = *(it.first);
-          MooseVariableFEBase & jvariable = *(it.second);
+      [&](const std::vector<ADReal> &, const std::vector<dof_id_type> &, const std::set<TagID> &)
+  {
+    for (const auto & it : coupling_entries)
+    {
+      MooseVariableFEBase & ivariable = *(it.first);
+      MooseVariableFEBase & jvariable = *(it.second);
 
-          unsigned int ivar = ivariable.number();
+      unsigned int ivar = ivariable.number();
 
-          if (ivar != _var.number() || !jvariable.hasBlocks(_current_elem->subdomain_id()))
-            continue;
+      if (ivar != _var.number() || !jvariable.hasBlocks(_current_elem->subdomain_id()))
+        continue;
 
-          // Make sure to get the correct undisplaced/displaced variable
-          addJacobian(getVariable(jvariable.number()));
-        }
-      };
+      // Make sure to get the correct undisplaced/displaced variable
+      addJacobian(getVariable(jvariable.number()));
+    }
+  };
 
   _assembly.processDerivatives(_residuals, _var.dofIndices(), _matrix_tags, local_functor);
 }

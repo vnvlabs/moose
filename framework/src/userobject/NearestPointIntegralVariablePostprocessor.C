@@ -12,13 +12,11 @@
 
 registerMooseObject("MooseApp", NearestPointIntegralVariablePostprocessor);
 
-defineLegacyParams(NearestPointIntegralVariablePostprocessor);
-
 InputParameters
 NearestPointIntegralVariablePostprocessor::validParams()
 {
-  InputParameters params = nearestPointBaseValidParams<ElementIntegralVariablePostprocessor,
-                                                       ElementVariableVectorPostprocessor>();
+  InputParameters params = NearestPointBase<ElementIntegralVariablePostprocessor,
+                                            ElementVariableVectorPostprocessor>::validParams();
 
   params.addClassDescription(
       "Compute element variable integrals for nearest-point based subdomains");
@@ -67,7 +65,7 @@ void
 NearestPointIntegralVariablePostprocessor::finalize()
 {
   if (_user_objects.size() != _np_post_processor_values.size())
-    mooseError("The vector length of the vector postproessor ",
+    mooseError("The vector length of the vector postprocessor ",
                _np_post_processor_values.size(),
                " is different from the number of user objects ",
                _user_objects.size());

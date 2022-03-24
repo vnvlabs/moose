@@ -13,6 +13,7 @@ import unittest
 import mock
 import tempfile
 import subprocess
+import platform
 import mooseutils
 
 #from mooseutils.gitutils import git_submodule_info
@@ -20,52 +21,52 @@ import mooseutils
 class Test(unittest.TestCase):
     def testIsGitRepo(self):
         loc = os.path.dirname(__file__)
-        self.assertTrue(mooseutils.is_git_repo(loc))
+        self.assertTrue(mooseutils.git_is_repo(loc))
 
         loc = tempfile.mkdtemp()
-        self.assertFalse(mooseutils.is_git_repo(loc))
+        self.assertFalse(mooseutils.git_is_repo(loc))
         os.rmdir(loc)
 
-    @unittest.skipIf(not mooseutils.is_git_repo(), "Not a Git repository")
+    @unittest.skipIf(not mooseutils.git_is_repo(), "Not a Git repository")
     def testGitCommit(self):
         c = mooseutils.git_commit()
         self.assertEqual(len(c), 40)
 
-    @unittest.skipIf(not mooseutils.is_git_repo(), "Not a Git repository")
+    @unittest.skipIf(not mooseutils.git_is_repo(), "Not a Git repository")
     def testGitCommitMessage(self):
         c = 'b863a496dbf1449853be6978c8ac1a9c242d389b' # beautiful commit
         msg = mooseutils.git_commit_message(c)
         self.assertIn('The name is, just so long', msg)
 
-    @unittest.skipIf(not mooseutils.is_git_repo(), "Not a Git repository")
+    @unittest.skipIf(not mooseutils.git_is_repo(), "Not a Git repository")
     def testGitMergeCommits(self):
         merges = mooseutils.git_merge_commits()
         self.assertEqual(len(merges[0]), 40)
 
-    @unittest.skipIf(not mooseutils.is_git_repo(), "Not a Git repository")
+    @unittest.skipIf(not mooseutils.git_is_repo(), "Not a Git repository")
     def testGitLsFiles(self):
         files = mooseutils.git_ls_files()
         self.assertIn(os.path.abspath(__file__), files)
 
-    @unittest.skipIf(not mooseutils.is_git_repo(), "Not a Git repository")
+    @unittest.skipIf(not mooseutils.git_is_repo(), "Not a Git repository")
     def testGitRootDir(self):
         root = mooseutils.git_root_dir()
         self.assertEqual(root, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
-    @unittest.skipIf(not mooseutils.is_git_repo(), "Not a Git repository")
+    @unittest.skipIf(not mooseutils.git_is_repo(), "Not a Git repository")
     def testGitSubmoduleInfo(self):
         root = mooseutils.git_root_dir()
         status = mooseutils.git_submodule_info(root)
         self.assertIn('large_media', status)
         self.assertIn('libmesh', status)
         self.assertIn('petsc', status)
-        self.assertEqual(len(status['large_media']), 2)
-        self.assertEqual(len(status['libmesh']), 2)
-        self.assertEqual(len(status['petsc']), 2)
+        self.assertEqual(len(status['large_media']), 3)
+        self.assertEqual(len(status['libmesh']), 3)
+        self.assertEqual(len(status['petsc']), 3)
 
     @mock.patch('subprocess.call')
     @mock.patch('mooseutils.gitutils.git_submodule_info')
-    @unittest.skipIf(not mooseutils.is_git_repo(), "Not a Git repository")
+    @unittest.skipIf(not mooseutils.git_is_repo(), "Not a Git repository")
     def testGitInitSubmodule(self, status_func, call_func):
         status_func.return_value = {'test':'-'}
 
@@ -148,6 +149,20 @@ class Test(unittest.TestCase):
         with self.assertRaises(OSError) as e:
             mooseutils.git_repo(os.path.dirname(__file__), remotes=['wrong'])
         self.assertEqual(str(e.exception), "Unable to locate a remote with the name(s): wrong")
+
+    def testGitIsConfig(self):
+        with mock.patch('mooseutils.check_output', return_value='moosetest') as mock_check_output:
+            self.assertTrue(mooseutils.git_is_config('user.name', 'moosetest', '/working/dir'))
+        mock_check_output.assert_called_with(['git', 'config', '--get', 'user.name'], cwd='/working/dir')
+
+    def testGitIsBranch(self):
+        with mock.patch('mooseutils.check_output', side_effect=['true', 'main']) as mock_check_output:
+            self.assertTrue(mooseutils.git_is_branch('main', '/working/dir'))
+        mock_check_output.assert_called_with(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd='/working/dir')
+
+        with mock.patch('mooseutils.check_output', side_effect=['false']) as mock_check_output:
+            self.assertFalse(mooseutils.git_is_branch('main', '/working/dir'))
+        mock_check_output.assert_called_once()
 
 if __name__ == '__main__':
     unittest.main(verbosity=2, buffer=True)

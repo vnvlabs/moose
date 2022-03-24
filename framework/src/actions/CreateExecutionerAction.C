@@ -18,8 +18,6 @@
 
 registerMooseAction("MooseApp", CreateExecutionerAction, "setup_executioner");
 
-defineLegacyParams(CreateExecutionerAction);
-
 InputParameters
 CreateExecutionerAction::validParams()
 {
@@ -44,6 +42,7 @@ CreateExecutionerAction::act()
   std::shared_ptr<EigenProblem> eigen_problem = std::dynamic_pointer_cast<EigenProblem>(_problem);
   if (eigen_problem)
     _moose_object_pars.set<EigenProblem *>("_eigen_problem") = eigen_problem.get();
+  _moose_object_pars.set<SubProblem *>("_subproblem") = static_cast<SubProblem *>(_problem.get());
 
   std::shared_ptr<Executioner> executioner =
       _factory.create<Executioner>(_type, "Executioner", _moose_object_pars);
@@ -56,7 +55,8 @@ CreateExecutionerAction::act()
                "EigenProblem, and Steady and Transient need a FEProblem");
 
   // If enabled, automatically create a Preconditioner if the [Preconditioning] block is not found
-  if (_auto_preconditioning && !_awh.hasActions("add_preconditioning"))
+  if (_auto_preconditioning && !_awh.hasActions("add_preconditioning") &&
+      _moose_object_pars.isParamValid("solve_type"))
     setupAutoPreconditioning();
 
   _app.setExecutioner(std::move(executioner));

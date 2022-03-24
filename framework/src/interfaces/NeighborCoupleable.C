@@ -36,9 +36,8 @@ NeighborCoupleable::coupledNeighborValue(const std::string & var_name, unsigned 
 std::vector<const VariableValue *>
 NeighborCoupleable::coupledNeighborValues(const std::string & var_name) const
 {
-  auto func = [this, &var_name](unsigned int comp) {
-    return &coupledNeighborValue(var_name, comp);
-  };
+  auto func = [this, &var_name](unsigned int comp)
+  { return &coupledNeighborValue(var_name, comp); };
   return coupledVectorHelper<const VariableValue *>(var_name, func);
 }
 
@@ -60,12 +59,28 @@ NeighborCoupleable::adCoupledNeighborValue(const std::string & var_name, unsigne
   return var->adSlnNeighbor();
 }
 
+const ADVariableValue &
+NeighborCoupleable::adCoupledNeighborValueDot(const std::string & var_name, unsigned int comp) const
+{
+  const auto * var = getVarHelper<MooseVariableField<Real>>(var_name, comp);
+
+  if (!_c_is_implicit)
+    mooseError(
+        "adCoupledNeighborValueDot returns a data structure with derivatives. Explicit schemes "
+        "use old solution data which do not have derivatives so adCoupledNeighborValueDot is "
+        "not appropriate. Please use coupledNeighborValueDot instead");
+
+  if (_neighbor_nodal)
+    mooseError("adCoupledNeighborValueDot cannot be used for nodal compute objects at this time");
+  else
+    return var->adUDotNeighbor();
+}
+
 std::vector<const ADVariableValue *>
 NeighborCoupleable::adCoupledNeighborValues(const std::string & var_name) const
 {
-  auto func = [this, &var_name](unsigned int comp) {
-    return &adCoupledNeighborValue(var_name, comp);
-  };
+  auto func = [this, &var_name](unsigned int comp)
+  { return &adCoupledNeighborValue(var_name, comp); };
   return coupledVectorHelper<const ADVariableValue *>(var_name, func);
 }
 

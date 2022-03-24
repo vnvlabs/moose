@@ -80,7 +80,7 @@ public:
 
   virtual void operator()(const RangeType & range, bool bypass_threading = false);
 
-  void join(const ThreadedFaceLoop & /*y*/){};
+  void join(const ThreadedFaceLoop & /*y*/) {}
 
   virtual void onFace(const FaceInfo & fi) = 0;
   /// This is called once for each face after all face and boundary callbacks have been
@@ -107,7 +107,7 @@ public:
   }
 
   /// Called if a MooseException is caught anywhere during the computation.
-  virtual void caughtMooseException(MooseException &){};
+  virtual void caughtMooseException(MooseException &) {}
 
 protected:
   FEProblemBase & _fe_problem;
@@ -348,12 +348,18 @@ ComputeFVFluxThread<RangeType>::reinitVariables(const FaceInfo & fi)
   _fe_problem.resizeMaterialData(Moose::MaterialDataType::FACE_MATERIAL_DATA, /*nqp=*/1, _tid);
 
   for (std::shared_ptr<MaterialBase> mat : _elem_face_mats)
+  {
+    mat->setFaceInfo(fi);
     mat->computeProperties();
+  }
 
   _fe_problem.resizeMaterialData(Moose::MaterialDataType::NEIGHBOR_MATERIAL_DATA, /*nqp=*/1, _tid);
 
   for (std::shared_ptr<MaterialBase> mat : _neigh_face_mats)
+  {
+    mat->setFaceInfo(fi);
     mat->computeProperties();
+  }
 }
 
 template <typename RangeType>
@@ -513,9 +519,8 @@ ComputeFVFluxThread<RangeType>::checkPropDeps(
         auto same_matprop_name_it =
             std::find_if(prop_ids.begin(),
                          prop_ids.end(),
-                         [prop_id](const std::pair<std::string, unsigned int> & map_pr) {
-                           return map_pr.second == prop_id;
-                         });
+                         [prop_id](const std::pair<std::string, unsigned int> & map_pr)
+                         { return map_pr.second == prop_id; });
         same_matprop_name.insert(same_matprop_name_it->first);
       }
     }

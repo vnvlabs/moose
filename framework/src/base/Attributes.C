@@ -28,6 +28,8 @@
 #include "Reporter.h"
 #include "SystemBase.h"
 
+#include <algorithm>
+
 std::ostream &
 operator<<(std::ostream & os, Interfaces & iface)
 {
@@ -309,38 +311,60 @@ AttribPreIC::isEqual(const Attribute & other) const
   return isMatch(other);
 }
 
-void
-AttribPreAux::initFrom(const MooseObject * /*obj*/)
-{
-}
 bool
 AttribPreAux::isMatch(const Attribute & other) const
 {
-  auto a = dynamic_cast<const AttribPreAux *>(&other);
-  return a && (a->_val == _val);
+  const auto a = dynamic_cast<const AttribPreAux *>(&other);
+
+  bool is_match = false;
+
+  if (a && !_vals.empty() && !a->_vals.empty())
+  {
+    is_match = std::includes(_vals.begin(), _vals.end(), a->_vals.begin(), a->_vals.end()) ||
+               std::includes(a->_vals.begin(), a->_vals.end(), _vals.begin(), _vals.end());
+  }
+
+  return is_match;
 }
 
 bool
 AttribPreAux::isEqual(const Attribute & other) const
 {
-  return isMatch(other);
+  const auto a = dynamic_cast<const AttribPreAux *>(&other);
+  return a && a->_vals == _vals;
 }
 
 void
-AttribPostAux::initFrom(const MooseObject * /*obj*/)
+AttribPreAux::initFrom(const MooseObject * /*obj*/)
 {
 }
+
 bool
 AttribPostAux::isMatch(const Attribute & other) const
 {
-  auto a = dynamic_cast<const AttribPostAux *>(&other);
-  return a && (a->_val == _val);
+  const auto a = dynamic_cast<const AttribPostAux *>(&other);
+
+  bool is_match = false;
+
+  if (a && !_vals.empty() && !a->_vals.empty())
+  {
+    is_match = std::includes(_vals.begin(), _vals.end(), a->_vals.begin(), a->_vals.end()) ||
+               std::includes(a->_vals.begin(), a->_vals.end(), _vals.begin(), _vals.end());
+  }
+
+  return is_match;
 }
 
 bool
 AttribPostAux::isEqual(const Attribute & other) const
 {
-  return isMatch(other);
+  const auto a = dynamic_cast<const AttribPostAux *>(&other);
+  return a && a->_vals == _vals;
+}
+
+void
+AttribPostAux::initFrom(const MooseObject * /*obj*/)
+{
 }
 
 void
@@ -369,6 +393,7 @@ AttribSystem::initFrom(const MooseObject * obj)
                "'registerSystemAttributeName' method in the validParams function.");
   _val = obj->getParam<std::string>("_moose_warehouse_system_name");
 }
+
 bool
 AttribSystem::isMatch(const Attribute & other) const
 {
@@ -378,6 +403,26 @@ AttribSystem::isMatch(const Attribute & other) const
 
 bool
 AttribSystem::isEqual(const Attribute & other) const
+{
+  return isMatch(other);
+}
+
+void
+AttribResidualObject::initFrom(const MooseObject * obj)
+{
+  _val = obj->getParam<bool>("_residual_object");
+  _initd = true;
+}
+
+bool
+AttribResidualObject::isMatch(const Attribute & other) const
+{
+  auto a = dynamic_cast<const AttribResidualObject *>(&other);
+  return _initd && a && a->_initd && (a->_val == _val);
+}
+
+bool
+AttribResidualObject::isEqual(const Attribute & other) const
 {
   return isMatch(other);
 }
@@ -393,7 +438,7 @@ bool
 AttribVar::isMatch(const Attribute & other) const
 {
   auto a = dynamic_cast<const AttribVar *>(&other);
-  return a && (a->_val == _val);
+  return a && (_val != -1) && (a->_val == _val);
 }
 
 bool

@@ -9,7 +9,6 @@
 
 #pragma once
 
-#include "MooseVariableFV.h"
 #include "INSFVMomentumAdvection.h"
 
 /**
@@ -22,23 +21,8 @@ public:
   PINSFVMomentumAdvection(const InputParameters & params);
 
 protected:
-  /**
-   * interpolation overload for the velocity
-   */
-  void interpolate(Moose::FV::InterpMethod m,
-                   ADRealVectorValue & interp_v,
-                   const ADRealVectorValue & elem_v,
-                   const ADRealVectorValue & neighbor_v) override;
-
   virtual ADReal computeQpResidual() override;
-  VectorValue<ADReal> coeffCalculator(const Elem & elem, const ADReal & mu) const override;
 
-  /// porosity variable to compute gradients
-  const MooseVariableFV<Real> * const _eps_var;
-  /// porosity in the current element
-  const VariableValue & _eps;
-  /// porosity in the neighbor element
-  const VariableValue & _eps_neighbor;
-  /// Whether the porosity field is smooth or has discontinuities
-  const bool _smooth_porosity;
+  /// porosity functor
+  const Moose::Functor<ADReal> & _eps;
 };

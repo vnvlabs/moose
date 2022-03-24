@@ -24,8 +24,6 @@
 
 registerMooseObject("MooseApp", MultiAppInterpolationTransfer);
 
-defineLegacyParams(MultiAppInterpolationTransfer);
-
 InputParameters
 MultiAppInterpolationTransfer::validParams()
 {
@@ -219,7 +217,7 @@ MultiAppInterpolationTransfer::fillSourceInterpolationPoints(
 
       points.clear();
       if (from_is_constant)
-        points.push_back(from_elem->centroid());
+        points.push_back(from_elem->vertex_average());
       else
         for (const auto & node : from_elem->node_ref_range())
           points.push_back(node);
@@ -360,7 +358,7 @@ MultiAppInterpolationTransfer::interpolateTargetPoints(
 
       points.clear();
       if (to_is_constant)
-        points.push_back(elem->centroid());
+        points.push_back(elem->vertex_average());
       else
         for (const auto & node : elem->node_ref_range())
           points.push_back(node);
@@ -417,11 +415,11 @@ MultiAppInterpolationTransfer::execute()
   switch (_interp_type)
   {
     case 0:
-      idi = libmesh_make_unique<InverseDistanceInterpolation<LIBMESH_DIM>>(
+      idi = std::make_unique<InverseDistanceInterpolation<LIBMESH_DIM>>(
           fe_problem.comm(), _num_points, _power);
       break;
     case 1:
-      idi = libmesh_make_unique<RadialBasisInterpolation<LIBMESH_DIM>>(fe_problem.comm(), _radius);
+      idi = std::make_unique<RadialBasisInterpolation<LIBMESH_DIM>>(fe_problem.comm(), _radius);
       break;
     default:
       mooseError("Unknown interpolation type!");
@@ -531,7 +529,7 @@ MultiAppInterpolationTransfer::computeTransformation(
        as_range(libmesh_mesh.local_elements_begin(), libmesh_mesh.local_elements_end()))
   {
     // Compute center of the entire domain
-    subdomain_centers[max_subdomain_id] += elem->centroid();
+    subdomain_centers[max_subdomain_id] += elem->vertex_average();
     nelems[max_subdomain_id] += 1;
 
     auto subdomain = elem->subdomain_id();
@@ -540,7 +538,7 @@ MultiAppInterpolationTransfer::computeTransformation(
       mooseError("block is invalid");
 
     // Centers for subdomains
-    subdomain_centers[subdomain] += elem->centroid();
+    subdomain_centers[subdomain] += elem->vertex_average();
 
     nelems[subdomain] += 1;
   }

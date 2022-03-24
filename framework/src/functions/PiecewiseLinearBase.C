@@ -9,8 +9,6 @@
 
 #include "PiecewiseLinearBase.h"
 
-defineLegacyParams(PiecewiseLinearBase);
-
 InputParameters
 PiecewiseLinearBase::validParams()
 {
@@ -32,12 +30,12 @@ PiecewiseLinearBase::initialSetup()
 }
 
 void
-PiecewiseLinearBase::buildInterpolation()
+PiecewiseLinearBase::buildInterpolation(const bool extrap)
 {
   // try building a linear interpolation object
   try
   {
-    _linear_interp = libmesh_make_unique<LinearInterpolation>(_raw_x, _raw_y);
+    _linear_interp = std::make_unique<LinearInterpolation>(_raw_x, _raw_y, extrap);
   }
   catch (std::domain_error & e)
   {
@@ -48,7 +46,14 @@ PiecewiseLinearBase::buildInterpolation()
 Real
 PiecewiseLinearBase::value(Real t, const Point & p) const
 {
-  const Real x = _has_axis ? p(_axis) : t;
+  const auto x = _has_axis ? p(_axis) : t;
+  return _scale_factor * _linear_interp->sample(x);
+}
+
+ADReal
+PiecewiseLinearBase::value(const ADReal & t, const ADPoint & p) const
+{
+  const auto x = _has_axis ? p(_axis) : t;
   return _scale_factor * _linear_interp->sample(x);
 }
 

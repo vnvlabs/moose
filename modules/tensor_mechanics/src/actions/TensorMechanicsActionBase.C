@@ -18,6 +18,11 @@ std::map<std::string, std::string> TensorMechanicsActionBase::_rank_two_cartesia
     {{"strain", "total_strain"},
      {"mechanical_strain", "mechanical_strain"},
      {"stress", "stress"},
+     {"cauchy_stress", "cauchy_stress"},
+     {"deformation_gradient", "deformation_gradient"},
+     {"pk1_stress", "pk1_stress"},
+     {"pk2_stress", "pk2_stress"},
+     {"small_stress", "small_stress"},
      {"elastic_strain", "elastic_strain"},
      {"plastic_strain", "plastic_strain"},
      {"creep_strain", "creep_strain"},
@@ -28,27 +33,84 @@ const std::vector<char> TensorMechanicsActionBase::_component_table = {'x', 'y',
 // shortcuts
 const std::map<std::string, std::pair<std::string, std::vector<std::string>>>
     TensorMechanicsActionBase::_rank_two_invariant_table = {
-        {"vonmises", {"VonMisesStress", {"stress"}}},
+        {"vonmises", {"VonMisesStress", {"stress", "cauchy_stress", "pk1_stress", "pk2_stress"}}},
         {"effective", {"EffectiveStrain", {"plastic_strain", "creep_strain"}}},
-        {"hydrostatic", {"Hydrostatic", {"stress"}}},
+        {"hydrostatic",
+         {"Hydrostatic", {"stress", "cauchy_stress", "pk1_stress", "pk2_stress", "small_stress"}}},
         {"l2norm",
          {"L2norm",
           {"mechanical_strain",
            "stress",
+           "cauchy_stress",
+           "pk1_stress",
            "strain",
            "elastic_strain",
            "plastic_strain",
            "creep_strain"}}},
         {"volumetric", {"VolumetricStrain", {"mechanical_strain", "strain"}}},
-        {"firstinv", {"FirstInvariant", {"stress", "strain"}}},
-        {"secondinv", {"SecondInvariant", {"stress", "strain"}}},
-        {"thirdinv", {"ThirdInvariant", {"stress", "strain"}}},
-        {"triaxiality", {"TriaxialityStress", {"stress"}}},
-        {"maxshear", {"MaxShear", {"stress"}}},
-        {"intensity", {"StressIntensity", {"stress"}}},
-        {"max_principal", {"MaxPrincipal", {"mechanical_strain", "stress", "strain"}}},
-        {"mid_principal", {"MidPrincipal", {"mechanical_strain", "stress", "strain"}}},
-        {"min_principal", {"MinPrincipal", {"mechanical_strain", "stress", "strain"}}}};
+        {"firstinv",
+         {"FirstInvariant",
+          {"stress", "cauchy_stress", "pk1_stress", "pk2_stress", "small_stress", "strain"}}},
+        {"secondinv",
+         {"SecondInvariant",
+          {"stress", "cauchy_stress", "pk1_stress", "pk2_stress", "small_stress", "strain"}}},
+        {"thirdinv",
+         {"ThirdInvariant",
+          {"stress", "cauchy_stress", "pk1_stress", "pk2_stress", "small_stress", "strain"}}},
+        {"triaxiality",
+         {"TriaxialityStress",
+          {
+              "stress",
+              "cauchy_stress",
+              "pk1_stress",
+              "pk2_stress",
+              "small_stress",
+          }}},
+        {"maxshear",
+         {"MaxShear",
+          {
+              "stress",
+              "cauchy_stress",
+              "pk1_stress",
+              "pk2_stress",
+              "small_stress",
+          }}},
+        {"intensity",
+         {"StressIntensity",
+          {
+              "stress",
+              "cauchy_stress",
+              "pk1_stress",
+              "pk2_stress",
+              "small_stress",
+          }}},
+        {"max_principal",
+         {"MaxPrincipal",
+          {"mechanical_strain",
+           "stress",
+           "cauchy_stress",
+           "pk1_stress",
+           "pk2_stress",
+           "small_stress",
+           "strain"}}},
+        {"mid_principal",
+         {"MidPrincipal",
+          {"mechanical_strain",
+           "stress",
+           "cauchy_stress",
+           "pk1_stress",
+           "pk2_stress",
+           "small_stress",
+           "strain"}}},
+        {"min_principal",
+         {"MinPrincipal",
+          {"mechanical_strain",
+           "stress",
+           "cauchy_stress",
+           "pk1_stress",
+           "pk2_stress",
+           "small_stress",
+           "strain"}}}};
 
 const std::map<std::string, std::pair<std::string, std::vector<std::string>>>
     TensorMechanicsActionBase::_rank_two_directional_component_table = {
@@ -61,6 +123,12 @@ const std::map<std::string, std::pair<std::string, std::vector<std::string>>>
         {"hoop",
          {"HoopStress", {"stress", "strain", "plastic_strain", "creep_strain", "elastic_strain"}}},
         {"radial", {"RadialStress", {"stress", "strain"}}}};
+
+const std::map<std::string, std::pair<std::string, std::vector<std::string>>>
+    TensorMechanicsActionBase::_rank_two_spherical_component_table = {
+        {"spherical_hoop",
+         {"HoopStress", {"stress", "strain", "plastic_strain", "creep_strain", "elastic_strain"}}},
+        {"spherical_radial", {"RadialStress", {"stress", "strain"}}}};
 
 InputParameters
 TensorMechanicsActionBase::validParams()
@@ -172,12 +240,15 @@ TensorMechanicsActionBase::TensorMechanicsActionBase(const InputParameters & par
     MultiMooseEnum generate_output = getParam<MultiMooseEnum>("generate_output");
     MultiMooseEnum additional_generate_output =
         getParam<MultiMooseEnum>("additional_generate_output");
+
     MultiMooseEnum material_output_order = getParam<MultiMooseEnum>("material_output_order");
     MultiMooseEnum additional_material_output_order =
         getParam<MultiMooseEnum>("additional_material_output_order");
+
     MultiMooseEnum material_output_family = getParam<MultiMooseEnum>("material_output_family");
     MultiMooseEnum additional_material_output_family =
         getParam<MultiMooseEnum>("additional_material_output_family");
+
     for (auto & output : additional_generate_output)
       generate_output.push_back(output);
     for (auto & order : additional_material_output_order)
@@ -186,6 +257,8 @@ TensorMechanicsActionBase::TensorMechanicsActionBase(const InputParameters & par
       material_output_family.push_back(family);
 
     _pars.set<MultiMooseEnum>("generate_output") = generate_output;
+    _pars.set<MultiMooseEnum>("material_output_order") = material_output_order;
+    _pars.set<MultiMooseEnum>("material_output_family") = material_output_family;
   }
 }
 
@@ -200,9 +273,7 @@ TensorMechanicsActionBase::materialOutputOrders()
 MultiMooseEnum
 TensorMechanicsActionBase::materialOutputFamilies()
 {
-  auto families = AddAuxVariableAction::getAuxVariableFamilies().getRawNames();
-
-  return MultiMooseEnum(families);
+  return MultiMooseEnum("MONOMIAL LAGRANGE");
 }
 
 MultiMooseEnum
@@ -227,7 +298,11 @@ TensorMechanicsActionBase::outputPropertiesType()
     for (auto & r : r2cc.second.second)
       options += " " + r2cc.first + "_" + r;
 
-  return MultiMooseEnum(options);
+  for (auto & r2sc : _rank_two_spherical_component_table)
+    for (auto & r : r2sc.second.second)
+      options += " " + r2sc.first + "_" + r;
+
+  return MultiMooseEnum(options, "", true);
 }
 
 void

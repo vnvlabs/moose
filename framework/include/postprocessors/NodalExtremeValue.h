@@ -11,13 +11,7 @@
 
 #include "NodalVariablePostprocessor.h"
 
-// Forward Declarations
-class NodalExtremeValue;
-
 // Input parameters
-template <>
-InputParameters validParams<NodalExtremeValue>();
-
 /// A postprocessor for collecting the nodal min or max value
 class NodalExtremeValue : public NodalVariablePostprocessor
 {
@@ -45,7 +39,18 @@ protected:
   /// The extreme value type ("min" or "max")
   ExtremeType _type;
 
-  /// The extreme value
+  /**
+   * The value of the variable at the point at which the proxy variable
+   * reaches the max/min value.
+   */
   Real _value;
-};
 
+  /**
+   * A proxy variable used to find the quadrature point at
+   * which to evaluate the variable. If not provided, defaults to the variable.
+   */
+  const VariableValue & _proxy_variable;
+
+  /// Extreme value of the proxy variable
+  Real _proxy_value;
+};

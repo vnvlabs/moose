@@ -18,20 +18,16 @@
 #include "BlockRestrictable.h"
 #include "DependencyResolverInterface.h"
 #include "BoundaryRestrictable.h"
+#include "MaterialPropertyInterface.h"
 #include "MooseTypes.h"
 #include "ElementIDInterface.h"
 
-// forward declarations
-class InitialConditionBase;
 class SystemBase;
 class MooseVariableFieldBase;
 namespace libMesh
 {
 class Point;
 }
-
-template <>
-InputParameters validParams<InitialConditionBase>();
 
 /**
  * InitialConditionBase serves as the abstract base class for InitialConditions and
@@ -42,6 +38,7 @@ InputParameters validParams<InitialConditionBase>();
 class InitialConditionBase : public MooseObject,
                              public BlockRestrictable,
                              public Coupleable,
+                             public MaterialPropertyInterface,
                              public FunctionInterface,
                              public UserObjectInterface,
                              public PostprocessorInterface,

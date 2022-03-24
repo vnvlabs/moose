@@ -14,7 +14,6 @@
 #include "ElemExtrema.h"
 #include "NeighborInfo.h"
 #include "RayTracingCommon.h"
-#include "SidePtrHelper.h"
 #include "TraceRayBndElement.h"
 
 // MOOSE Includes
@@ -25,6 +24,7 @@
 
 // libMesh includes
 #include "libmesh/enum_elem_type.h"
+#include "libmesh/elem_side_builder.h"
 
 // Forward declarations
 class Ray;
@@ -43,7 +43,7 @@ class Mesh;
 /**
  * Traces Rays through the mesh on a single processor
  */
-class TraceRay : public SidePtrHelper
+class TraceRay
 {
 public:
   TraceRay(RayTracingStudy & study, const THREAD_ID tid);
@@ -156,6 +156,51 @@ public:
    * Gets the subdomain of the current element that the Ray is being traced in.
    */
   const SubdomainID & currentSubdomainID() const { return _current_subdomain_id; }
+
+  /**
+   * Gets the neighbors at a vertex.
+   * @param elem An elem that contains the vertex
+   * @param vertex The Node that is the vertex
+   */
+  const std::vector<NeighborInfo> & getVertexNeighbors(const Elem * elem, const Node * vertex);
+  /**
+   * Gets the neighbors at a vertex.
+   * @param elem An elem that contains the vertex
+   * @param vertex The local ID of the vertex on elem
+   */
+  const std::vector<NeighborInfo> & getVertexNeighbors(const Elem * elem,
+                                                       const unsigned short vertex);
+  /**
+   * Get the neighbors at an edge.
+   * @param elem An elem that contains the edge
+   * @param vertices A pair of Nodes that are the vertices that contain the edge fully
+   * @param point The point on the edge where neighbors are desired
+   */
+  const std::vector<NeighborInfo> &
+  getEdgeNeighbors(const Elem * elem,
+                   const std::pair<const Node *, const Node *> & vertices,
+                   const Point & point);
+  /**
+   * Get the neighbors at an edge.
+   * @param elem An elem that contains the edge
+   * @param vertices A pair of local vertex IDs of the vertices that contain the edge fully
+   * @param point The point on the edge where neighbors are desired
+   */
+  const std::vector<NeighborInfo> &
+  getEdgeNeighbors(const Elem * elem,
+                   const std::pair<unsigned short, unsigned short> & vertices,
+                   const Point & point);
+  /**
+   * Get the point neighbors
+   * @param elem The elem
+   * @param point The point
+   */
+  const std::vector<NeighborInfo> & getPointNeighbors(const Elem * elem, const Point & point);
+  /**
+   * Get the point/vertex/edge neighbors depending on extrema
+   */
+  const std::vector<NeighborInfo> &
+  getNeighbors(const Elem * elem, const ElemExtrema & extrema, const Point & point);
 
 private:
   /**
@@ -354,51 +399,6 @@ private:
   void continueTraceOffProcessor(const std::shared_ptr<Ray> & ray);
 
   /**
-   * Gets the neighbors at a vertex.
-   * @param elem An elem that contains the vertex
-   * @param vertex The Node that is the vertex
-   */
-  const std::vector<NeighborInfo> & getVertexNeighbors(const Elem * elem, const Node * vertex);
-  /**
-   * Gets the neighbors at a vertex.
-   * @param elem An elem that contains the vertex
-   * @param vertex The local ID of the vertex on elem
-   */
-  const std::vector<NeighborInfo> & getVertexNeighbors(const Elem * elem,
-                                                       const unsigned short vertex);
-  /**
-   * Get the neighbors at an edge.
-   * @param elem An elem that contains the edge
-   * @param vertices A pair of Nodes that are the vertices that contain the edge fully
-   * @param point The point on the edge where neighbors are desired
-   */
-  const std::vector<NeighborInfo> &
-  getEdgeNeighbors(const Elem * elem,
-                   const std::pair<const Node *, const Node *> & vertices,
-                   const Point & point);
-  /**
-   * Get the neighbors at an edge.
-   * @param elem An elem that contains the edge
-   * @param vertices A pair of local vertex IDs of the vertices that contain the edge fully
-   * @param point The point on the edge where neighbors are desired
-   */
-  const std::vector<NeighborInfo> &
-  getEdgeNeighbors(const Elem * elem,
-                   const std::pair<unsigned short, unsigned short> & vertices,
-                   const Point & point);
-  /**
-   * Get the point neighbors
-   * @param elem The elem
-   * @param point The point
-   */
-  const std::vector<NeighborInfo> & getPointNeighbors(const Elem * elem, const Point & point);
-  /**
-   * Get the point/vertex/edge neighbors depending on extrema
-   */
-  const std::vector<NeighborInfo> &
-  getNeighbors(const Elem * elem, const ElemExtrema & extrema, const Point & point);
-
-  /**
    * Finds (if any) an element side that is on the boundary and is outgoing
    * at _intersection_point that is on the extrema _intersected_extrema for _current_elem.
    *
@@ -511,6 +511,9 @@ private:
 
   /// Results over all of the local traces, indexed by TraceRayResult
   std::vector<unsigned long long int> _results;
+
+  /// Helper for building element sides without excessive allocation
+  ElemSideBuilder _elem_side_builder;
 
   /// Reusable for getting the RayBCs in onBoundary()
   std::vector<RayBoundaryConditionBase *> _on_boundary_ray_bcs;

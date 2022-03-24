@@ -49,6 +49,7 @@ Extensions:
     MooseDocs.extensions.graph:
         draft: True
     MooseDocs.extensions.heading: default
+    MooseDocs.extensions.shortcut: default
     MooseDocs.extensions.gallery: disable
     MooseDocs.extensions.template:
         active: True
@@ -78,7 +79,7 @@ Extensions:
     MooseDocs.extensions.navigation:
         name: MOOSEDocs
         repo: https://github.com/idaholab/moose
-        home: https://www.mooseframework.org
+        home: /index.md
         menu:
             Direct: core.md
             Mega: mega.menu.md
@@ -99,6 +100,7 @@ Extensions:
         includes:
             - framework/include
             - test/include
+    MooseDocs.extensions.algorithm: default
 
 Translator:
     type: MooseDocs.base.Translator

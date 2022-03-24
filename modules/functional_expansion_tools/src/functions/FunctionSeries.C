@@ -112,7 +112,7 @@ FunctionSeries::FunctionSeries(const InputParameters & parameters)
     }
     if (types.size() == 0)
       mooseError("Must specify one of 'x', 'y', or 'z' for 'Cartesian' series!");
-    _series_type = libmesh_make_unique<Cartesian>(
+    _series_type = std::make_unique<Cartesian>(
         domains, _orders, types, name(), _expansion_type, _generation_type);
   }
   else if (_series_type_name == "CylindricalDuo")
@@ -155,7 +155,7 @@ FunctionSeries::FunctionSeries(const InputParameters & parameters)
       mooseError("Cannot specify more than one of 'x', 'y', or 'z' for 'CylindricalDuo' series!");
 
     types.push_back(_disc);
-    _series_type = libmesh_make_unique<CylindricalDuo>(
+    _series_type = std::make_unique<CylindricalDuo>(
         domains, _orders, types, name(), _expansion_type, _generation_type);
   }
   else
@@ -280,7 +280,7 @@ operator<<(std::ostream & stream, const FunctionSeries & me)
          << "FunctionSeries: " << me.name() << "\n"
          << "         Terms: " << me.getNumberOfTerms() << "\n";
   me._series_type->formatCoefficients(stream, me._coefficients);
-  stream << "\n\n";
+  stream << "\n\n" << std::flush;
 
   return stream;
 }

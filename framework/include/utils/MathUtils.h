@@ -77,6 +77,29 @@ heavyside(T x)
 
 template <typename T>
 T
+regularizedHeavyside(T x, Real smoothing_length)
+{
+  if (x <= -smoothing_length)
+    return 0.0;
+  else if (x < smoothing_length)
+    return 0.5 * (1 + std::sin(libMesh::pi * x / 2 / smoothing_length));
+  else
+    return 1.0;
+}
+
+template <typename T>
+T
+regularizedHeavysideDerivative(T x, Real smoothing_length)
+{
+  if (x < smoothing_length && x > -smoothing_length)
+    return 0.25 * libMesh::pi / smoothing_length *
+           (std::cos(libMesh::pi * x / 2 / smoothing_length));
+  else
+    return 0.0;
+}
+
+template <typename T>
+T
 positivePart(T x)
 {
   return x > 0.0 ? x : 0.0;
@@ -121,7 +144,7 @@ template <
     typename std::enable_if<std::is_same<typename W<T>::index_type, unsigned int>::value &&
                                 std::is_same<typename W2<T2>::index_type, unsigned int>::value,
                             int>::type = 0>
-typename CompareTypes<T, T2>::supertype
+typename libMesh::CompareTypes<T, T2>::supertype
 dotProduct(const W<T> & a, const W2<T2> & b)
 {
   return a * b;
@@ -138,7 +161,7 @@ template <typename T,
                                       std::is_same<typename W2<T2>::index_type,
                                                    std::tuple<unsigned int, unsigned int>>::value,
                                   int>::type = 0>
-typename CompareTypes<T, T2>::supertype
+typename libMesh::CompareTypes<T, T2>::supertype
 dotProduct(const W<T> & a, const W2<T2> & b)
 {
   return a.contract(b);
@@ -159,7 +182,7 @@ dotProduct(const W<T> & a, const W2<T2> & b)
  */
 template <typename C,
           typename T,
-          typename R = typename CompareTypes<typename C::value_type, T>::supertype>
+          typename R = typename libMesh::CompareTypes<typename C::value_type, T>::supertype>
 R
 poly(const C & c, const T x, const bool derivative = false)
 {
@@ -194,7 +217,7 @@ poly(const C & c, const T x, const bool derivative = false)
  */
 template <typename C,
           typename T,
-          typename R = typename CompareTypes<typename C::value_type, T>::supertype>
+          typename R = typename libMesh::CompareTypes<typename C::value_type, T>::supertype>
 R
 polynomial(const C & c, const T x)
 {
@@ -215,7 +238,7 @@ polynomial(const C & c, const T x)
  */
 template <typename C,
           typename T,
-          typename R = typename CompareTypes<typename C::value_type, T>::supertype>
+          typename R = typename libMesh::CompareTypes<typename C::value_type, T>::supertype>
 R
 polynomialDerivative(const C & c, const T x)
 {
@@ -293,4 +316,26 @@ mooseSetToZero(std::vector<Real> & vec)
     v = 0.;
 }
 
+/**
+ * generate a complete multi index table for given dimension and order
+ * i.e. given dim = 2, order = 2, generated table will have the following content
+ * 0 0
+ * 1 0
+ * 0 1
+ * 2 0
+ * 1 1
+ * 0 2
+ * The first number in each entry represents the order of the first variable, i.e. x;
+ * The second number in each entry represents the order of the second variable, i.e. y.
+ * Multiplication is implied between numbers in each entry, i.e. 1 1 represents x^1 * y^1
+ *
+ * @param dim dimension of the multi-index, here dim = mesh dimension
+ * @param order generate the multi-index up to certain order
+ * @return a data structure holding entries representing the complete multi index
+ */
+std::vector<std::vector<unsigned int>> multiIndex(unsigned int dim, unsigned int order);
+
 } // namespace MathUtils
+
+/// A helper function for MathUtils::multiIndex
+std::vector<std::vector<unsigned int>> multiIndexHelper(unsigned int N, unsigned int K);

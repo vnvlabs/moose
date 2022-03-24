@@ -36,8 +36,8 @@ class TestGitUtilsCommit(MooseDocsTestCase):
         self.assertToken(ast(0), "ErrorToken")
         self.assertIn("Content is not supported for the 'git commit' command.", ast(0)['message'])
 
-        with mock.patch('mooseutils.is_git_repo') as is_git_repo:
-            is_git_repo.return_value = False
+        with mock.patch('mooseutils.git_is_repo') as git_is_repo:
+            git_is_repo.return_value = False
             ast = self.tokenize('!git commit')
         self.assertToken(ast(0), "ErrorToken")
         self.assertIn("The current working directory is not a git repository.", ast(0)['message'])
@@ -61,6 +61,20 @@ class TestGitUtilsCommit(MooseDocsTestCase):
         ast = self.tokenize('[!git!submodule-hash](wrong)')
         self.assertToken(ast(0,0), "ErrorToken")
         self.assertIn("The submodule 'wrong' was not located", ast(0,0)['message'])
+
+    def testJoin(self):
+        ast = self.tokenize('[!git!submodule-hash url=https://github.com/petsc/petsc/commit/](petsc)')
+        link = ast(0,0)
+        self.assertIn('/commit/', link['url'])
+
+        ast = self.tokenize('[!git!submodule-hash url=https://github.com/petsc/petsc/commit](petsc)')
+        link = ast(0,0)
+        self.assertIn('/commit/', link['url'])
+
+        ast = self.tokenize('[!git!submodule-hash url=https://github.com/petsc/petsc/commit///](petsc)')
+        link = ast(0,0)
+        self.assertIn('/commit/', link['url'])
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

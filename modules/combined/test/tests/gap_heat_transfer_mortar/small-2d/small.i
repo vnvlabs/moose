@@ -51,8 +51,8 @@ name = 'small'
   [block_rename]
     type = RenameBlockGenerator
     input = combined
-    old_block_id = '1 2'
-    new_block_name = 'plank block'
+    old_block = '1 2'
+    new_block = 'plank block'
   []
 
   [secondary]
@@ -99,7 +99,6 @@ name = 'small'
   [frictionless_normal_lm]
     order = FIRST
     block = 'frictionless_secondary_subdomain'
-    scaling = 1e3
     use_dual = true
   []
 []
@@ -132,13 +131,6 @@ name = 'small'
     disp_x = disp_x
     disp_y = disp_y
     use_displaced_mesh = true
-  []
-  [ncp_lm]
-    type = ApplyPenetrationConstraintLMMechanicalContact
-    secondary = block_left
-    primary = plank_right
-    variable = frictionless_normal_lm
-    primary_variable = disp_x
   []
   [normal_x]
     type = NormalMortarMechanicalContact

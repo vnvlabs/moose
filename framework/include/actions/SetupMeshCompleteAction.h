@@ -11,11 +11,6 @@
 
 #include "Action.h"
 
-class SetupMeshCompleteAction;
-
-template <>
-InputParameters validParams<SetupMeshCompleteAction>();
-
 class SetupMeshCompleteAction : public Action
 {
 public:
@@ -24,6 +19,4 @@ public:
   SetupMeshCompleteAction(InputParameters params);
 
   virtual void act() override;
-
-  PerfID _uniform_refine_timer;
 };

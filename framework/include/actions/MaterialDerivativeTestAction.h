@@ -12,11 +12,6 @@
 #include "Action.h"
 #include "DerivativeMaterialPropertyNameInterface.h"
 
-class MaterialDerivativeTestAction;
-
-template <>
-InputParameters validParams<MaterialDerivativeTestAction>();
-
 /**
  * Sets up variables and Kernels to test the derivatives of material properties via
  * the Jacobian checker
@@ -47,5 +42,5 @@ protected:
   const bool _second;
 
   /// every derivative given by a list of variables to derive w.r.t
-  std::map<MaterialPropertyName, std::vector<VariableName>> _derivatives;
+  std::map<MaterialPropertyName, std::vector<SymbolName>> _derivatives;
 };

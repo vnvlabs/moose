@@ -8,6 +8,7 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "PressureGradient.h"
+#include "NS.h"
 
 registerMooseObject("NavierStokesApp", PressureGradient);
 
@@ -15,15 +16,18 @@ InputParameters
 PressureGradient::validParams()
 {
   InputParameters params = Kernel::validParams();
-  params.addRequiredCoupledVar("pressure", "pressure");
+  params.addRequiredCoupledVar(NS::pressure, "pressure");
   params.addRequiredParam<unsigned int>("component", "number of component (0 = x, 1 = y, 2 = z)");
+  params.addClassDescription(
+      "Implements the pressure gradient term for one of the Navier Stokes momentum equations.");
+
   return params;
 }
 
 PressureGradient::PressureGradient(const InputParameters & parameters)
   : Kernel(parameters),
     _component(getParam<unsigned int>("component")),
-    _pressure(coupledValue("pressure"))
+    _pressure(coupledValue(NS::pressure))
 {
 }
 

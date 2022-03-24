@@ -13,19 +13,14 @@
 #include "InputParameters.h"
 #include "MaterialData.h"
 
-// Forward declarations
-class BoundaryRestrictable;
 class MooseMesh;
-
-template <>
-InputParameters validParams<BoundaryRestrictable>();
 
 /**
  * /class BoundaryRestrictable
  * /brief Provides functionality for limiting the object to certain boundary ids
  * The is class the inheriting class with methods useful for limiting an object
  * to certain boundaries. The parameters "_boundary_id" and "boundary", which are
- * created with validParams<BoundaryRestrictable> are used the framework.
+ * created with BoundaryRestrictable::validParams() are used the framework.
  */
 class BoundaryRestrictable
 {
@@ -184,6 +179,9 @@ private:
 
   /// Set of the boundary ids
   std::set<BoundaryID> _bnd_ids;
+
+  /// Vector of the boundary ids
+  std::vector<BoundaryID> _vec_ids;
 
   /// Vector the the boundary names
   std::vector<BoundaryName> _boundary_names;

@@ -38,7 +38,7 @@ MechanicalContactConstraint::validParams()
   params.addParam<BoundaryName>("secondary", "The secondary boundary");
   params.addRequiredParam<unsigned int>("component",
                                         "An integer corresponding to the direction "
-                                        "the variable this kernel acts in. (0 for x, "
+                                        "the variable this constraint acts on. (0 for x, "
                                         "1 for y, 2 for z)");
 
   params.addCoupledVar(
@@ -401,13 +401,14 @@ MechanicalContactConstraint::AugmentedLagrangianContactConverged()
   _communicator.max(converged);
 
   if (converged == 1)
-    _console
-        << "The Augmented Lagrangian contact tangential sliding enforcement is NOT satisfied \n";
+    _console << "The Augmented Lagrangian contact tangential sliding enforcement is NOT satisfied "
+             << std::endl;
   else if (converged == 2)
-    _console
-        << "The Augmented Lagrangian contact tangential sliding enforcement is NOT satisfied \n";
+    _console << "The Augmented Lagrangian contact tangential sliding enforcement is NOT satisfied "
+             << std::endl;
   else if (converged == 3)
-    _console << "The Augmented Lagrangian contact frictional force enforcement is NOT satisfied \n";
+    _console << "The Augmented Lagrangian contact frictional force enforcement is NOT satisfied "
+             << std::endl;
   else
     return true;
 

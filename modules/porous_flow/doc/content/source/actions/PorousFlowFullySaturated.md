@@ -121,11 +121,14 @@ Using non-standard `pressure_unit` or `time_unit` is only possible with `PorousF
 
 [PorousFlowNearestQp](PorousFlowNearestQp.md) which records the nearest quadpoint to each node in each element.
 
+!alert note
+Even though there is only one fluid phase in this fully saturated action, some objects may require a relative permeability material to work. Examples include [PorousFlowDarcyVelocityComponent](PorousFlowDarcyVelocityComponent.md) `AuxKernels` which requires relative permeability, or [PorousFlowPeacemanBorehole](PorousFlowPeacemanBorehole.md) wells. By default, this action adds a constant relative permeability of one, so that the fluid is perfectly mobile.
+
 ## Materials not added
 
 Various important `Materials` are not added by this Action, so must be added by the user in the `[Materials]` block.  The reason these are not added by default is that they are usually subdomain-dependent.
 
-- One of the [PorousFlowPorosity](porosity.md) options
+- One of the [PorousFlowPorosity](/porous_flow/porosity.md) options
 - One of the [PorousFlowPermeability](permeability.md) options
 - [PorousFlowMatrixInternalEnergy](PorousFlowMatrixInternalEnergy.md)
 - Thermal conductivity, such as [PorousFlowThermalConductivityIdeal](PorousFlowThermalConductivityIdeal.md)

@@ -4,6 +4,7 @@ Content:
     - modules/chemical_reactions/doc/content
     - modules/combined/doc/content
     - modules/contact/doc/content
+    - modules/external_petsc_solver/doc/content
     - modules/geochemistry/doc/content
     - modules/fluid_properties/doc/content
     - modules/fsi/doc/content
@@ -17,9 +18,11 @@ Content:
     - modules/porous_flow/doc/content
     - modules/ray_tracing/doc/content
     - modules/rdg/doc/content
+    - modules/reactor/doc/content
     - modules/richards/doc/content
     - modules/stochastic_tools/doc/content
     - modules/tensor_mechanics/doc/content
+    - modules/thermal_hydraulics/doc/content
     - modules/xfem/doc/content
 Renderer:
     type: MooseDocs.base.MaterializeRenderer
@@ -30,7 +33,6 @@ Extensions:
     MooseDocs.extensions.navigation:
         name: 'MOOSE'
         repo: https://github.com/idaholab/moose
-        home: https://www.mooseframework.org
         google-cse: 000781241768298771085:pedtnlxdkx8
         menu:
             Getting Started: getting_started.menu.md
@@ -40,16 +42,16 @@ Extensions:
             News: newsletter/index.md
             Citing: citing.md
     MooseDocs.extensions.bibtex:
-        duplicates:
-            - kim_phase-field_1999 # referenced in both Tensor Mechanics and Phase Field
-            - hales15homogenization # referenced in both Tensor Mechanics and Heat Conduction
+        duplicates: !include modules/doc/duplicate_bibs.yml
     MooseDocs.extensions.katex:
-        macros:
-            \pf: "\\frac{\\partial #1}{\\partial #2}"
+        macros: !include modules/doc/katex_macros.yml
     MooseDocs.extensions.appsyntax: # WARNING: this must follow katex for doco pages to work
         executable: ${MOOSE_DIR}/modules/combined
         unregister:
             framework: !include framework/doc/unregister.yml
+            thermal_hydraulics:
+                AddComponentAction: Components/*/*
+                Component: Components/*/*
         remove:
             framework: !include framework/doc/remove.yml
             richards: !include modules/richards/doc/remove.yml
@@ -136,9 +138,14 @@ Extensions:
             xfem: !include modules/xfem/doc/sqa_xfem.yml
             navier_stokes: !include modules/navier_stokes/doc/sqa_navier_stokes.yml
             rdg: !include modules/rdg/doc/sqa_rdg.yml
+            reactor: !include modules/reactor/doc/sqa_reactor.yml
             ray_tracing: !include modules/ray_tracing/doc/sqa_ray_tracing.yml
             fsi: !include modules/fsi/doc/sqa_fsi.yml
+            thermal_hydraulics: !include modules/thermal_hydraulics/doc/sqa_thermal_hydraulics.yml
 
         requirement-groups:
             dgkernels: DGKernel Objects
             interfacekernels: InterfaceKernel Objects
+
+    MooseDocs.extensions.algorithm:
+        active: True

@@ -156,6 +156,7 @@ public:
 protected:
   void computeScalarVars(ExecFlagType type);
   void computeNodalVars(ExecFlagType type);
+  void computeMortarNodalVars(ExecFlagType type);
   void computeNodalVecVars(ExecFlagType type);
   void computeNodalArrayVars(ExecFlagType type);
   void computeElementalVars(ExecFlagType type);
@@ -164,13 +165,11 @@ protected:
 
   template <typename AuxKernelType>
   void computeElementalVarsHelper(const MooseObjectWarehouse<AuxKernelType> & warehouse,
-                                  const std::vector<std::vector<MooseVariableFEBase *>> & vars,
-                                  const PerfID timer);
+                                  const std::vector<std::vector<MooseVariableFEBase *>> & vars);
 
   template <typename AuxKernelType>
   void computeNodalVarsHelper(const MooseObjectWarehouse<AuxKernelType> & warehouse,
-                              const std::vector<std::vector<MooseVariableFEBase *>> & vars,
-                              const PerfID timer);
+                              const std::vector<std::vector<MooseVariableFEBase *>> & vars);
 
   FEProblemBase & _fe_problem;
 
@@ -217,6 +216,7 @@ protected:
 
   // Storage for AuxKernel objects
   ExecuteMooseObjectWarehouse<AuxKernel> _nodal_aux_storage;
+  ExecuteMooseObjectWarehouse<AuxKernel> _mortar_nodal_aux_storage;
   ExecuteMooseObjectWarehouse<AuxKernel> _elemental_aux_storage;
 
   // Storage for VectorAuxKernel objects
@@ -226,15 +226,6 @@ protected:
   // Storage for ArrayAuxKernel objects
   ExecuteMooseObjectWarehouse<ArrayAuxKernel> _nodal_array_aux_storage;
   ExecuteMooseObjectWarehouse<ArrayAuxKernel> _elemental_array_aux_storage;
-
-  /// Timers
-  const PerfID _compute_scalar_vars_timer;
-  const PerfID _compute_nodal_vars_timer;
-  const PerfID _compute_nodal_vec_vars_timer;
-  const PerfID _compute_nodal_array_vars_timer;
-  const PerfID _compute_elemental_vars_timer;
-  const PerfID _compute_elemental_vec_vars_timer;
-  const PerfID _compute_elemental_array_vars_timer;
 
   friend class ComputeIndicatorThread;
   friend class ComputeMarkerThread;

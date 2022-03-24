@@ -26,32 +26,54 @@ JSONOutput::validParams()
   params.set<ExecFlagEnum>("execute_system_information_on", /*quite_mode=*/true) = EXEC_INITIAL;
   params.addParam<bool>(
       "use_legacy_reporter_output", false, "Use reporter output that does not group by object.");
+  params.addParam<bool>("one_file_per_timestep",
+                        false,
+                        "Create a unique output file for each time step of the simulation.");
   return params;
 }
 
 JSONOutput::JSONOutput(const InputParameters & parameters)
-  : AdvancedOutput(parameters), _reporter_data(_problem_ptr->getReporterData())
+  : AdvancedOutput(parameters),
+    _reporter_data(_problem_ptr->getReporterData()),
+    _one_file_per_timestep(getParam<bool>("one_file_per_timestep")),
+    _json(declareRestartableData<nlohmann::json>("json_out_str"))
 {
 }
 
 std::string
 JSONOutput::filename()
 {
+  std::ostringstream file_name;
+  file_name << _file_base;
+
+  if (_one_file_per_timestep)
+    file_name << '_' << std::setw(_padding) << std::setprecision(0) << std::setfill('0')
+              << std::right << timeStep();
+
   if (processor_id() > 0)
   {
-    std::ostringstream file_name;
     int digits = MooseUtils::numDigits(n_processors());
-    file_name << _file_base << ".json"
+    file_name << ".json"
               << "." << std::setw(digits) << std::setfill('0') << processor_id();
-    return file_name.str();
   }
-  return _file_base + ".json";
+  else
+    file_name << ".json";
+
+  return file_name.str();
 }
 
 void
 JSONOutput::outputSystemInformation()
 {
   storeHelper(_json, _app);
+}
+
+void
+JSONOutput::timestepSetup()
+{
+  AdvancedOutput::timestepSetup();
+  if (_one_file_per_timestep)
+    _json.clear();
 }
 
 void
@@ -63,9 +85,11 @@ JSONOutput::outputReporters()
     r_names.emplace(c_name);
 
   // Is there ANY distributed data
-  _has_distributed = std::any_of(r_names.begin(), r_names.end(), [this](const ReporterName & n) {
-    return _reporter_data.hasReporterWithMode(n.getObjectName(), REPORTER_MODE_DISTRIBUTED);
-  });
+  _has_distributed = std::any_of(
+      r_names.begin(),
+      r_names.end(),
+      [this](const ReporterName & n)
+      { return _reporter_data.hasReporterWithMode(n.getObjectName(), REPORTER_MODE_DISTRIBUTED); });
   if (processor_id() == 0 || _has_distributed)
   {
     // Create the current output node
@@ -87,12 +111,20 @@ JSONOutput::outputReporters()
     }
 
     // Add Reporter values to the current node
-    auto & r_node = current_node["reporters"]; // non-accidental insert
+    auto & r_node = _json["reporters"]; // non-accidental insert
     for (const auto & r_name : r_names)
     {
+      // If this value is produced in root mode and we're not on root, don't report this value
+      const auto & context = _reporter_data.getReporterContextBase(r_name);
+      if (context.getProducerModeEnum() == REPORTER_MODE_ROOT && processor_id() != 0)
+        continue;
+
       // Create/get object node
       auto obj_node_pair = r_node.emplace(r_name.getObjectName(), nlohmann::json());
       auto & obj_node = *(obj_node_pair.first);
+
+      // Whether or not we should store this Reporter's value or have it be null
+      bool should_store = true;
 
       // If the object node was created insert the class level information
       if (obj_node_pair.second)
@@ -113,15 +145,33 @@ JSONOutput::outputReporters()
         mooseAssert(objs.size() <= 1,
                     "Multiple Reporter objects with the same name located, how did you do that?");
 
-        // It is possible to have a Reporter value without a reporter objects (i.e., VPPs, PPs),
-        // which is why objs can be empty.
         if (!objs.empty())
-          objs.front()->store(obj_node["info"]);
+        {
+          auto & reporter = *objs.front();
+
+          // It is possible to have a Reporter value without a reporter objects (i.e., VPPs, PPs),
+          // which is why objs can be empty.
+          reporter.store(obj_node);
+
+          // GeneralReporters have the option to only store JSON data when the execute flag
+          // matches an execute flag that is within the GeneralReporter; this captures that
+          should_store = reporter.shouldStore();
+        }
       }
 
+      // Create/get value node
+      auto value_node_pair = obj_node["values"].emplace(r_name.getValueName(), nlohmann::json());
+      // If the value node was created insert the value information
+      if (value_node_pair.second)
+        // Store value meta data
+        context.storeInfo(*value_node_pair.first);
+
       // Insert reporter value
-      auto & node = obj_node["values"].emplace_back();
-      _reporter_data.getReporterContextBase(r_name).store(node);
+      auto & node = current_node[r_name.getObjectName()][r_name.getValueName()];
+      if (should_store)
+        context.store(node);
+      else
+        node = "null";
     }
   }
 }
@@ -136,4 +186,18 @@ JSONOutput::output(const ExecFlagType & type)
     std::ofstream out(filename().c_str());
     out << std::setw(4) << _json << std::endl;
   }
+}
+
+template <>
+void
+dataStore(std::ostream & stream, nlohmann::json & json, void * /*context*/)
+{
+  stream << json;
+}
+
+template <>
+void
+dataLoad(std::istream & stream, nlohmann::json & json, void * /*context*/)
+{
+  stream >> json;
 }

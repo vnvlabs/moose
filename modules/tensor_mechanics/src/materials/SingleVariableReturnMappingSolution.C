@@ -15,8 +15,6 @@
 #include "Moose.h"
 #include "MathUtils.h"
 
-#include "libmesh/auto_ptr.h" // libmesh_make_unique
-
 #include <limits>
 #include <string>
 #include <cmath>
@@ -51,6 +49,10 @@ SingleVariableReturnMappingSolution::validParams()
   params.addParamNamesToGroup("internal_solve_output_on internal_solve_full_iteration_history",
                               "Debug");
 
+  params.addParam<bool>(
+      "automatic_differentiation_return_mapping",
+      false,
+      "Whether to use automatic differentiation to compute the derivative of the yield function.");
   return params;
 }
 
@@ -67,6 +69,7 @@ SingleVariableReturnMappingSolution::SingleVariableReturnMappingSolution(
     _relative_tolerance(parameters.get<Real>("relative_tolerance")),
     _absolute_tolerance(parameters.get<Real>("absolute_tolerance")),
     _acceptable_multiplier(parameters.get<Real>("acceptable_multiplier")),
+    _ad_derivative(parameters.get<bool>("automatic_differentiation_return_mapping")),
     _num_resids(30),
     _residual_history(_num_resids, std::numeric_limits<Real>::max()),
     _iteration(0),
@@ -98,7 +101,7 @@ SingleVariableReturnMappingSolution::returnMappingSolve(const Real effective_tri
   // construct the stringstream here only if the debug level is set to ALL
   std::unique_ptr<std::stringstream> iter_output =
       (_internal_solve_output_on == InternalSolveOutput::ALWAYS)
-          ? libmesh_make_unique<std::stringstream>()
+          ? std::make_unique<std::stringstream>()
           : nullptr;
 
   // do the internal solve and capture iteration info during the first round
@@ -116,7 +119,7 @@ SingleVariableReturnMappingSolution::returnMappingSolve(const Real effective_tri
 
     // user expects some kind of output, if necessary setup output stream now
     if (!iter_output)
-      iter_output = libmesh_make_unique<std::stringstream>();
+      iter_output = std::make_unique<std::stringstream>();
 
     // add the appropriate error message to the output
     switch (solve_state)
@@ -147,7 +150,7 @@ SingleVariableReturnMappingSolution::returnMappingSolve(const Real effective_tri
   {
     // the solve did not fail but the user requested debug output anyways
     outputIterationSummary(iter_output.get(), _iteration);
-    console << iter_output->str();
+    console << iter_output->str() << std::flush;
   }
 }
 
@@ -165,7 +168,8 @@ SingleVariableReturnMappingSolution::internalSolve(const Real effective_trial_st
   Real scalar_lower_bound = min_permissible_scalar;
   _iteration = 0;
 
-  _initial_residual = _residual = computeResidual(effective_trial_stress, scalar);
+  computeResidualAndDerivativeHelper(effective_trial_stress, scalar);
+  _initial_residual = _residual;
 
   Real residual_old = _residual;
   Real init_resid_sign = MathUtils::sign(_residual);
@@ -185,7 +189,7 @@ SingleVariableReturnMappingSolution::internalSolve(const Real effective_trial_st
   while (_iteration < _max_its && !converged(_residual, reference_residual) &&
          !convergedAcceptable(_iteration, _residual, reference_residual))
   {
-    scalar_increment = -_residual / computeDerivative(effective_trial_stress, scalar);
+    scalar_increment = -_residual / _derivative;
     scalar = scalar_old + scalar_increment;
 
     if (_check_range)
@@ -196,7 +200,7 @@ SingleVariableReturnMappingSolution::internalSolve(const Real effective_trial_st
                             max_permissible_scalar,
                             iter_output);
 
-    _residual = computeResidual(effective_trial_stress, scalar);
+    computeResidualAndDerivativeHelper(effective_trial_stress, scalar);
     reference_residual = computeReferenceResidual(effective_trial_stress, scalar);
     iterationFinalize(scalar);
 
@@ -260,7 +264,7 @@ SingleVariableReturnMappingSolution::internalSolve(const Real effective_trial_st
       if (modified_increment)
       {
         scalar = scalar_old + scalar_increment;
-        _residual = computeResidual(effective_trial_stress, scalar);
+        computeResidualAndDerivativeHelper(effective_trial_stress, scalar);
         reference_residual = computeReferenceResidual(effective_trial_stress, scalar);
         iterationFinalize(scalar);
 
@@ -290,6 +294,24 @@ SingleVariableReturnMappingSolution::internalSolve(const Real effective_trial_st
     return SolveState::EXCEEDED_ITERATIONS;
 
   return SolveState::SUCCESS;
+}
+
+void
+SingleVariableReturnMappingSolution::computeResidualAndDerivativeHelper(
+    const Real & effective_trial_stress, const Real & scalar)
+{
+  if (_ad_derivative)
+  {
+    ChainedReal residual_and_derivative =
+        computeResidualAndDerivative(effective_trial_stress, ChainedReal(scalar, 1));
+    _residual = residual_and_derivative.value();
+    _derivative = residual_and_derivative.derivatives();
+  }
+  else
+  {
+    _residual = computeResidual(effective_trial_stress, scalar);
+    _derivative = computeDerivative(effective_trial_stress, scalar);
+  }
 }
 
 bool
@@ -347,7 +369,7 @@ SingleVariableReturnMappingSolution::outputIterationSummary(std::stringstream * 
 {
   if (iter_output)
     *iter_output << "In " << total_it << " iterations the residual went from " << _initial_residual
-                 << " to " << _residual << " in '" << _svrms_name << "'.\n";
+                 << " to " << _residual << " in '" << _svrms_name << "'." << std::endl;
 }
 
 void

@@ -11,12 +11,6 @@
 
 #include "PiecewiseTabularBase.h"
 
-// Forward declarations
-class PiecewiseLinearBase;
-
-template <>
-InputParameters validParams<PiecewiseLinearBase>();
-
 /**
  * Base class for functions which provides a piecewise continuous linear
  * interpolation of an (x,y) point data set.
@@ -29,7 +23,11 @@ public:
   PiecewiseLinearBase(const InputParameters & parameters);
 
   virtual void initialSetup() override;
+
+  using Function::value;
   virtual Real value(Real t, const Point & p) const override;
+  virtual ADReal value(const ADReal & t, const ADPoint & p) const override;
+
   virtual Real timeDerivative(Real t, const Point &) const override;
   virtual RealGradient gradient(Real, const Point & p) const override;
   virtual Real integral() const override;
@@ -37,8 +35,12 @@ public:
   virtual void setData(const std::vector<Real> & x, const std::vector<Real> & y) override;
 
 protected:
-  /// build the linear interpolation object from the x/y data
-  void buildInterpolation();
+  /**
+   * Builds the linear interpolation object from the x/y data
+   *
+   * @param[in] extrap  Extrapolate when sample point is outside of bounds?
+   */
+  void buildInterpolation(const bool extrap = false);
 
   /// helper object to perform the linear interpolation of the function data
   std::unique_ptr<LinearInterpolation> _linear_interp;

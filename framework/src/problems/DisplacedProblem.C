@@ -20,20 +20,18 @@
 #include "UpdateDisplacedMeshThread.h"
 #include "Assembly.h"
 #include "DisplacedProblem.h"
-#include "TimedPrint.h"
 #include "libmesh/numeric_vector.h"
 #include "libmesh/fe_interface.h"
 
 registerMooseObject("MooseApp", DisplacedProblem);
 
-defineLegacyParams(DisplacedProblem);
-
 InputParameters
 DisplacedProblem::validParams()
 {
   InputParameters params = SubProblem::validParams();
-  params.addClassDescription("A Problem object for provided access to the displaced finite element "
-                             "mesh and associated variables.");
+  params.addClassDescription(
+      "A Problem object for providing access to the displaced finite element "
+      "mesh and associated variables.");
   params.addPrivateParam<MooseMesh *>("mesh");
   params.addPrivateParam<std::vector<std::string>>("displacements");
   return params;
@@ -56,18 +54,15 @@ DisplacedProblem::DisplacedProblem(const InputParameters & parameters)
                    _mproblem.getAuxiliarySystem(),
                    "displaced_" + _mproblem.getAuxiliarySystem().name(),
                    Moose::VAR_AUXILIARY),
-    _geometric_search_data(*this, _mesh),
-    _eq_init_timer(registerTimedSection("eq::init", 2)),
-    _update_mesh_timer(registerTimedSection("updateMesh", 3)),
-    _sync_solutions_timer(registerTimedSection("syncSolutions", 5)),
-    _update_geometric_search_timer(registerTimedSection("updateGeometricSearch", 3))
+    _geometric_search_data(*this, _mesh)
+
 {
   // TODO: Move newAssemblyArray further up to SubProblem so that we can use it here
   unsigned int n_threads = libMesh::n_threads();
 
   _assembly.reserve(n_threads);
   for (unsigned int i = 0; i < n_threads; ++i)
-    _assembly.emplace_back(libmesh_make_unique<Assembly>(_displaced_nl, i));
+    _assembly.emplace_back(std::make_unique<Assembly>(_displaced_nl, i));
 
   _displaced_nl.addTimeIntegrator(_mproblem.getNonlinearSystemBase().getSharedTimeIntegrator());
   _displaced_aux.addTimeIntegrator(_mproblem.getAuxiliarySystem().getSharedTimeIntegrator());
@@ -84,18 +79,14 @@ DisplacedProblem::DisplacedProblem(const InputParameters & parameters)
   //   _mesh.getMesh().remove_ghosting_functor(_mesh.getMesh().default_ghosting());
 
   automaticScaling(_mproblem.automaticScaling());
+
+  _mesh.setCoordData(_ref_mesh);
 }
 
 bool
 DisplacedProblem::isTransient() const
 {
   return _mproblem.isTransient();
-}
-
-Moose::CoordinateSystemType
-DisplacedProblem::getCoordSystem(SubdomainID sid) const
-{
-  return _mproblem.getCoordSystem(sid);
 }
 
 std::set<dof_id_type> &
@@ -105,11 +96,16 @@ DisplacedProblem::ghostedElems()
 }
 
 void
-DisplacedProblem::createQRules(
-    QuadratureType type, Order order, Order volume_order, Order face_order, SubdomainID block)
+DisplacedProblem::createQRules(QuadratureType type,
+                               Order order,
+                               Order volume_order,
+                               Order face_order,
+                               SubdomainID block,
+                               const bool allow_negative_qweights)
 {
   for (unsigned int tid = 0; tid < libMesh::n_threads(); ++tid)
-    _assembly[tid]->createQRules(type, order, volume_order, face_order, block);
+    _assembly[tid]->createQRules(
+        type, order, volume_order, face_order, block, allow_negative_qweights);
 }
 
 void
@@ -150,7 +146,7 @@ DisplacedProblem::init()
   _displaced_aux.init();
 
   {
-    TIME_SECTION(_eq_init_timer);
+    TIME_SECTION("eq::init", 2, "Initializing Displaced Equation System");
     _eq.init();
   }
 
@@ -179,7 +175,7 @@ DisplacedProblem::restoreOldSolutions()
 void
 DisplacedProblem::syncSolutions()
 {
-  TIME_SECTION(_sync_solutions_timer);
+  TIME_SECTION("syncSolutions", 5, "Syncing Displaced Solutions");
 
   (*_displaced_nl.sys().solution) = *_mproblem.getNonlinearSystemBase().currentSolution();
   (*_displaced_aux.sys().solution) = *_mproblem.getAuxiliarySystem().currentSolution();
@@ -191,7 +187,7 @@ void
 DisplacedProblem::syncSolutions(const NumericVector<Number> & soln,
                                 const NumericVector<Number> & aux_soln)
 {
-  TIME_SECTION(_sync_solutions_timer);
+  TIME_SECTION("syncSolutions", 5, "Syncing Displaced Solutions");
 
   (*_displaced_nl.sys().solution) = soln;
   (*_displaced_aux.sys().solution) = aux_soln;
@@ -202,8 +198,7 @@ DisplacedProblem::syncSolutions(const NumericVector<Number> & soln,
 void
 DisplacedProblem::updateMesh(bool mesh_changing)
 {
-  TIME_SECTION(_update_mesh_timer);
-  CONSOLE_TIMED_PRINT("Updating displaced mesh");
+  TIME_SECTION("updateMesh", 3, "Updating Displaced Mesh");
 
   if (mesh_changing)
   {
@@ -274,8 +269,7 @@ void
 DisplacedProblem::updateMesh(const NumericVector<Number> & soln,
                              const NumericVector<Number> & aux_soln)
 {
-  TIME_SECTION(_update_mesh_timer);
-  CONSOLE_TIMED_PRINT("Updating displaced mesh");
+  TIME_SECTION("updateMesh", 3, "Updating Displaced Mesh");
 
   syncSolutions(soln, aux_soln);
 
@@ -998,7 +992,7 @@ DisplacedProblem::prepareNeighborShapes(unsigned int var, THREAD_ID tid)
 void
 DisplacedProblem::updateGeomSearch(GeometricSearchData::GeometricSearchType type)
 {
-  TIME_SECTION(_update_geometric_search_timer);
+  TIME_SECTION("updateGeometricSearch", 3, "Updating Displaced GeometricSearch");
 
   _geometric_search_data.update(type);
 }
@@ -1137,6 +1131,8 @@ DisplacedProblem::computingScalingResidual() const
 void
 DisplacedProblem::initialSetup()
 {
+  SubProblem::initialSetup();
+
   _displaced_nl.initialSetup();
   _displaced_aux.initialSetup();
 }
@@ -1144,6 +1140,8 @@ DisplacedProblem::initialSetup()
 void
 DisplacedProblem::timestepSetup()
 {
+  SubProblem::timestepSetup();
+
   _displaced_nl.timestepSetup();
   _displaced_aux.timestepSetup();
 }

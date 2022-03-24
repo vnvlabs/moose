@@ -4,7 +4,16 @@ advected_interp_method='average'
 velocity_interp_method='rc'
 
 [GlobalParams]
-  two_term_boundary_expansion = true
+  rhie_chow_user_object = 'rc'
+[]
+
+[UserObjects]
+  [rc]
+    type = INSFVRhieChowInterpolator
+    u = u
+    v = v
+    pressure = pressure
+  []
 []
 
 [Mesh]
@@ -45,82 +54,73 @@ velocity_interp_method='rc'
     variable = pressure
     advected_interp_method = ${advected_interp_method}
     velocity_interp_method = ${velocity_interp_method}
-    vel = 'velocity'
-    pressure = pressure
-    u = u
-    v = v
-    mu = ${mu}
     rho = ${rho}
   []
 
   [u_advection]
     type = INSFVMomentumAdvection
     variable = u
-    advected_quantity = 'rhou'
-    vel = 'velocity'
     advected_interp_method = ${advected_interp_method}
     velocity_interp_method = ${velocity_interp_method}
-    pressure = pressure
-    u = u
-    v = v
-    mu = ${mu}
     rho = ${rho}
+    momentum_component = 'x'
   []
   [u_viscosity]
-    type = FVDiffusion
+    type = INSFVMomentumDiffusion
     variable = u
-    coeff = ${mu}
+    mu = ${mu}
+    momentum_component = 'x'
   []
   [u_pressure]
     type = INSFVMomentumPressure
     variable = u
     momentum_component = 'x'
-    p = pressure
+    pressure = pressure
   []
   [u_friction_linear]
-    type = NSFVMomentumFriction
+    type = INSFVMomentumFriction
     variable = u
     linear_coef_name = friction_coefficient
+    momentum_component = 'x'
   []
   [u_friction_quad]
-    type = NSFVMomentumFriction
+    type = INSFVMomentumFriction
     variable = u
     quadratic_coef_name = friction_coefficient
+    momentum_component = 'x'
   []
 
   [v_advection]
     type = INSFVMomentumAdvection
     variable = v
-    advected_quantity = 'rhov'
-    vel = 'velocity'
     advected_interp_method = ${advected_interp_method}
     velocity_interp_method = ${velocity_interp_method}
-    pressure = pressure
-    u = u
-    v = v
-    mu = ${mu}
     rho = ${rho}
+    momentum_component = 'y'
   []
   [v_viscosity]
-    type = FVDiffusion
+    type = INSFVMomentumDiffusion
     variable = v
-    coeff = ${mu}
+    mu = ${mu}
+    momentum_component = 'y'
   []
   [v_pressure]
     type = INSFVMomentumPressure
     variable = v
     momentum_component = 'y'
-    p = pressure
+    pressure = pressure
   []
   [v_friction_linear]
-    type = NSFVMomentumFriction
+    type = INSFVMomentumFriction
     variable = v
     linear_coef_name = friction_coefficient
+    momentum_component = 'y'
   []
   [v_friction_quad]
-    type = NSFVMomentumFriction
+    type = INSFVMomentumFriction
     variable = v
     quadratic_coef_name = friction_coefficient
+    momentum_component = 'y'
   []
 []
 
@@ -158,15 +158,8 @@ velocity_interp_method='rc'
 []
 
 [Materials]
-  [ins_fv]
-    type = INSFVMaterial
-    u = 'u'
-    v = 'v'
-    pressure = 'pressure'
-    rho = ${rho}
-  []
   [friction_coefficient]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     prop_names = 'friction_coefficient'
     prop_values = '25'
   []

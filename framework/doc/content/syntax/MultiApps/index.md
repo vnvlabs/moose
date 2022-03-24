@@ -24,7 +24,7 @@ other MOOSE applications, or might represent external applications. A sub-app ca
 
 ## Input File Syntax
 
-`MultiApp` objects are declared in the `[MultiApps]` block and require a "type" just like may other blocks.
+`MultiApp` objects are declared in the `[MultiApps]` block and require a "type" just like any other block.
 
 The [!param](/MultiApps/TransientMultiApp/app_type) is the name of the `MooseApp` derived app that is going
 to be executed. Generally, this is the name of the application being
@@ -41,7 +41,7 @@ The execution order of all MultiApps at the same point is not determined.
 The order is also irrelevant because no data transfers directly among MultiApps.
 To enforce the ordering of execution, users can use multi-level MultiApps or set the MultiApps executed at different points.
 If a `MultiApp` is set to be executed on timestep_begin or timestep_end, the formed loosely-coupled systems of fully-coupled
-equations can be solved with [Picard iterations](syntax/Executioner/index.md).
+equations can be solved with [Fixed Point iterations](syntax/Executioner/index.md).
 
 !listing multiapps/transient_multiapp/dt_from_master.i block=MultiApps
 
@@ -67,6 +67,17 @@ a large number of positions a file can be provided instead using the
        caption=Example of MultiApp object position.
 
 If this parameter is not provided, a single position (0,0,0) will be used.
+
+## Mesh optimizations
+
+The [!param](/MultiApps/TransientMultiApp/clone_master_mesh) parameter allows for re-using the
+main application mesh in the sub-app. This avoids repeating mesh creation operations. This does
+not automatically transfer the mesh modifications performed by [Adaptivity](syntax/Adaptivity/index.md)
+on either the main or sub-app, though it does transfer initial mesh modification work such as uniform
+refinement.
+
+When using the same mesh between two applications, the [MultiAppCopyTransfer.md] may be
+utilized for more efficient transfers of field variables.
 
 ## Parallel Execution
 
@@ -102,7 +113,7 @@ When restarting or recovering, the main app restores the restart data of all sub
 (a data structure holding all the current state including solution vectors, stateful material properties,
 post-processors, restartable quantties declared in objects and etc. of the sub-apps), which are used by
 sub-apps to restart/recover the calculations in their initial setups.
-The same backups are also used by multiapps for saving/restoring the current state during Picard iterations.
+The same backups are also used by multiapps for saving/restoring the current state during fixed point iterations.
 
 A sub-app may choose to use a restart file instead of the main backup file by setting [!param](/Problem/FEProblem/force_restart) to true.
 

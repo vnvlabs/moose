@@ -19,7 +19,6 @@
 
 #include "nlohmann/json.h"
 
-class MultiApp;
 class UserObject;
 class FEProblemBase;
 class FEProblem;
@@ -38,9 +37,6 @@ class BoundingBox;
 template <typename T>
 class NumericVector;
 } // namespace libMesh
-
-template <>
-InputParameters validParams<MultiApp>();
 
 /// Holds app partitioning information relevant to the a particular rank for a
 /// multiapp scenario.
@@ -350,6 +346,11 @@ protected:
   virtual void fillPositions();
 
   /**
+   * Fill command line arguments for sub apps
+   */
+  void readCommandLineArguments();
+
+  /**
    * Helper function for creating an App instance.
    *
    * @param i The local app number to create.
@@ -362,7 +363,7 @@ protected:
    *
    * Also find out which communicator we are using and what our first local app is.
    */
-  LocalRankConfig buildComm(bool batch_mode);
+  void buildComm();
 
   /**
    * Map a global App number to the local number.
@@ -387,6 +388,11 @@ protected:
    * Build communicators and reserve backups.
    */
   void init(unsigned int num_apps, bool batch_mode = false);
+
+  /**
+   * Same as other init method, except defining a custom rank configuration
+   */
+  void init(unsigned int num_apps, const LocalRankConfig & config);
 
   /**
    * Create the provided number of apps.
@@ -415,6 +421,9 @@ protected:
 
   /// The input file for each app's simulation
   std::vector<FileName> _input_files;
+
+  /// Number of positions for each input file
+  std::vector<unsigned int> _npositions_inputfile;
 
   /// The output file basename for each multiapp
   std::string _output_base;
@@ -503,8 +512,11 @@ protected:
   /// Backups for each local App
   SubAppBackups & _backups;
 
-  /// Storage for command line arguments
+  /// CommandLine arguments
   const std::vector<std::string> & _cli_args;
+
+  /// CommandLine arguments from files
+  std::vector<std::string> _cli_args_from_file;
 
   /// Flag indicates if or not restart from the latest solution
   bool _keep_solution_during_restore;
@@ -515,11 +527,12 @@ protected:
   /// The app configuration resulting from calling init
   LocalRankConfig _rank_config;
 
-private:
-  PerfID _perf_backup;
-  PerfID _perf_restore;
-  PerfID _perf_init;
-  PerfID _perf_reset_app;
+  ///Timers
+  const PerfID _solve_step_timer;
+  const PerfID _init_timer;
+  const PerfID _backup_timer;
+  const PerfID _restore_timer;
+  const PerfID _reset_timer;
 };
 
 template <>

@@ -94,6 +94,12 @@ DomainIntegralAction::validParams()
   params.addParam<std::vector<MaterialName>>(
       "inelastic_models",
       "The material objects to use to calculate the strain energy rate density.");
+  params.addParam<MaterialPropertyName>("eigenstrain_gradient",
+                                        "Material defining gradient of eigenstrain tensor");
+  params.addParam<MaterialPropertyName>("body_force", "Material defining body force");
+  params.addParam<bool>("use_automatic_differentiation",
+                        false,
+                        "Flag to use automatic differentiation (AD) objects when possible");
   return params;
 }
 
@@ -128,9 +134,9 @@ DomainIntegralAction::DomainIntegralAction(const InputParameters & params)
     _use_displaced_mesh(false),
     _output_q(getParam<bool>("output_q")),
     _incremental(getParam<bool>("incremental")),
-    _convert_J_to_K(isParamValid("convert_J_to_K") ? getParam<bool>("convert_J_to_K") : false)
+    _convert_J_to_K(isParamValid("convert_J_to_K") ? getParam<bool>("convert_J_to_K") : false),
+    _use_ad(getParam<bool>("use_automatic_differentiation"))
 {
-
   if (_q_function_type == GEOMETRY)
   {
     if (isParamValid("radius_inner") && isParamValid("radius_outer"))
@@ -263,6 +269,24 @@ DomainIntegralAction::DomainIntegralAction(const InputParameters & params)
     if (!poissons_ratio_set)
       _poissons_ratio = getParam<Real>("poissons_ratio");
   }
+
+  if (_integrals.count(J_INTEGRAL) != 0 || _integrals.count(C_INTEGRAL) != 0 ||
+      _integrals.count(K_FROM_J_INTEGRAL) != 0)
+  {
+    if (isParamValid("eigenstrain_gradient"))
+      paramError("eigenstrain_gradient",
+                 "'eigenstrain_gradient' cannot be specified when the computed integrals include "
+                 "JIntegral, CIntegral, or KFromJIntegral");
+    if (isParamValid("body_force"))
+      paramError("body_force",
+                 "'body_force' cannot be specified when the computed integrals include JIntegral, "
+                 "CIntegral, or KFromJIntegral");
+  }
+  if (isParamValid("eigenstrain_gradient") && (_temp != "" || isParamValid("eigenstrain_names")))
+    paramError("eigenstrain_gradient",
+               "'eigenstrain_gradient' cannot be specified together with 'temperature' or "
+               "'eigenstrain_names'. These are for separate, mutually exclusive systems for "
+               "including the effect of eigenstrains");
 }
 
 DomainIntegralAction::~DomainIntegralAction() {}
@@ -276,6 +300,10 @@ DomainIntegralAction::act()
   const unsigned int num_crack_front_points = calcNumCrackFrontPoints();
   const std::string aux_stress_base_name("aux_stress");
   const std::string aux_grad_disp_base_name("aux_grad_disp");
+
+  std::string ad_prepend = "";
+  if (_use_ad)
+    ad_prepend = "AD";
 
   if (_current_task == "add_user_object")
   {
@@ -642,6 +670,13 @@ DomainIntegralAction::act()
       if (_temp != "")
         params.set<std::vector<VariableName>>("temperature") = {_temp};
 
+      if (parameters().isParamValid("eigenstrain_gradient"))
+        params.set<MaterialPropertyName>("eigenstrain_gradient") =
+            parameters().get<MaterialPropertyName>("eigenstrain_gradient");
+      if (parameters().isParamValid("body_force"))
+        params.set<MaterialPropertyName>("body_force") =
+            parameters().get<MaterialPropertyName>("body_force");
+
       for (std::set<INTEGRAL>::iterator sit = _integrals.begin(); sit != _integrals.end(); ++sit)
       {
         switch (*sit)
@@ -790,8 +825,8 @@ DomainIntegralAction::act()
     if (have_j_integral)
     {
       std::string mater_name;
-      const std::string mater_type_name("StrainEnergyDensity");
-      mater_name = "StrainEnergyDensity";
+      const std::string mater_type_name(ad_prepend + "StrainEnergyDensity");
+      mater_name = ad_prepend + "StrainEnergyDensity";
 
       InputParameters params = _factory.getValidParams(mater_type_name);
       _incremental = getParam<bool>("incremental");
@@ -799,29 +834,30 @@ DomainIntegralAction::act()
       params.set<std::vector<SubdomainName>>("block") = {_blocks};
       _problem->addMaterial(mater_type_name, mater_name, params);
 
-      std::string mater_name2;
-      const std::string mater_type_name2("EshelbyTensor");
-      mater_name2 = "EshelbyTensor";
+      {
+        std::string mater_name;
+        const std::string mater_type_name(ad_prepend + "EshelbyTensor");
+        mater_name = ad_prepend + "EshelbyTensor";
 
-      InputParameters params2 = _factory.getValidParams(mater_type_name2);
-      _displacements = getParam<std::vector<VariableName>>("displacements");
-      params2.set<std::vector<VariableName>>("displacements") = _displacements;
-      params2.set<std::vector<SubdomainName>>("block") = {_blocks};
+        InputParameters params = _factory.getValidParams(mater_type_name);
+        _displacements = getParam<std::vector<VariableName>>("displacements");
+        params.set<std::vector<VariableName>>("displacements") = _displacements;
+        params.set<std::vector<SubdomainName>>("block") = {_blocks};
 
-      if (have_c_integral)
-        params2.set<bool>("compute_dissipation") = true;
+        if (have_c_integral)
+          params.set<bool>("compute_dissipation") = true;
 
-      if (_temp != "")
-        params2.set<std::vector<VariableName>>("temperature") = {_temp};
+        if (_temp != "")
+          params.set<std::vector<VariableName>>("temperature") = {_temp};
 
-      _problem->addMaterial(mater_type_name2, mater_name2, params2);
-
+        _problem->addMaterial(mater_type_name, mater_name, params);
+      }
       // Strain energy rate density needed for C(t)/C* integral
       if (have_c_integral)
       {
         std::string mater_name;
-        const std::string mater_type_name("StrainEnergyRateDensity");
-        mater_name = "StrainEnergyRateDensity";
+        const std::string mater_type_name(ad_prepend + "StrainEnergyRateDensity");
+        mater_name = ad_prepend + "StrainEnergyRateDensity";
 
         InputParameters params = _factory.getValidParams(mater_type_name);
         params.set<std::vector<SubdomainName>>("block") = {_blocks};

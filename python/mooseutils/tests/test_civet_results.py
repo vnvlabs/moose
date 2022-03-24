@@ -10,6 +10,8 @@
 
 import collections
 import unittest
+import platform
+import mooseutils
 import mooseutils.civet_results as cr
 
 SITE = 'https://civet.inl.gov'
@@ -31,7 +33,6 @@ class Test(unittest.TestCase):
         cr._update_database_from_job(jobs[42], database, None)
 
         tests = database['kernels/simple_diffusion.test'][443499]
-        self.assertEqual(len(tests), 5)
         self.assertEqual(tests[1].recipe, '06_Test_-p_3')
         self.assertEqual(tests[1].status, 'OK')
         self.assertEqual(tests[1].caveats, ['recover'])
@@ -39,14 +40,25 @@ class Test(unittest.TestCase):
         self.assertEqual(tests[1].reason, '')
 
     def testGetCivetResults(self):
-        database = cr.get_civet_results(hashes=SHAS, sites=[(SITE, REPO)])
+        database = cr.get_civet_results(hashes=SHAS, site=(SITE, REPO))
         tests = database['kernels/simple_diffusion.test'][443499]
-        self.assertEqual(len(tests), 5)
         self.assertEqual(tests[1].recipe, '06_Test_-p_3')
         self.assertEqual(tests[1].status, 'OK')
         self.assertEqual(tests[1].caveats, ['recover'])
         self.assertEqual(tests[1].url, SITE)
         self.assertEqual(tests[1].reason, '')
+
+    @unittest.skipIf(platform.python_version() < '3.7.0', "Python 3.7 or greater required.")
+    def testGetCivetHashes(self):
+
+        # Release 2021-05-18
+        gold = ('90123e7b6bd52f1bc36e68aac5d1fa95e76aeb91', 'd72a8d0d69e21b4945eedf2e78a7de80b1bd3e6f')
+        hashes = mooseutils.get_civet_hashes('2021-05-18')
+        self.assertEqual(hashes, gold)
+
+        gold = ('df827bfaf6ea29394ce609bdf032bd40a9818cfc', 'c4ec8d4669166086da10470cc99c4b40813eeee9')
+        hashes = mooseutils.get_civet_hashes('df827bfaf6ea29394ce609bdf032bd40a9818cfc')
+        self.assertEqual(hashes, gold)
 
 
 if __name__ == '__main__':

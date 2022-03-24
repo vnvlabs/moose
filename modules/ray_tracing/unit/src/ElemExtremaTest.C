@@ -19,7 +19,7 @@
 TEST(ElemExtremaTest, Test)
 {
   Parallel::Communicator comm;
-  std::unique_ptr<UnstructuredMesh> mesh = libmesh_make_unique<ReplicatedMesh>(comm);
+  std::unique_ptr<UnstructuredMesh> mesh = std::make_unique<ReplicatedMesh>(comm);
   MeshTools::Generation::build_cube(*mesh, 2, 2, 2);
 
   const Elem * elem = mesh->query_elem_ptr(0);
@@ -34,7 +34,7 @@ TEST(ElemExtremaTest, Test)
     EXPECT_FALSE(invalid.atVertex(0));
     EXPECT_FALSE(invalid.atEdge());
     EXPECT_FALSE(invalid.atEdge(0, 1));
-    EXPECT_TRUE(invalid.isValid(elem, elem->centroid()));
+    EXPECT_TRUE(invalid.isValid(elem, elem->vertex_average()));
 
     std::stringstream oss;
     oss << invalid;

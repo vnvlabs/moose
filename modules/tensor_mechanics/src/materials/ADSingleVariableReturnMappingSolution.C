@@ -18,8 +18,6 @@
 
 #include "DualRealOps.h"
 
-#include "libmesh/auto_ptr.h" // libmesh_make_unique
-
 #include <limits>
 #include <string>
 #include <cmath>
@@ -51,6 +49,10 @@ ADSingleVariableReturnMappingSolution::validParams()
                         "output.");
   params.addParamNamesToGroup("internal_solve_output_on internal_solve_full_iteration_history",
                               "Debug");
+
+  params.addParam<bool>("automatic_differentiation_return_mapping",
+                        false,
+                        "Whether to use automatic differentiation to compute the derivative.");
   return params;
 }
 
@@ -67,6 +69,7 @@ ADSingleVariableReturnMappingSolution::ADSingleVariableReturnMappingSolution(
     _relative_tolerance(parameters.get<Real>("relative_tolerance")),
     _absolute_tolerance(parameters.get<Real>("absolute_tolerance")),
     _acceptable_multiplier(parameters.get<Real>("acceptable_multiplier")),
+    _ad_derivative(parameters.get<bool>("automatic_differentiation_return_mapping")),
     _num_resids(30),
     _residual_history(_num_resids, std::numeric_limits<Real>::max()),
     _iteration(0),
@@ -98,7 +101,7 @@ ADSingleVariableReturnMappingSolution::returnMappingSolve(const ADReal & effecti
   // construct the stringstream here only if the debug level is set to ALL
   std::unique_ptr<std::stringstream> iter_output =
       (_internal_solve_output_on == InternalSolveOutput::ALWAYS)
-          ? libmesh_make_unique<std::stringstream>()
+          ? std::make_unique<std::stringstream>()
           : nullptr;
 
   // do the internal solve and capture iteration info during the first round
@@ -116,7 +119,7 @@ ADSingleVariableReturnMappingSolution::returnMappingSolve(const ADReal & effecti
 
     // user expects some kind of output, if necessary setup output stream now
     if (!iter_output)
-      iter_output = libmesh_make_unique<std::stringstream>();
+      iter_output = std::make_unique<std::stringstream>();
 
     // add the appropriate error message to the output
     switch (solve_state)
@@ -147,7 +150,7 @@ ADSingleVariableReturnMappingSolution::returnMappingSolve(const ADReal & effecti
   {
     // the solve did not fail but the user requested debug output anyways
     outputIterationSummary(iter_output.get(), _iteration);
-    console << iter_output->str();
+    console << iter_output->str() << std::flush;
   }
 }
 
@@ -165,7 +168,8 @@ ADSingleVariableReturnMappingSolution::internalSolve(const ADReal effective_tria
   ADReal scalar_lower_bound = min_permissible_scalar;
   _iteration = 0;
 
-  _initial_residual = _residual = computeResidual(effective_trial_stress, scalar);
+  computeResidualAndDerivativeHelper(effective_trial_stress, scalar);
+  _initial_residual = _residual;
 
   ADReal residual_old = _residual;
   Real init_resid_sign = MathUtils::sign(MetaPhysicL::raw_value(_residual));
@@ -184,7 +188,7 @@ ADSingleVariableReturnMappingSolution::internalSolve(const ADReal effective_tria
   while (_iteration < _max_its && !converged(_residual, reference_residual) &&
          !convergedAcceptable(_iteration, reference_residual))
   {
-    scalar_increment = -_residual / computeDerivative(effective_trial_stress, scalar);
+    scalar_increment = -_residual / _derivative;
     scalar = scalar_old + scalar_increment;
 
     if (_check_range)
@@ -195,7 +199,7 @@ ADSingleVariableReturnMappingSolution::internalSolve(const ADReal effective_tria
                             max_permissible_scalar,
                             iter_output);
 
-    _residual = computeResidual(effective_trial_stress, scalar);
+    computeResidualAndDerivativeHelper(effective_trial_stress, scalar);
     reference_residual = computeReferenceResidual(effective_trial_stress, scalar);
     iterationFinalize(scalar);
 
@@ -259,7 +263,7 @@ ADSingleVariableReturnMappingSolution::internalSolve(const ADReal effective_tria
       if (modified_increment)
       {
         scalar = scalar_old + scalar_increment;
-        _residual = computeResidual(effective_trial_stress, scalar);
+        computeResidualAndDerivativeHelper(effective_trial_stress, scalar);
         reference_residual = computeReferenceResidual(effective_trial_stress, scalar);
         iterationFinalize(scalar);
 
@@ -288,6 +292,24 @@ ADSingleVariableReturnMappingSolution::internalSolve(const ADReal effective_tria
     return SolveState::EXCEEDED_ITERATIONS;
 
   return SolveState::SUCCESS;
+}
+
+void
+ADSingleVariableReturnMappingSolution::computeResidualAndDerivativeHelper(
+    const ADReal & effective_trial_stress, const ADReal & scalar)
+{
+  if (_ad_derivative)
+  {
+    ChainedADReal residual_and_derivative =
+        computeResidualAndDerivative(effective_trial_stress, ChainedADReal(scalar, 1));
+    _residual = residual_and_derivative.value();
+    _derivative = residual_and_derivative.derivatives();
+  }
+  else
+  {
+    _residual = computeResidual(effective_trial_stress, scalar);
+    _derivative = computeDerivative(effective_trial_stress, scalar);
+  }
 }
 
 bool
@@ -404,5 +426,6 @@ ADSingleVariableReturnMappingSolution::outputIterationSummary(std::stringstream 
   if (iter_output)
     *iter_output << "In " << total_it << " iterations the residual went from "
                  << MetaPhysicL::raw_value(_initial_residual) << " to "
-                 << MetaPhysicL::raw_value(_residual) << " in '" << _svrms_name << "'.\n";
+                 << MetaPhysicL::raw_value(_residual) << " in '" << _svrms_name << "'."
+                 << std::endl;
 }

@@ -10,8 +10,6 @@
 #include "Distribution.h"
 #include "MooseRandom.h"
 
-defineLegacyParams(Distribution);
-
 InputParameters
 Distribution::validParams()
 {
@@ -23,12 +21,7 @@ Distribution::validParams()
 }
 
 Distribution::Distribution(const InputParameters & parameters)
-  : MooseObject(parameters),
-    PerfGraphInterface(this),
-    _perf_pdf(registerTimedSection("pdf", 4)),
-    _perf_cdf(registerTimedSection("cdf", 4)),
-    _perf_quantile(registerTimedSection("quantile", 4)),
-    _perf_median(registerTimedSection("median", 4))
+  : MooseObject(parameters), PerfGraphInterface(this)
 {
 }
 

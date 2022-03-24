@@ -41,7 +41,8 @@ MutableCoefficientsInterface::MutableCoefficientsInterface(const MooseObject * m
 {
 }
 
-Real MutableCoefficientsInterface::operator[](std::size_t index) const
+Real
+MutableCoefficientsInterface::operator[](std::size_t index) const
 {
   return _coefficients[index];
 }
@@ -193,7 +194,7 @@ operator<<(std::ostream & stream, const MutableCoefficientsInterface & me)
   for (std::size_t i = 0; i < me.getSize(); ++i)
     stream << std::setw(4) << i << ": " << std::setw(12) << me[i] << ((i % 6 == 5) ? "\n" : "    ");
 
-  stream << "\n\n";
+  stream << "\n\n" << std::flush;
 
   return stream;
 }

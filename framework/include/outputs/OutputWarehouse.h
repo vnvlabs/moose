@@ -11,6 +11,10 @@
 
 // MOOSE includes
 #include "Output.h"
+#include "PerfGraphInterface.h"
+
+// System includes
+#include <atomic>
 
 // Forward declarations
 class FEProblemBase;
@@ -19,7 +23,7 @@ class InputParameters;
 /**
  * Class for storing and utilizing output objects
  */
-class OutputWarehouse
+class OutputWarehouse : protected PerfGraphInterface
 {
 public:
   /**
@@ -171,6 +175,11 @@ public:
   void mooseConsole();
 
   /**
+   * Send a buffer to Console output objects
+   */
+  void mooseConsole(std::ostringstream & buffer);
+
+  /**
    * The buffered messages stream for Console objects
    * @return Reference to the stream storing cached messages from calls to _console
    */
@@ -185,12 +194,6 @@ public:
     _buffer_action_console_outputs = buffer;
   }
 
-  /// Sets a Boolean indicating that at least one object is requesting performance logging in this application
-  void setLoggingRequested() { _logging_requested = true; }
-
-  /// Returns a Boolean indicating whether performance logging is requested in this application
-  bool getLoggingRequested() const { return _logging_requested; }
-
   /// Reset the output system
   void reset();
 
@@ -204,6 +207,9 @@ public:
    * of OutputWarehouse.
    */
   void solveSetup();
+
+  /// The number of times something has been printed
+  unsigned long long int numPrinted() const { return _num_printed; }
 
 private:
   /**
@@ -349,11 +355,14 @@ private:
   /// Flag indicating that next call to outputStep is forced
   bool _force_output;
 
-  /// Indicates that performance logging has been requested by the console or some object (PerformanceData)
-  bool _logging_requested;
-
   /// Whether or not the last thing output by mooseConsole had a newline as the last character
   bool _last_message_ended_in_newline;
+
+  /// What the last buffer was that was printed
+  const std::ostringstream * _last_buffer;
+
+  /// Number of times the stream has been printed to
+  std::atomic<unsigned long long int> _num_printed;
 
   // Allow complete access:
   // FEProblemBase for calling initial, timestepSetup, outputStep, etc. methods

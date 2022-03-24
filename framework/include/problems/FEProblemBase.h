@@ -30,6 +30,7 @@
 #include "VectorPostprocessor.h"
 #include "PerfGraphInterface.h"
 #include "Attributes.h"
+#include "MooseObjectWarehouse.h"
 
 #include "libmesh/enum_quadrature_type.h"
 #include "libmesh/equation_systems.h"
@@ -40,7 +41,6 @@
 // Forward declarations
 class AuxiliarySystem;
 class DisplacedProblem;
-class FEProblemBase;
 class MooseMesh;
 class NonlinearSystemBase;
 class NonlinearSystem;
@@ -79,6 +79,9 @@ class LineSearch;
 class UserObject;
 class AutomaticMortarGeneration;
 class VectorPostprocessor;
+class MooseFunctionBase;
+template <typename>
+class FunctionTempl;
 
 // libMesh forward declarations
 namespace libMesh
@@ -86,9 +89,6 @@ namespace libMesh
 class CouplingMatrix;
 class NonlinearImplicitSystem;
 } // namespace libMesh
-
-template <>
-InputParameters validParams<FEProblemBase>();
 
 /// Enumeration for nonlinear convergence reasons
 enum class MooseNonlinearConvergenceReason
@@ -150,9 +150,7 @@ public:
   virtual MooseMesh & mesh() override { return _mesh; }
   virtual const MooseMesh & mesh() const override { return _mesh; }
 
-  virtual Moose::CoordinateSystemType getCoordSystem(SubdomainID sid) const override;
-  virtual void setCoordSystem(const std::vector<SubdomainName> & blocks,
-                              const MultiMooseEnum & coord_sys);
+  void setCoordSystem(const std::vector<SubdomainName> & blocks, const MultiMooseEnum & coord_sys);
   void setAxisymmetricCoordAxis(const MooseEnum & rz_coord_axis);
 
   /**
@@ -193,14 +191,14 @@ public:
   nonlocalCouplingEntries(THREAD_ID tid);
 
   /**
-   * Check for converence of the nonlinear solution
+   * Check for convergence of the nonlinear solution
    * @param msg            Error message that gets sent back to the solver
    * @param it             Iteration counter
    * @param xnorm          Norm of the solution vector
    * @param snorm          Norm of the change in the solution vector
    * @param fnorm          Norm of the residual vector
    * @param rtol           Relative residual convergence tolerance
-   * @param divtol           Relative residual divergence tolerance
+   * @param divtol         Relative residual divergence tolerance
    * @param stol           Solution change convergence tolerance
    * @param abstol         Absolute residual convergence tolerance
    * @param nfuncs         Number of function evaluations
@@ -283,30 +281,15 @@ public:
   virtual void setActiveScalarVariableCoupleableMatrixTags(std::set<TagID> & mtags,
                                                            THREAD_ID tid) override;
 
-  /**
-   * Record and set the material properties required by the current computing thread.
-   * @param mat_prop_ids The set of material properties required by the current computing thread.
-   *
-   * @param tid The thread id
-   */
-  virtual void setActiveMaterialProperties(const std::set<unsigned int> & mat_prop_ids,
-                                           THREAD_ID tid) override;
-
-  /**
-   * Clear the active material properties. Should be called at the end of every computing thread
-   *
-   * @param tid The thread id
-   */
-  virtual void clearActiveMaterialProperties(THREAD_ID tid) override;
-
   virtual void createQRules(QuadratureType type,
                             Order order,
                             Order volume_order = INVALID_ORDER,
                             Order face_order = INVALID_ORDER,
-                            SubdomainID block = Moose::ANY_BLOCK_ID);
+                            SubdomainID block = Moose::ANY_BLOCK_ID,
+                            bool allow_negative_qweights = true);
 
   /**
-   * Increases the elemennt/volume quadrature order for the specified mesh
+   * Increases the element/volume quadrature order for the specified mesh
    * block if and only if the current volume quadrature order is lower.  This
    * can only cause the quadrature level to increase.  If volume_order is
    * lower than or equal to the current volume/elem quadrature rule order,
@@ -360,8 +343,10 @@ public:
    */
   virtual std::vector<VariableName> getVariableNames();
 
-  virtual void initialSetup();
-  virtual void timestepSetup();
+  void initialSetup() override;
+  void timestepSetup() override;
+  void residualSetup() override;
+  void jacobianSetup() override;
 
   virtual void prepare(const Elem * elem, THREAD_ID tid) override;
   virtual void prepareFace(const Elem * elem, THREAD_ID tid) override;
@@ -423,6 +408,7 @@ public:
   virtual void init() override;
   virtual void solve() override;
 
+  ///@{
   /**
    * In general, {evaluable elements} >= {local elements} U {algebraic ghosting elements}. That is,
    * the number of evaluable elements does NOT necessarily equal to the number of local and
@@ -431,8 +417,17 @@ public:
    * local or algebraically ghosted, then all the nodal (Lagrange) degrees of freedom associated
    * with the non-local, non-algebraically-ghosted element will be evaluable, and hence that
    * element will be considered evaluable.
+   *
+   * getNonlinearEvaluableElementRange() returns the evaluable element range based on the nonlinear
+   * system dofmap;
+   * getAuxliaryEvaluableElementRange() returns the evaluable element range based on the auxiliary
+   * system dofmap;
+   * getEvaluableElementRange() returns the element range that is evaluable based on both the
+   * nonlinear dofmap and the auxliary dofmap.
    */
   const ConstElemRange & getEvaluableElementRange();
+  const ConstElemRange & getNonlinearEvaluableElementRange();
+  ///@}
 
   /**
    * Set an exception.  Usually this should not be directly called - but should be called through
@@ -464,6 +459,11 @@ public:
   virtual unsigned int nLinearIterations() const override;
   virtual Real finalNonlinearResidual() const override;
   virtual bool computingInitialResidual() const override;
+
+  /**
+   * Return solver type as a human readable string
+   */
+  virtual std::string solverTypeString() { return Moose::stringify(solverParams()._type); }
 
   /**
    * Returns true if we are in or beyond the initialSetup stage
@@ -544,22 +544,24 @@ public:
   void forceOutput();
 
   /**
-   * Reinitialize petsc output for proper linear/nonlinear iteration display
+   * Reinitialize PETSc output for proper linear/nonlinear iteration display
    */
   virtual void initPetscOutput();
 
-#ifdef LIBMESH_HAVE_PETSC
   /**
    * Retrieve a writable reference the PETSc options (used by PetscSupport)
    */
   Moose::PetscSupport::PetscOptions & getPetscOptions() { return _petsc_options; }
-#endif // LIBMESH_HAVE_PETSC
 
   // Function /////
   virtual void
   addFunction(const std::string & type, const std::string & name, InputParameters & parameters);
   virtual bool hasFunction(const std::string & name, THREAD_ID tid = 0);
+  template <typename T>
+  bool hasFunction(const std::string & name, THREAD_ID tid = 0) const;
   virtual Function & getFunction(const std::string & name, THREAD_ID tid = 0);
+  template <typename T>
+  FunctionTempl<T> & getFunction(const std::string & name, THREAD_ID tid = 0);
 
   /**
    * add a MOOSE line search
@@ -739,7 +741,7 @@ public:
    */
   virtual void prepareMaterials(SubdomainID blk_id, THREAD_ID tid);
 
-  virtual void reinitMaterials(SubdomainID blk_id, THREAD_ID tid, bool swap_stateful = true);
+  void reinitMaterials(SubdomainID blk_id, THREAD_ID tid, bool swap_stateful = true);
 
   /**
    * reinit materials on element faces
@@ -751,10 +753,10 @@ public:
    * should be \p false when for example executing material objects for mortar contexts in which
    * stateful properties don't make sense
    */
-  virtual void reinitMaterialsFace(SubdomainID blk_id,
-                                   THREAD_ID tid,
-                                   bool swap_stateful = true,
-                                   bool execute_stateful = true);
+  void reinitMaterialsFace(SubdomainID blk_id,
+                           THREAD_ID tid,
+                           bool swap_stateful = true,
+                           const std::deque<MaterialBase *> * reinit_mats = nullptr);
 
   /**
    * reinit materials on the neighboring element face
@@ -766,10 +768,10 @@ public:
    * should be \p false when for example executing material objects for mortar contexts in which
    * stateful properties don't make sense
    */
-  virtual void reinitMaterialsNeighbor(SubdomainID blk_id,
-                                       THREAD_ID tid,
-                                       bool swap_stateful = true,
-                                       bool execute_stateful = true);
+  void reinitMaterialsNeighbor(SubdomainID blk_id,
+                               THREAD_ID tid,
+                               bool swap_stateful = true,
+                               const std::deque<MaterialBase *> * reinit_mats = nullptr);
 
   /**
    * reinit materials on a boundary
@@ -781,13 +783,13 @@ public:
    * should be \p false when for example executing material objects for mortar contexts in which
    * stateful properties don't make sense
    */
-  virtual void reinitMaterialsBoundary(BoundaryID boundary_id,
-                                       THREAD_ID tid,
-                                       bool swap_stateful = true,
-                                       bool execute_stateful = true);
+  void reinitMaterialsBoundary(BoundaryID boundary_id,
+                               THREAD_ID tid,
+                               bool swap_stateful = true,
+                               const std::deque<MaterialBase *> * reinit_mats = nullptr);
 
-  virtual void
-  reinitMaterialsInterface(BoundaryID boundary_id, THREAD_ID tid, bool swap_stateful = true);
+  void reinitMaterialsInterface(BoundaryID boundary_id, THREAD_ID tid, bool swap_stateful = true);
+
   /*
    * Swap back underlying data storing stateful material properties
    */
@@ -796,7 +798,39 @@ public:
   virtual void swapBackMaterialsNeighbor(THREAD_ID tid);
 
   /**
-   * Method for creating an adding an object to the warehouse.
+   * Record and set the material properties required by the current computing thread.
+   * @param mat_prop_ids The set of material properties required by the current computing thread.
+   *
+   * @param tid The thread id
+   */
+  void setActiveMaterialProperties(const std::set<unsigned int> & mat_prop_ids, THREAD_ID tid);
+
+  /**
+   * Get the material properties required by the current computing thread.
+   *
+   * @param tid The thread id
+   */
+  const std::set<unsigned int> & getActiveMaterialProperties(THREAD_ID tid) const;
+
+  /**
+   * Method to check whether or not a list of active material roperties has been set. This method
+   * is called by reinitMaterials to determine whether Material computeProperties methods need to be
+   * called. If the return is False, this check prevents unnecessary material property computation
+   * @param tid The thread id
+   *
+   * @return True if there has been a list of active material properties set, False otherwise
+   */
+  bool hasActiveMaterialProperties(THREAD_ID tid) const;
+
+  /**
+   * Clear the active material properties. Should be called at the end of every computing thread
+   *
+   * @param tid The thread id
+   */
+  void clearActiveMaterialProperties(THREAD_ID tid);
+
+  /**
+   * Method for creating and adding an object to the warehouse.
    *
    * @tparam T The base object type (registered in the Factory)
    * @param type String type of the object (registered in the Factory)
@@ -896,11 +930,6 @@ public:
   bool hasUserObject(const std::string & name) const;
 
   /**
-   * No longer used. To be removed after application patching
-   */
-  void initPostprocessorData(const std::string &) {}
-
-  /**
    * Whether or not a Postprocessor value exists by a given name.
    * @param name The name of the Postprocessor
    * @return True if a Postprocessor value exists
@@ -926,7 +955,7 @@ public:
   /**
    * Set the value of a PostprocessorValue.
    * @param name The name of the post-processor
-   * @partm t_index Flag for getting current (0), old (1), or older (2) values
+   * @param t_index Flag for getting current (0), old (1), or older (2) values
    * @return The reference to the value at the given time index
    *
    * Note: This method is only for setting values that already exist, the Postprocessor and
@@ -966,7 +995,7 @@ public:
    * @param object_name The name of the VPP object
    * @param vector_name The name of the declared vector
    * @param value The data to apply to the vector
-   * @partm t_index Flag for getting current (0), old (1), or older (2) values
+   * @param t_index Flag for getting current (0), old (1), or older (2) values
    */
   void setVectorPostprocessorValueByName(const std::string & object_name,
                                          const std::string & vector_name,
@@ -1040,7 +1069,7 @@ public:
   getMultiAppTransferWarehouse(Transfer::DIRECTION direction) const;
 
   /**
-   * Execute MultiAppTransfers associate with execution flag and direction.
+   * Execute MultiAppTransfers associated with execution flag and direction.
    * @param type The execution flag to execute.
    * @param direction The direction (to or from) to transfer.
    */
@@ -1354,7 +1383,9 @@ public:
       const std::pair<BoundaryID, BoundaryID> & primary_secondary_boundary_pair,
       const std::pair<SubdomainID, SubdomainID> & primary_secondary_subdomain_pair,
       bool on_displaced,
-      bool periodic);
+      bool periodic,
+      const bool debug,
+      const bool correct_edge_dropping);
 
   const AutomaticMortarGeneration &
   getMortarInterface(const std::pair<BoundaryID, BoundaryID> & primary_secondary_boundary_pair,
@@ -1610,6 +1641,9 @@ public:
    * Convenience function for performing execution of MOOSE systems.
    */
   virtual void execute(const ExecFlagType & exec_type);
+  virtual void executeAllObjects(const ExecFlagType & exec_type);
+
+  virtual Executor & getExecutor(const std::string & name) { return _app.getExecutor(name); }
 
   /**
    * Call compute methods on UserObjects.
@@ -1738,7 +1772,7 @@ public:
   bool isSNESMFReuseBaseSetbyUser() { return _snesmf_reuse_base_set_by_user; }
 
   /**
-   * If petsc options are already inserted
+   * If PETSc options are already inserted
    */
   bool & petscOptionsInserted() { return _is_petsc_options_inserted; }
 
@@ -1804,6 +1838,7 @@ public:
    * Returns the mortar data object
    */
   const MortarData & mortarData() const { return _mortar_data; }
+  MortarData & mortarData() { return _mortar_data; }
 
   /**
    * Whether the simulation has neighbor coupling
@@ -1987,7 +2022,7 @@ protected:
   std::vector<std::unique_ptr<Assembly>> _assembly;
 
   /// functions
-  MooseObjectWarehouse<Function> _functions;
+  MooseObjectWarehouse<MooseFunctionBase> _functions;
 
   /// nonlocal kernels
   MooseObjectWarehouse<KernelBase> _nonlocal_kernels;
@@ -2122,8 +2157,12 @@ protected:
   GeometricSearchData _geometric_search_data;
   MortarData _mortar_data;
 
+  /// Whether to call DisplacedProblem::reinitElem when this->reinitElem is called
   bool _reinit_displaced_elem;
+  /// Whether to call DisplacedProblem::reinitElemFace when this->reinitElemFace is called
   bool _reinit_displaced_face;
+  /// Whether to call DisplacedProblem::reinitNeighbor when this->reinitNeighbor is called
+  bool _reinit_displaced_neighbor;
 
   /// whether input file has been written
   bool _input_file_saved;
@@ -2205,19 +2244,20 @@ protected:
   /// The control logic warehouse
   ExecuteMooseObjectWarehouse<Control> _control_warehouse;
 
-#ifdef LIBMESH_HAVE_PETSC
   /// PETSc option storage
   Moose::PetscSupport::PetscOptions _petsc_options;
 #if !PETSC_RELEASE_LESS_THAN(3, 12, 0)
   PetscOptions _petsc_option_data_base;
 #endif
-#endif // LIBMESH_HAVE_PETSC
-  /// If or not petsc options have been added to database
+
+  /// If or not PETSc options have been added to database
   bool _is_petsc_options_inserted;
 
   std::shared_ptr<LineSearch> _line_search;
 
   std::unique_ptr<ConstElemRange> _evaluable_local_elem_range;
+  std::unique_ptr<ConstElemRange> _nl_evaluable_local_elem_range;
+  std::unique_ptr<ConstElemRange> _aux_evaluable_local_elem_range;
 
   /// Automatic differentiaion (AD) flag which indicates whether any consumer has
   /// requested an AD material property or whether any suppier has declared an AD material property
@@ -2240,53 +2280,6 @@ private:
 
   /// Whether the problem has dgkernels or interface kernels
   bool _has_internal_edge_residual_objects;
-
-  /// Timers
-  const PerfID _initial_setup_timer;
-  const PerfID _project_solution_timer;
-  const PerfID _compute_indicators_timer;
-  const PerfID _compute_markers_timer;
-  const PerfID _compute_user_objects_timer;
-  const PerfID _execute_controls_timer;
-  const PerfID _execute_samplers_timer;
-  const PerfID _update_active_objects_timer;
-  const PerfID _reinit_because_of_ghosting_or_new_geom_objects_timer;
-  const PerfID _exec_multi_app_transfers_timer;
-  const PerfID _init_timer;
-  const PerfID _eq_init_timer;
-  const PerfID _solve_timer;
-  const PerfID _check_exception_and_stop_solve_timer;
-  const PerfID _advance_state_timer;
-  const PerfID _restore_solutions_timer;
-  const PerfID _save_old_solutions_timer;
-  const PerfID _restore_old_solutions_timer;
-  const PerfID _output_step_timer;
-  const PerfID _on_timestep_begin_timer;
-  const PerfID _compute_residual_l2_norm_timer;
-  const PerfID _compute_residual_sys_timer;
-  const PerfID _compute_residual_internal_timer;
-  const PerfID _compute_residual_type_timer;
-  const PerfID _compute_transient_implicit_residual_timer;
-  const PerfID _compute_residual_tags_timer;
-  const PerfID _compute_jacobian_internal_timer;
-  const PerfID _compute_jacobian_tags_timer;
-  const PerfID _compute_jacobian_blocks_timer;
-  const PerfID _compute_bounds_timer;
-  const PerfID _compute_post_check_timer;
-  const PerfID _compute_damping_timer;
-  const PerfID _possibly_rebuild_geom_search_patches_timer;
-  const PerfID _initial_adapt_mesh_timer;
-  const PerfID _adapt_mesh_timer;
-  const PerfID _update_mesh_xfem_timer;
-  const PerfID _mesh_changed_timer;
-  const PerfID _mesh_changed_helper_timer;
-  const PerfID _check_problem_integrity_timer;
-  const PerfID _serialize_solution_timer;
-  const PerfID _check_nonlinear_convergence_timer;
-  const PerfID _check_linear_convergence_timer;
-  const PerfID _update_geometric_search_timer;
-  const PerfID _exec_multi_apps_timer;
-  const PerfID _backup_multi_apps_timer;
 
   /// Whether solution time derivative needs to be stored
   bool _u_dot_requested;
@@ -2328,6 +2321,8 @@ private:
   /// Flag used to indicate whether we are computing the scaling Residual
   bool _computing_scaling_residual = false;
 };
+
+using FVProblemBase = FEProblemBase;
 
 template <typename T>
 void
@@ -2399,3 +2394,6 @@ FEProblemBase::addObject(const std::string & type,
 
   return objects;
 }
+
+template <>
+FunctionTempl<Real> & FEProblemBase::getFunction<Real>(const std::string & name, THREAD_ID tid);

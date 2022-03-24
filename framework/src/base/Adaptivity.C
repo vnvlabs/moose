@@ -16,7 +16,6 @@
 #include "MooseMesh.h"
 #include "NonlinearSystemBase.h"
 #include "UpdateErrorVectorsThread.h"
-#include "TimedPrint.h"
 
 // libMesh
 #include "libmesh/equation_systems.h"
@@ -48,11 +47,7 @@ Adaptivity::Adaptivity(FEProblemBase & subproblem)
     _cycles_per_step(1),
     _use_new_system(false),
     _max_h_level(0),
-    _recompute_markers_during_cycles(false),
-    _adapt_mesh_timer(registerTimedSection("adaptMesh", 3)),
-    _uniform_refine_timer(registerTimedSection("uniformRefine", 2)),
-    _uniform_refine_with_projection(registerTimedSection("uniformRefineWithProjection", 2)),
-    _update_error_vectors(registerTimedSection("updateErrorVectors", 5))
+    _recompute_markers_during_cycles(false)
 {
 }
 
@@ -66,8 +61,8 @@ Adaptivity::init(unsigned int steps, unsigned int initial_steps)
   // does not exist at that point.
   _displaced_problem = _subproblem.getDisplacedProblem();
 
-  _mesh_refinement = libmesh_make_unique<MeshRefinement>(_mesh);
-  _error = libmesh_make_unique<ErrorVector>();
+  _mesh_refinement = std::make_unique<MeshRefinement>(_mesh);
+  _error = std::make_unique<ErrorVector>();
 
   EquationSystems & es = _subproblem.es();
   es.parameters.set<bool>("adaptivity") = true;
@@ -86,7 +81,7 @@ Adaptivity::init(unsigned int steps, unsigned int initial_steps)
     displaced_es.parameters.set<bool>("adaptivity") = true;
 
     if (!_displaced_mesh_refinement)
-      _displaced_mesh_refinement = libmesh_make_unique<MeshRefinement>(_displaced_problem->mesh());
+      _displaced_mesh_refinement = std::make_unique<MeshRefinement>(_displaced_problem->mesh());
 
     // The periodic boundaries pointer allows the MeshRefinement
     // object to determine elements which are "topological" neighbors,
@@ -107,11 +102,11 @@ void
 Adaptivity::setErrorEstimator(const MooseEnum & error_estimator_name)
 {
   if (error_estimator_name == "KellyErrorEstimator")
-    _error_estimator = libmesh_make_unique<KellyErrorEstimator>();
+    _error_estimator = std::make_unique<KellyErrorEstimator>();
   else if (error_estimator_name == "LaplacianErrorEstimator")
-    _error_estimator = libmesh_make_unique<LaplacianErrorEstimator>();
+    _error_estimator = std::make_unique<LaplacianErrorEstimator>();
   else if (error_estimator_name == "PatchRecoveryErrorEstimator")
-    _error_estimator = libmesh_make_unique<PatchRecoveryErrorEstimator>();
+    _error_estimator = std::make_unique<PatchRecoveryErrorEstimator>();
   else
     mooseError(std::string("Unknown error_estimator selection: ") +
                std::string(error_estimator_name));
@@ -127,7 +122,7 @@ Adaptivity::setErrorNorm(SystemNorm & sys_norm)
 bool
 Adaptivity::adaptMesh(std::string marker_name /*=std::string()*/)
 {
-  TIME_SECTION(_adapt_mesh_timer);
+  TIME_SECTION("adaptMesh", 3, "Adapting Mesh");
 
   // If the marker name is supplied, use it. Otherwise, use the one in _marker_variable_name
   if (marker_name.empty())
@@ -170,7 +165,7 @@ Adaptivity::adaptMesh(std::string marker_name /*=std::string()*/)
         // for ghosted+local elements. But it is always sufficient for local elements.
         // After we set markers for all local elements, we will do a global
         // communication to sync markers for ghosted elements from their owners.
-        all_elems = libmesh_make_unique<ConstElemRange>(
+        all_elems = std::make_unique<ConstElemRange>(
             _subproblem.mesh().getMesh().active_local_elements_begin(),
             _subproblem.mesh().getMesh().active_local_elements_end());
       }
@@ -186,9 +181,9 @@ Adaptivity::adaptMesh(std::string marker_name /*=std::string()*/)
         // I do not know if it is a good idea, but it the old code behavior.
         // We might not care about much since a replicated mesh
         // or a serialized distributed mesh is not scalable anyway.
-        all_elems = libmesh_make_unique<ConstElemRange>(
-            _subproblem.mesh().getMesh().active_elements_begin(),
-            _subproblem.mesh().getMesh().active_elements_end());
+        all_elems =
+            std::make_unique<ConstElemRange>(_subproblem.mesh().getMesh().active_elements_begin(),
+                                             _subproblem.mesh().getMesh().active_elements_end());
       }
 
       FlagElementsThread fet(
@@ -247,6 +242,7 @@ Adaptivity::adaptMesh(std::string marker_name /*=std::string()*/)
   {
     _console << "\nMesh Changed:\n";
     _mesh.printInfo();
+    _console << std::flush;
   }
 
   return mesh_changed;
@@ -268,15 +264,27 @@ Adaptivity::uniformRefine(MooseMesh * mesh, unsigned int level /*=libMesh::inval
   MeshRefinement mesh_refinement(*mesh);
   if (level == libMesh::invalid_uint)
     level = mesh->uniformRefineLevel();
+
+  // Skip deletion and repartition will make uniform refinements will run more
+  // efficiently, but at the same time, there might be extra ghosting elements.
+  // The number of layers of additional ghosting elements depends on the number
+  // of uniform refinement levels. This should happen only when you have a "fine enough"
+  // coarse mesh and want to refine the mesh by a few levels. Otherwise, it might
+  // introduce an unbalanced workload and too large ghosting domain.
+  if (mesh->skipDeletionRepartitionAfterRefine())
+  {
+    mesh->getMesh().skip_partitioning(true);
+    mesh->getMesh().allow_remote_element_removal(false);
+    mesh->needsRemoteElemDeletion(false);
+  }
+
   mesh_refinement.uniformly_refine(level);
 }
 
 void
 Adaptivity::uniformRefineWithProjection()
 {
-  TIME_SECTION(_uniform_refine_with_projection);
-
-  CONSOLE_TIMED_PRINT("Uniformly refining mesh and reprojecting");
+  TIME_SECTION("uniformRefineWithProjection", 2, "Uniformly Refining and Reprojecting");
 
   // NOTE: we are using a separate object here, since adaptivity may not be on, but we need to be
   // able to do refinements
@@ -339,14 +347,14 @@ Adaptivity::getErrorVector(const std::string & indicator_field)
 {
   // Insert or retrieve error vector
   auto insert_pair = moose_try_emplace(
-      _indicator_field_to_error_vector, indicator_field, libmesh_make_unique<ErrorVector>());
+      _indicator_field_to_error_vector, indicator_field, std::make_unique<ErrorVector>());
   return *insert_pair.first->second;
 }
 
 void
 Adaptivity::updateErrorVectors()
 {
-  TIME_SECTION(_update_error_vectors);
+  TIME_SECTION("updateErrorVectors", 5, "Updating Error Vectors");
 
   // Resize all of the ErrorVectors in case the mesh has changed
   for (const auto & it : _indicator_field_to_error_vector)

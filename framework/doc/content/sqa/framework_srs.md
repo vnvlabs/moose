@@ -63,19 +63,12 @@ behaviors of each user-defined object.
 !acronym list
 !template-end!
 
-
-!template! item key=system-requirements
-The creation of the requirements for [!ac](MOOSE) is an ongoing progress as new objects are added.
-The [#functional-requirements] are generated from test specifications, which are required with
-each addition to the MOOSE framework or its modules.
-!template-end!
-
 !template! item key=minimum-requirements
 - A [!ac](POSIX) compliant Unix including the two most recent versions of MacOS and most current
   versions of Linux.
 - 4 GB of RAM for optimized compilation (8 GB for debug compilation), 2 GB per core execution
 - 100 GB disk space
-- C++11 compatible compiler (GCC, Clang)
+- C++17 compatible compiler (GCC, Clang)
 - Python 3.6+
 - Git
 !template-end!

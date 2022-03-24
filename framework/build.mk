@@ -12,7 +12,7 @@ MOOSE_JOBS        ?= 8
 -include $(MOOSE_DIR)/conf_vars.mk
 
 # If the user has no environment variable
-# called METHOD, he gets optimized mode.
+# called METHOD, they get optimized mode.
 ifeq (x$(METHOD),x)
   METHOD := opt
 endif
@@ -50,19 +50,38 @@ ifeq ($(METHOD),$(filter $(METHOD), dbg devel))
     $(error It does not make sense to profile with the $(METHOD) method due to assertions. Please unset GPERF_DIR)
 else
     libmesh_CXXFLAGS += -DHAVE_GPERFTOOLS -I$(GPERF_DIR)/include
-    libmesh_LDFLAGS := -L$(GPERF_DIR)/lib -ltcmalloc_and_profiler $(libmesh_LDFLAGS)
+    libmesh_LDFLAGS := -L$(GPERF_DIR)/lib -Wl,-rpath,$(GPERF_DIR)/lib -ltcmalloc_and_profiler $(libmesh_LDFLAGS)
 endif
 endif
 
+<<<<<<< HEAD
 ifneq (x${MOOSE_VNV_DIR},x)
   libmesh_CXXFLAGS += -DMOOSE_WITH_VNV -I${MOOSE_VNV_DIR}/include
   libmesh_LDFLAGS += -Wl,-rpath=${MOOSE_VNV_DIR}/lib -L${MOOSE_VNV_DIR}/lib -linjection 
 endif 
+=======
+# Google Test relies on static construction of objects in test
+# compilation units to register those tests, but with some Linux
+# distributions (Ubuntu 21.04 for me; others in
+# https://github.com/idaholab/moose/issues/16092 ) shared libraries
+# don't get loaded by default (and thus don't call constructors of
+# static objects by default) unless the shared library satisfies a
+# missing symbol, or unless we force it to load with a special linker
+# flag.  The flag may require GCC or GNU ld, and if we don't support
+# it it's not safe to use it, so test first.
+NO_AS_NEEDED_FLAG = -Wl,--no-as-needed
+HAVE_NO_AS_NEEDED := $(shell echo 'int main(void){return 0;}' > as_needed_test.C; if $(libmesh_CXX) $(NO_AS_NEEDED_FLAG) as_needed_test.C -o as_needed_test.x 2>/dev/null; then echo yes; else echo no; fi; rm -f as_needed_test.C as_needed_test.x)
+
+ifeq ($(HAVE_NO_AS_NEEDED),yes)
+  libmesh_LDFLAGS += $(NO_AS_NEEDED_FLAG)
+endif
+>>>>>>> 71e154c564a08e6b29f64374f094721c700d8141
 
 # Make.common used to provide an obj-suffix which was related to the
 # machine in question (from config.guess, i.e. @host@ in
 # contrib/utils/Make.common.in) and the $(METHOD).
 obj-suffix := $(libmesh_HOST).$(METHOD).lo
+no-method-obj-suffix := $(libmesh_HOST).lo
 
 # The libtool script used by libmesh is in different places depending on
 # whether you are using "installed" or "uninstalled" libmesh.
@@ -106,22 +125,27 @@ unity_files:
 pcre%.$(obj-suffix) : pcre%.cc
 	@echo "Compiling C++ (in "$(METHOD)" mode) "$<"..."
 	@$(libmesh_LIBTOOL) --tag=CXX $(LIBTOOLFLAGS) --mode=compile --quiet \
-          $(libmesh_CXX) $(libmesh_CPPFLAGS) $(ADDITIONAL_CPPFLAGS) $(CXXFLAGS) $(libmesh_CXXFLAGS) $(app_INCLUDES) $(libmesh_INCLUDE) -w -DHAVE_CONFIG_H -MMD -MP -MF $@.d -MT $@ -c $< -o $@
+          $(libmesh_CXX) $(libmesh_CPPFLAGS) $(CXXFLAGS) $(libmesh_CXXFLAGS) $(ADDITIONAL_CPPFLAGS) $(app_INCLUDES) $(libmesh_INCLUDE) -w -DHAVE_CONFIG_H -MMD -MP -MF $@.d -MT $@ -c $< -o $@
+
+gtest%.$(no-method-obj-suffix) : gtest%.cc
+	@echo "Compiling C++ "$<"..."
+	@$(libmesh_LIBTOOL) --tag=CXX $(LIBTOOLFLAGS) --mode=compile --quiet \
+          $(libmesh_CXX) $(ADDITIONAL_CPPFLAGS) $(CXXFLAGS) -w -MMD -MP -MF $@.d -MT $@ -c $< -o $@
 
 %.$(obj-suffix) : %.cc
 	@echo "Compiling C++ (in "$(METHOD)" mode) "$<"..."
 	@$(libmesh_LIBTOOL) --tag=CXX $(LIBTOOLFLAGS) --mode=compile --quiet \
-          $(libmesh_CXX) $(libmesh_CPPFLAGS) $(ADDITIONAL_CPPFLAGS) $(CXXFLAGS) $(libmesh_CXXFLAGS) $(app_INCLUDES) $(libmesh_INCLUDE) -DHAVE_CONFIG_H -MMD -MP -MF $@.d -MT $@ -c $< -o $@
+          $(libmesh_CXX) $(libmesh_CPPFLAGS) $(CXXFLAGS) $(libmesh_CXXFLAGS) $(ADDITIONAL_CPPFLAGS) $(app_INCLUDES) $(libmesh_INCLUDE) -DHAVE_CONFIG_H -MMD -MP -MF $@.d -MT $@ -c $< -o $@
 
 define CXX_RULE_TEMPLATE
-%$(1).$(obj-suffix) : %.C
+%$(1).$(obj-suffix) : %.C $(ADDITIONAL_SRC_DEPS)
 ifeq ($(1),)
 	@echo "Compiling C++ (in "$$(METHOD)" mode) "$$<"..."
 else
 	@echo "Compiling C++ with suffix (in "$$(METHOD)" mode) "$$<"..."
 endif
 	@$$(libmesh_LIBTOOL) --tag=CXX $$(LIBTOOLFLAGS) --mode=compile --quiet \
-	  $$(libmesh_CXX) $$(libmesh_CPPFLAGS) $$(ADDITIONAL_CPPFLAGS) $$(CXXFLAGS) $$(libmesh_CXXFLAGS) $$(app_INCLUDES) $$(libmesh_INCLUDE) -MMD -MP -MF $$@.d -MT $$@ -c $$< -o $$@
+	  $$(libmesh_CXX) $$(libmesh_CPPFLAGS) $$(CXXFLAGS) $$(libmesh_CXXFLAGS) $$(ADDITIONAL_CPPFLAGS) $$(app_INCLUDES) $$(libmesh_INCLUDE) -MMD -MP -MF $$@.d -MT $$@ -c $$< -o $$@
 endef
 # Instantiate Rules
 $(eval $(call CXX_RULE_TEMPLATE,))
@@ -129,7 +153,7 @@ $(eval $(call CXX_RULE_TEMPLATE,))
 %.$(obj-suffix) : %.cpp
 	@echo "Compiling C++ (in "$(METHOD)" mode) "$<"..."
 	@$(libmesh_LIBTOOL) --tag=CXX $(LIBTOOLFLAGS) --mode=compile --quiet \
-	  $(libmesh_CXX) $(libmesh_CPPFLAGS) $(ADDITIONAL_CPPFLAGS) $(CXXFLAGS) $(libmesh_CXXFLAGS) $(app_INCLUDES) $(libmesh_INCLUDE) -MMD -MP -MF $@.d -MT $@ -c $< -o $@
+	  $(libmesh_CXX) $(libmesh_CPPFLAGS) $(CXXFLAGS) $(libmesh_CXXFLAGS) $(ADDITIONAL_CPPFLAGS) $(app_INCLUDES) $(libmesh_INCLUDE) -MMD -MP -MF $@.d -MT $@ -c $< -o $@
 
 #
 # Static Analysis
@@ -251,7 +275,7 @@ endif
 
 # compile with gcov support if using the gcc compiler suite
 ifeq ($(coverage),true)
-	libmesh_CXXFLAGS += -fprofile-arcs -ftest-coverage
+	libmesh_CXXFLAGS += -DCOVERAGE_ENABLED -fprofile-arcs -ftest-coverage
 	ifeq (,$(findstring clang++,$(cxx_compiler)))
 		libmesh_LDFLAGS += -lgcov
 		libmesh_LIBS += -lgcov
@@ -290,18 +314,19 @@ endif
 # TODO[JWP]: These plugins might also be able to use libtool...but it turned
 # out to be more trouble than it was worth to get working.
 #
+PLUGIN_FLAGS := -shared -fPIC -Wl,-undefined,dynamic_lookup
 %-$(METHOD).plugin : %.C
-	@echo "Compiling C++ Plugin (in "$(METHOD)" mode) "$<"..."
-	@$(libmesh_CXX) $(libmesh_CPPFLAGS) $(ADDITIONAL_CPPFLAGS) $(CXXFLAGS) $(libmesh_CXXFLAGS) -shared -fPIC $(app_INCLUDES) $(libmesh_INCLUDE) $< -o $@
+	# we add include/base so that MooseConfig.h can be found, which is absent from the symlink dirs
+	@$(libmesh_CXX) $(libmesh_CPPFLAGS) $(ADDITIONAL_CPPFLAGS) $(CXXFLAGS) $(libmesh_CXXFLAGS) $(PLUGIN_FLAGS) $(app_INCLUDES) $(libmesh_INCLUDE) -I $(FRAMEWORK_DIR)/include/base $< -o $@
 %-$(METHOD).plugin : %.c
 	@echo "Compiling C Plugin (in "$(METHOD)" mode) "$<"..."
-	@$(libmesh_CC) $(libmesh_CPPFLAGS) $(ADDITIONAL_CPPFLAGS) $(libmesh_CFLAGS) -shared -fPIC $(app_INCLUDES) $(libmesh_INCLUDE) $< -o $@
+	@$(libmesh_CC) $(libmesh_CPPFLAGS) $(ADDITIONAL_CPPFLAGS) $(libmesh_CFLAGS) $(PLUGIN_FLAGS) $(app_INCLUDES) $(libmesh_INCLUDE) $< -o $@
 %-$(METHOD).plugin : %.f
 	@echo "Compiling Fortan Plugin (in "$(METHOD)" mode) "$<"..."
-	@$(libmesh_F77) $(libmesh_FFLAGS) -shared -fPIC $(app_INCLUDES) $(libmesh_INCLUDE) $< -o $@
+	@$(libmesh_F77) $(libmesh_FFLAGS) $(PLUGIN_FLAGS) $(app_INCLUDES) $(libmesh_INCLUDE) $< -o $@
 %-$(METHOD).plugin : %.f90
 	@echo "Compiling Fortan Plugin (in "$(METHOD)" mode) "$<"..."
-	@$(libmesh_F90) $(libmesh_FFLAGS) -shared -fPIC $(app_INCLUDES) $(libmesh_INCLUDE) $< -o $@
+	@$(libmesh_F90) $(libmesh_FFLAGS) $(PLUGIN_FLAGS) $(app_INCLUDES) $(libmesh_INCLUDE) $< -o $@
 
 # Define the "test" target, we'll use a variable name so that we can override it without warnings if needed
 TEST ?= test

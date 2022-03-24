@@ -13,7 +13,7 @@
 #include "AllLocalDofIndicesThread.h"
 #include "AuxiliarySystem.h"
 #include "Console.h"
-#include "LayeredSideFluxAverage.h"
+#include "LayeredSideDiffusiveFluxAverage.h"
 #include "MooseMesh.h"
 #include "Output.h"
 #include "TimeStepper.h"
@@ -24,8 +24,6 @@
 #include "libmesh/numeric_vector.h"
 
 registerMooseObject("MooseApp", TransientMultiApp);
-
-defineLegacyParams(TransientMultiApp);
 
 InputParameters
 TransientMultiApp::validParams()
@@ -177,6 +175,8 @@ TransientMultiApp::solveStep(Real dt, Real target_time, bool auto_advance)
 {
   if (!_has_an_app)
     return true;
+
+  TIME_SECTION(_solve_step_timer);
 
   _auto_advance = auto_advance;
 

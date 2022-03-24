@@ -29,7 +29,7 @@ CartesianProductSampler::validParams()
 }
 
 CartesianProductSampler::CartesianProductSampler(const InputParameters & parameters)
-  : Sampler(parameters), _perf_compute_sample(registerTimedSection("computeSample", 4))
+  : Sampler(parameters)
 {
   const std::vector<Real> & items = getParam<std::vector<Real>>("linear_space_items");
   if (items.size() % 3 != 0)
@@ -56,7 +56,7 @@ CartesianProductSampler::CartesianProductSampler(const InputParameters & paramet
       grid_items.back()[j] = items[i] + j * items[i + 1];
   }
 
-  _cp_ptr = libmesh_make_unique<const StochasticTools::CartesianProduct<Real>>(grid_items);
+  _cp_ptr = std::make_unique<const StochasticTools::CartesianProduct<Real>>(grid_items);
   setNumberOfRows(_cp_ptr->numRows());
   setNumberOfCols(_cp_ptr->numCols());
 }
@@ -64,6 +64,5 @@ CartesianProductSampler::CartesianProductSampler(const InputParameters & paramet
 Real
 CartesianProductSampler::computeSample(dof_id_type row_index, dof_id_type col_index)
 {
-  TIME_SECTION(_perf_compute_sample);
   return _cp_ptr->computeValue(row_index, col_index);
 }

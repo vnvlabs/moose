@@ -17,8 +17,6 @@
 #include "NearestPointIntegralVariablePostprocessor.h"
 #include "SystemBase.h"
 
-defineLegacyParams(MultiAppConservativeTransfer);
-
 InputParameters
 MultiAppConservativeTransfer::validParams()
 {
@@ -250,7 +248,7 @@ MultiAppConservativeTransfer::postExecute()
                                    _to_postprocessors_to_be_preserved[i]);
       }
 
-      // Compute the to-postproessor again so that it has the right value with the updated solution
+      // Compute the to-postprocessor again so that it has the right value with the updated solution
       if (_use_nearestpoint_pps)
         to_problem.computeUserObjectByName(
             EXEC_TRANSFER, Moose::POST_AUX, _to_postprocessors_to_be_preserved[0]);
@@ -292,7 +290,7 @@ MultiAppConservativeTransfer::adjustTransferedSolutionNearestPoint(
   }
 
   PostprocessorValue to_adjuster = 0;
-  // Compute to-postproessor to have the adjuster
+  // Compute to-postprocessor to have the adjuster
   if (_current_direction == TO_MULTIAPP)
   {
     to_problem.computeUserObjectByName(EXEC_TRANSFER, Moose::POST_AUX, to_postprocessor);
@@ -351,7 +349,7 @@ MultiAppConservativeTransfer::adjustTransferedSolutionNearestPoint(
       Real scale = 1;
       if (_current_direction == FROM_MULTIAPP)
       {
-        unsigned int ii = pps.nearestPointIndex(elem->centroid());
+        unsigned int ii = pps.nearestPointIndex(elem->vertex_average());
         if (ii != i || !performAdjustment(from_adjuster, pps.userObjectValue(i)))
           continue;
 
@@ -373,7 +371,7 @@ MultiAppConservativeTransfer::adjustTransferedSolutionNearestPoint(
   to_solution.close();
   to_sys.update();
 
-  // Compute the to-postproessor again so that it has the right value with the updated solution
+  // Compute the to-postprocessor again so that it has the right value with the updated solution
   if (_current_direction == TO_MULTIAPP)
     to_problem.computeUserObjectByName(EXEC_TRANSFER, Moose::POST_AUX, to_postprocessor);
 }
@@ -407,7 +405,7 @@ MultiAppConservativeTransfer::adjustTransferedSolution(FEProblemBase * from_prob
     }
   }
 
-  // Compute to-postproessor to have the adjuster
+  // Compute to-postprocessor to have the adjuster
   to_problem.computeUserObjectByName(EXEC_TRANSFER, Moose::POST_AUX, to_postprocessor);
 
   // Now we should have the right adjuster based on the transfered solution

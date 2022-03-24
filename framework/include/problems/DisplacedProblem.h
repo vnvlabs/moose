@@ -20,7 +20,6 @@
 // Forward declarations
 class MooseVariableFieldBase;
 class AssemblyData;
-class DisplacedProblem;
 class MooseMesh;
 class Assembly;
 class FEProblemBase;
@@ -32,9 +31,6 @@ namespace libMesh
 template <typename T>
 class NumericVector;
 }
-
-template <>
-InputParameters validParams<DisplacedProblem>();
 
 class DisplacedProblem : public SubProblem
 {
@@ -60,8 +56,12 @@ public:
   // Return a constant reference to the vector of variable names.
   const std::vector<std::string> & getDisplacementVarNames() const { return _displacements; }
 
-  virtual void createQRules(
-      QuadratureType type, Order order, Order volume_order, Order face_order, SubdomainID block);
+  virtual void createQRules(QuadratureType type,
+                            Order order,
+                            Order volume_order,
+                            Order face_order,
+                            SubdomainID block,
+                            bool allow_negative_qweights = true);
 
   void bumpVolumeQRuleOrder(Order order, SubdomainID block);
   void bumpAllQRuleOrder(Order order, SubdomainID block);
@@ -131,7 +131,6 @@ public:
   virtual unsigned int numMatrixTags() const override;
 
   virtual bool isTransient() const override;
-  virtual Moose::CoordinateSystemType getCoordSystem(SubdomainID sid) const override;
 
   // Variables /////
   virtual bool hasVariable(const std::string & var_name) const override;
@@ -337,8 +336,8 @@ public:
 
   bool computingScalingResidual() const override final;
 
-  virtual void initialSetup();
-  virtual void timestepSetup();
+  void initialSetup() override;
+  void timestepSetup() override;
 
   using SubProblem::haveADObjects;
   void haveADObjects(bool have_ad_objects) override;
@@ -360,12 +359,6 @@ protected:
   std::vector<std::unique_ptr<Assembly>> _assembly;
 
   GeometricSearchData _geometric_search_data;
-
-  /// Timers
-  PerfID _eq_init_timer;
-  PerfID _update_mesh_timer;
-  PerfID _sync_solutions_timer;
-  PerfID _update_geometric_search_timer;
 
 private:
   friend class UpdateDisplacedMeshThread;

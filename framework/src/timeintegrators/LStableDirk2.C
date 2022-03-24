@@ -14,8 +14,6 @@
 
 registerMooseObject("MooseApp", LStableDirk2);
 
-defineLegacyParams(LStableDirk2);
-
 InputParameters
 LStableDirk2::validParams()
 {
@@ -54,7 +52,9 @@ LStableDirk2::computeTimeDerivatives()
 }
 
 void
-LStableDirk2::computeADTimeDerivatives(DualReal & ad_u_dot, const dof_id_type & dof) const
+LStableDirk2::computeADTimeDerivatives(DualReal & ad_u_dot,
+                                       const dof_id_type & dof,
+                                       DualReal & /*ad_u_dotdot*/) const
 {
   computeTimeDerivativeHelper(ad_u_dot, _solution_old(dof));
 }
@@ -77,7 +77,7 @@ LStableDirk2::solve()
 
   // Compute first stage
   _fe_problem.initPetscOutput();
-  _console << "1st stage\n";
+  _console << "1st stage" << std::endl;
   _stage = 1;
   _fe_problem.time() = time_stage1;
   _fe_problem.getNonlinearSystemBase().system().solve();
@@ -90,7 +90,7 @@ LStableDirk2::solve()
 
   // Compute second stage
   _fe_problem.initPetscOutput();
-  _console << "2nd stage\n";
+  _console << "2nd stage" << std::endl;
   _stage = 2;
   _fe_problem.timeOld() = time_stage1;
   _fe_problem.time() = time_new;

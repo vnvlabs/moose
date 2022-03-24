@@ -146,13 +146,13 @@ class CodeBlock(components.ReaderComponent):
         settings['language'] = ('text', "The code language to use for highlighting.")
         return settings
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         args = info['settings'].split()
         if args and ('=' not in args[0]):
-            self.settings['language'] = args[0]
+            settings['language'] = args[0]
 
-        return Code(parent, content=info['code'], language=self.settings['language'],
-                    **self.attributes)
+        return Code(parent, content=info['code'], language=settings['language'],
+                    **self.attributes(settings))
 
 class QuoteBlock(components.ReaderComponent):
     RE = re.compile(r'(?:\A|\n{2,})'         # start of string or empty line
@@ -160,7 +160,7 @@ class QuoteBlock(components.ReaderComponent):
                     r'(?=\n*\Z|\n{2,})',        # end of string or empty line
                     flags=re.MULTILINE|re.DOTALL|re.UNICODE)
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         content = []
         for line in info['quote'].rstrip('\n').split('\n'):
             if line == '>':
@@ -180,17 +180,28 @@ class HeadingBlock(components.ReaderComponent):
     Hash style markdown headings with settings.
 
     # Heading Level One with=settings
+
+    The regex reads inline commands, such as autolinks, as part of the header text, e.g.,
+
+        ## [Home](index.md exact=True) id=home-link
+
+    The trick is that header settings need to be distinguished from inline command settings. This is
+    accomplished by doing a negative lookahead for a "]" or ")" following the 'key=value' match. It
+    should be safe to say that inputs for header settings (currently, 'style', 'class', or 'id') can
+    never contain a "]" or ")", since HTML classes and CSS grammar do not allow them in names (see
+    https://www.w3.org/TR/CSS21/grammar.html#scanner).
     """
     TOKEN = Heading
-    RE = re.compile(r'(?:\A|\n{2,})'             # start of string or empty line
-                    r'^(?P<level>#{1,6}) '       # match 1 to 6 #'s at the beginning of line
-                    r'(?P<inline>.*?) *'         # heading text that will be inline parsed
-                    r'(?P<settings>\s+\w+=.*?)?' # optional match key, value settings
-                    r'(?=\n*\Z|\n{2,})',         # match up to end of string or newline(s)
+    RE = re.compile(r'(?:\A|\n{2,})'            # start of string or empty line
+                    r'^(?P<level>#{1,6}) '      # hashes indicating header level
+                    r'(?P<inline>.*?) *'        # heading text to be inline parsed
+                    r'(?!\w+=[^\n]*?(?:\]|\)))' # inline command settings lookahead
+                    r'(?P<settings>\w+=.*?)?'   # optional 'key=value' settings
+                    r'(?=\n*\Z|\n{2,})',        # end of string or newline(s)
                     flags=re.MULTILINE|re.DOTALL|re.UNICODE)
 
-    def createToken(self, parent, info, page):
-        heading = Heading(parent, level=info['level'].count('#'), **self.attributes)
+    def createToken(self, parent, info, page, settings):
+        heading = Heading(parent, level=info['level'].count('#'), **self.attributes(settings))
         return heading
 
 class ListBlock(components.ReaderComponent):
@@ -198,7 +209,7 @@ class ListBlock(components.ReaderComponent):
     ITEM_RE = None
     TOKEN = None
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         marker = info['marker']
         n = len(marker)
         token = tokens.Token(self.TOKEN, parent)
@@ -245,8 +256,8 @@ class OrderedListBlock(ListBlock):
         settings['type'] = ('1', "The list type (1, A, a, i, or I).")
         return settings
 
-    def createToken(self, parent, info, page):
-        token = ListBlock.createToken(self, parent, info, page)
+    def createToken(self, parent, info, page, settings):
+        token = ListBlock.createToken(self, parent, info, page, settings)
         token['start'] = int(info['marker'].strip('. '))
         return token
 
@@ -256,7 +267,7 @@ class ShortcutBlock(components.ReaderComponent):
                     r'(?=\Z|\n{2,})',                   # stop new line or end of file
                     flags=re.MULTILINE|re.DOTALL|re.UNICODE)
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         return Shortcut(parent, key=info['key'], link=info['link'], string=info['key'])
 
 class ParagraphBlock(components.ReaderComponent):
@@ -265,12 +276,12 @@ class ParagraphBlock(components.ReaderComponent):
                     r'(?=\Z|\n{2,})',  # stop with end or empty line
                     flags=re.MULTILINE|re.DOTALL|re.UNICODE)
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         return Paragraph(parent)
 
 class EndOfFileBlock(components.ReaderComponent):
     RE = re.compile(r'.*', flags=re.UNICODE|re.MULTILINE|re.DOTALL)
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         return parent
 
 class LinkInline(components.ReaderComponent):
@@ -292,8 +303,8 @@ class LinkInline(components.ReaderComponent):
                     r'(?:\s+(?P<settings>.*?))?\)', # settings
                     flags=re.UNICODE)
 
-    def createToken(self, parent, info, page):
-        return Link(parent, url=info['url'], **self.attributes)
+    def createToken(self, parent, info, page, settings):
+        return Link(parent, url=info['url'], **self.attributes(settings))
 
 class ShortcutLinkInline(components.ReaderComponent):
     """https://regex101.com/r/JLAaBU/1"""
@@ -302,43 +313,43 @@ class ShortcutLinkInline(components.ReaderComponent):
                     r'(?:\s+(?P<settings>.*?))?' # settings
                     r'\]',                       # closing ]
                     flags=re.UNICODE)
-    def createToken(self, parent, info, page):
-        ShortcutLink(parent, key=info['key'], **self.attributes)
+    def createToken(self, parent, info, page, settings):
+        ShortcutLink(parent, key=info['key'], **self.attributes(settings))
         return parent
 
 class BreakInline(components.ReaderComponent):
     RE = re.compile(r'(?P<break>\n+)')
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         Break(parent, count=len(info['break']))
         return parent
 
 class LineBreakInline(components.ReaderComponent):
     RE = re.compile(r'(?P<break>\\{2}[\s+$])', flags=re.MULTILINE)
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         LineBreak(parent)
         return parent
 
 class SpaceInline(components.ReaderComponent):
     RE = re.compile(r'(?P<space> +)')
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         Space(parent, count=len(info['space']))
         return parent
 
 class PunctuationInline(components.ReaderComponent):
     RE = re.compile(r'(([^A-Za-z0-9\s])\2*)')
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         Punctuation(parent, content=info[0])
         return parent
 
 class NumberInline(components.ReaderComponent):
     RE = re.compile(r'([0-9]+)')
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         Number(parent, content=info[0])
         return parent
 
 class WordInline(components.ReaderComponent):
     RE = re.compile(r'([A-Za-z]+)')
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         Word(parent, content=info[0])
         return parent
 
@@ -346,7 +357,7 @@ class FormatInline(components.ReaderComponent):
     RE = re.compile(r'(?P<token>[\@|\^|\=|\*|\+|~`])(?=\S)(?P<inline>.*?)(?<=\S)(?:\1)',
                     flags=re.MULTILINE|re.DOTALL|re.DOTALL)
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         tok = info['token']
 
         # Sub/super script must have word before the rest cannot
@@ -375,7 +386,7 @@ class EscapeCharacter(components.ReaderComponent):
     RE = re.compile(r'\\(?P<char>\[|\]|!|\@|\^|\=|\*|\+|~|-)',
                     flags=re.MULTILINE|re.DOTALL)
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         Punctuation(parent, content=info['char'])
         return parent
 
@@ -420,21 +431,15 @@ class RenderCode(components.RenderComponent):
                                  info=token.info)
 
 class RenderShortcutLink(components.RenderComponent):
-    def __init__(self, *args, **kwargs):
-        components.RenderComponent.__init__(self, *args, **kwargs)
-        self.__cache = dict()
-
     def createHTML(self, parent, token, page):
-        a = html.Tag(parent, 'a', token)
-        node = self.getShortcut(token)
-        a['href'] = node['link']
+        node = self._getShortcut(page, token['key'])
+        a = html.Tag(parent, 'a', token, href=node['link'])
         for child in node.children:
             self.renderer.render(a, child, page)
         return a
 
     def createLatex(self, parent, token, page):
-        node = self.getShortcut(token)
-
+        node = self._getShortcut(page, token['key'])
         link = node['link'].lstrip('#')
         if len(node) == 0:
             latex.String(parent, content='{}~'.format(node['prefix']), escape=False)
@@ -448,19 +453,14 @@ class RenderShortcutLink(components.RenderComponent):
                               info=token.info)
         return h
 
-    def getShortcut(self, token):
-        key = token['key']
-        if key in self.__cache:
-            return self.__cache[key]
+    @staticmethod
+    def _getShortcut(page, key):
+        """Helper to find Shortcut tokens added to the page attributes by the Shortcut extension."""
+        node = page.get('shortcuts', dict()).get(key)
+        if node is not None:
+            return node
 
-        #TODO: error if more than one found
-        for node in moosetree.iterate(token.root):
-            if node.name == 'Shortcut' and node['key'] == key:
-                self.__cache[key] = node
-                return node
-
-        msg = "The shortcut link key '{}' was not located in the list of shortcuts."
-        raise exceptions.MooseDocsException(msg, key)
+        raise exceptions.MooseDocsException("Shortcut link key '{}' not found.", key)
 
 class RenderShortcut(components.RenderComponent):
     def createHTML(self, parent, token, page):

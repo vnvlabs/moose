@@ -52,19 +52,24 @@ plasticity constitutive model base class is given below.
 
 ### Constitutive Equations
 
-Following what is typical in crystal plasticity computations (e.g., [!cite](Asaro:1983kf)),
-the total deformation gradient $\boldsymbol{F}$ is multiplicatively decomposed into
-elastic ($\boldsymbol{F}^e$) and plastic ($\boldsymbol{F}^{p}$) components:
+For finite strain inelastic mechanics of crystal plasticity the deformation gradient $\boldsymbol{F}$ is assumed to be multiplicatively decomposed in its elastic and plastic parts as (see e.g., [!cite](Asaro:1983kf)):
+\begin{equation}
+\boldsymbol{F} = \boldsymbol{F}^e \boldsymbol{F}^p,
+\end{equation}
+such that $\text{det}\left( \boldsymbol{F}^e \right) > 0$ and $\text{det}\left( \boldsymbol{F}^p \right) = 1$ are the elastic and plastic deformation gradients, respectively.
+ The elastic and plastic deformation gradients define two deformed configurations: one intermediate configuration described by $\boldsymbol{F}^{p}$, and a final deformed configuration $\boldsymbol{F}^e \boldsymbol{F}^p$. Here, the change in the crystal shape due to dislocation motion is accounted for in
+ the plastic deformation gradient tensor, $\boldsymbol{F}^p$, the elastic
+ deformation gradient tensor, $\boldsymbol{F}^e$, accounts for recoverable elastic
+ stretch and rotations of the crystal lattice,
 
+ For a thermo-mechanical problem, a third configuration is introduced accounting for thermal deformations (see e.g., [!cite](li2019development,ozturk2016crystal,meissonnier2001finite)). The resulting decomposition reads
 \begin{equation}
   \label{eqn:deformationGradDecomposition}
-  \boldsymbol{F} = \boldsymbol{F}^e \boldsymbol{F}^p,
+  \boldsymbol{F} = \boldsymbol{F}^e \boldsymbol{F}^p \boldsymbol{F}^{\theta},
 \end{equation}
-such that $\text{det}\left( \boldsymbol{F}^e \right) > 0$ and $\text{det}\left( \boldsymbol{F}^p \right) = 1$.
-The change in the crystal shape due to dislocation motion is accounted for in
-the plastic deformation gradient tensor, $\boldsymbol{F}^p$, while the elastic
-deformation gradient tensor, $\boldsymbol{F}^e$, accounts for recoverable elastic
-stretch and rotations of the crystal lattice.
+where $\boldsymbol{F}^{\theta}$ is the thermal deformation gradient, such that  $\text{det}\left( \boldsymbol{F}^{\theta} \right) > 0$.
+The thermal deformation gradient $\boldsymbol{F}^{\theta}$ accounts for the deformation of the crystal lattice due to thermal expansion.
+The constitutive equation and calculation details associated with the thermal deformation gradient $\boldsymbol{F} ^{\theta}$ are included in [ComputeCrystalPlasticityThermalEigenstrain](/ComputeCrystalPlasticityThermalEigenstrain.md).
 
 The total plastic velocity gradient can be expressed in terms of the plasticity deformation gradient as
 \begin{equation}
@@ -119,11 +124,14 @@ The evolution of the plastic slip $\gamma^\alpha_i$ must be specified for every 
 \label{eqn:gamma_dot}
     \dot{\gamma}^\alpha_{i} = \hat{\dot{\gamma}}^\alpha_i \left( \tau^\alpha_i, s^\alpha_i \right),
 \end{equation}
-which can take different forms among constitutive models used in crystal plasticity. Here, the $s^\alpha_i$ denotes the slip resistance and $\tau^\alpha_i$ denotes the resolved shear stress that is associated with slip system $\alpha$ and model $i$, respectively. The resolved shear stress is defined as
+which can take different forms among constitutive models used in crystal plasticity. Here, the $s^\alpha_i$ denotes the slip resistance and $\tau^\alpha_i$ denotes the resolved shear stress that is associated with slip system $\alpha$ and model $i$, respectively.
+
+The resolved shear stress is defined as
 \begin{equation}
   \label{eqn:appliedShearStress}
-  \tau^{\alpha}_i = \boldsymbol{S} : \boldsymbol{s}^{\alpha}_{i,o} \otimes \boldsymbol{m}^{\alpha}_{i,o}.
+  \tau^\alpha = \text{det}(\boldsymbol{F}^\theta) \left(  {\boldsymbol{F}^{\theta}}^{\intercal} \boldsymbol{S} {\boldsymbol{F}^{\theta}}^{-\intercal} \right) : \boldsymbol{s}^{\alpha}_{i,o} \otimes \boldsymbol{m}^{\alpha}_{i,o}.
 \end{equation}
+Here, we report the shear stress in a form that considers the thermal effect. For readers who are particularly interested in the thermal eigenstrain calculations, please refer to the  [ComputeCrystalPlasticityThermalEigenstrain](/ComputeCrystalPlasticityThermalEigenstrain.md) documentation page.
 
 To facilitate the understanding of the above constitutive equations, some fundamental continuum mechanics concepts are included in the following subsections.
 
@@ -188,7 +196,100 @@ The inverse deformation gradient is used to relate
 the current configuration frame back to the reference frame (i.e., pull back). Note in the `ComputeMultipleCrystalPlasticityStress` class,
 the pull back of Cauchy stress is via the elastic part of the deformation gradient ($\boldsymbol{F}^e$) only (see [eqn:stress_cauchy]).
 
-## Computation workflow
+### Calculation of Schmid Tensor
+
+The calculation of the flow direction Schmid tensor, the dyadic product of the slip direction and slip plane normal unit vectors, $\boldsymbol{s}_{i,o}^{\alpha} \otimes \boldsymbol{m}_{i,o}^{\alpha}$, is straight forward for the case of cubic crystals, including Face Centered Cubic (FCC) and Body Centered Cubic (BCC) crystals. The 3-index Miller indices commonly used to describe the slip direction and slip plane normals are first normalized individually normalized and then directly used in the dyadic product.
+
+#### Conversion of Miller-Bravais Indices for HCP to Cartesian System
+
+Hexagonal Close Packed (HCP) crystals are often described with the 4-index Miller-Bravais system:
+\begin{equation}
+  \label{eqn:millerBravaisHCPIndices}
+  (HKIL) [UVTW]
+\end{equation}
+To compute the Schmid tensor from these slip direction and slip plane normals, the indices must first be transformed to the Cartesian coordinate system. Within the associated `ComputeMultipleCrystalPlasticityStress` implementation, this conversion uses the assumption that the a$_1$-axis, or the H index, align with the x-axis in the basal plane of the HCP crystal lattice, see [xtalpl_hcp_basalplane_notation]. The c-axis, the L index, is assumed to be paralled to the z-axis of the Cartesian system.
+
+!media tensor_mechanics/crystal_plasticity/HCP_basal_plane_diagram.png
+    id=xtalpl_hcp_basalplane_notation
+    caption=The convention used to transform the 4-index Miller-Bravais indices to the 3-index Cartesian system aligns the x-axis with the a$_1$-axis in the basal plane in this implementation.
+    style=display:block;margin-left:auto;margin-right:auto;width:40%
+
+The slip plane directions are transformed to the Cartesian system with the matrix equation
+\begin{equation}
+  \label{eqn:hcpSlipDirectionTransform}
+  \begin{bmatrix}
+    \frac{1}{a} & 0 & 0 \\
+      &  & \\
+    \frac{1}{a\sqrt{3}} & \frac{2}{a\sqrt{3}} & 0 \\
+      &  & \\
+    0 &    0  & \frac{1}{c}
+  \end{bmatrix}   \cdot
+  \begin{bmatrix}
+    U \\
+           \\
+    V \\
+           \\
+    W
+  \end{bmatrix}_{|hex} =
+  \begin{bmatrix}
+    x \\
+    y \\
+    z
+  \end{bmatrix}_{|cart}
+\end{equation}
+
+where a and c are the HCP unit cell lattice parameters in the basal and axial directions, respectively.
+A check is performed with the basal plane indices to ensure that those indices sum to zero ($U + V + W = 0$).
+If the slip direction indices are given as decimal values, nummerical round-off errors may require an increase in the value of the parameter `zero_tol` which is used within the code to set the allowable deviation from exact zero.
+
+The slip plane normals are similiarly transformed as
+\begin{equation}
+  \label{eqn:hcpSlipPlaneNormalTransform}
+  \begin{bmatrix}
+    \frac{1}{a} & 0 & 0 \\
+      &  & \\
+    \frac{1}{a\sqrt{3}} & \frac{2}{a\sqrt{3}} & 0 \\
+      &  & \\
+    0 &    0  & \frac{1}{c}
+  \end{bmatrix}   \cdot
+  \begin{bmatrix}
+    H \\
+      \\
+    K \\
+      \\
+    L
+  \end{bmatrix}_{|hex} =
+  \begin{bmatrix}
+    h \\
+    k \\
+    l
+  \end{bmatrix}_{|cart}
+\end{equation}
+
+Once transformed to the Cartesian system, these vectors are normalized and then used to compute the Schmid tensor.
+
+!alert note
+The alignment of the a$_1$ axis of the Miller-Bravais notation and the x-axis of the Cartesian system within the basal plane of the unit HCP is specifically adopted for the conversion implementation in the `ComputeMultipleCrystalPlasticityStress` associated classes. While there is broad consensus in the alignment of the HPC c-axis with the Cartesian z-axis, no standard for alignment within the basal plane is clear. Users should note this assumption in the construction of their simulations and the interpretations of the simulation results.
+
+## Calculation of Crystal Rotation
+
+The rotation of a crystal during deformation is calculated within the `ComputeMultipleCrystalPlasticityStress` class through a polar decomposition on the elastic part of the deformation tensor ($\boldsymbol{F}^{e}$), i.e.,
+
+\begin{equation}
+  \boldsymbol{F}^{e} = \boldsymbol{R}^{e}\cdot\boldsymbol{U}^{e},
+\end{equation}
+where $\boldsymbol{U}^{e}$ is the symmetric matrix that describes the elastic stretch of the crystal, $\boldsymbol{R}^{e}$ is the orthogonal tensor that describes the elastic part of the crystal rotation.
+
+Note here $\boldsymbol{R}^{e}$ represents the rotation of the crystal with respect to its crystal lattice. To obtain the the crystal rotation relative to the reference frame (total rotation $\boldsymbol{R}^{\text{total}}$), initial orientation of the crystal needs to be considered, i.e.,
+
+\begin{equation}
+  \boldsymbol{R}^{\text{total}} = \boldsymbol{R}^{e}\cdot\boldsymbol{R}^{\text{initial}},
+\end{equation}
+where $\boldsymbol{R}^{\text{initial}}$ denotes the rotation matrix that corresponds to the initial orientation of the crystal.
+
+To obtain the Euler angles for the crystals during deformation, one will need to transform the rotation matrix to the Euler angle. One can refer to the [ComputeUpdatedEulerAngle](/ComputeUpdatedEulerAngle.md) class for this purpose.
+
+## Computation Workflow
 
 The order of calculations performed within the `ComputeMultipleCrystalPlasticityStress`
 class is given in flowchart form, [xtalpl_nr_pk2convergence].  The converged Cauchy
@@ -222,6 +323,7 @@ in MOOSE and is adapted for our crystal plasticity framework.
 
 Constitutive models are used to calculate the plastic slip rate in classes which
 inherit from `CrystalPlasticityStressUpdateBase`.
+
 
 
 ## Units Assumed in the Crystal Plasticity Materials

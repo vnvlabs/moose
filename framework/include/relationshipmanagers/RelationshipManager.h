@@ -15,12 +15,7 @@
 
 #include "libmesh/ghosting_functor.h"
 
-// Forward declarations
-class RelationshipManager;
 class MooseMesh;
-
-template <>
-InputParameters validParams<RelationshipManager>();
 
 /**
  * RelationshipManagers are used for describing what kinds of non-local resources are needed for an
@@ -121,6 +116,8 @@ public:
    * in MOOSE.  If this thing is algebraic then it's going to the DofMap
    */
   bool useDisplacedMesh() const { return _use_displaced_mesh; }
+
+  const DofMap * dofMap() { return _dof_map; }
 
 protected:
   /**

@@ -23,8 +23,6 @@ registerMooseAction("MooseApp", SetupMeshAction, "setup_mesh");
 registerMooseAction("MooseApp", SetupMeshAction, "set_mesh_base");
 registerMooseAction("MooseApp", SetupMeshAction, "init_mesh");
 
-defineLegacyParams(SetupMeshAction);
-
 InputParameters
 SetupMeshAction::validParams()
 {
@@ -84,6 +82,17 @@ SetupMeshAction::validParams()
 
   params.addParam<unsigned int>(
       "uniform_refine", 0, "Specify the level of uniform refinement applied to the initial mesh");
+
+  params.addParam<bool>("skip_deletion_repartition_after_refine",
+                        false,
+                        "If the flag is true, uniform refinements will run more efficiently, "
+                        "but at the same time, there might be extra ghosting elements. "
+                        "The number of layers of additional ghosting elements depends "
+                        "on the number of uniform refinement levels.  This flag "
+                        "should be used only when you have a 'fine enough' coarse mesh and want "
+                        "to refine the mesh by a few levels. Otherwise, it might introduce an "
+                        "unbalanced workload and too large ghosting domain. ");
+
   params.addParam<bool>("skip_partitioning",
                         false,
                         "If true the mesh won't be partitioned. This may cause large load "
@@ -130,7 +139,7 @@ SetupMeshAction::setupMesh(MooseMesh * mesh)
   // Did they specify extra refinement levels on the command-line?
   level += _app.getParam<unsigned int>("refinements");
 
-  mesh->setUniformRefineLevel(level);
+  mesh->setUniformRefineLevel(level, getParam<bool>("skip_deletion_repartition_after_refine"));
 #endif // LIBMESH_ENABLE_AMR
 
   // Add entity names to the mesh
@@ -230,6 +239,8 @@ SetupMeshAction::act()
   // Create the mesh object and tell it to build itself
   if (_current_task == "setup_mesh")
   {
+    TIME_SECTION("SetupMeshAction::act::setup_mesh", 1, "Setting Up Mesh", true);
+
     if (_app.masterMesh())
       _mesh = _app.masterMesh()->safeClone();
     else
@@ -281,6 +292,8 @@ SetupMeshAction::act()
 
   else if (_current_task == "set_mesh_base")
   {
+    TIME_SECTION("SetupMeshAction::act::set_mesh_base", 1, "Setting Mesh", true);
+
     if (!_app.masterMesh() && !_mesh->hasMeshBase())
     {
       // We want to set the MeshBase object to that coming from mesh generators when the following
@@ -324,6 +337,8 @@ SetupMeshAction::act()
 
   else if (_current_task == "init_mesh")
   {
+    TIME_SECTION("SetupMeshAction::act::set_mesh_base", 1, "Initializing Mesh", true);
+
     if (_app.masterMesh())
     {
       if (_app.masterDisplacedMesh())

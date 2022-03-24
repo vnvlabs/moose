@@ -87,7 +87,7 @@ template <typename T>
 RestartableData<T> &
 SurrogateTrainerBase::declareModelDataHelper(const std::string & data_name)
 {
-  auto data_ptr = libmesh_make_unique<RestartableData<T>>(data_name, nullptr);
+  auto data_ptr = std::make_unique<RestartableData<T>>(data_name, nullptr);
   RestartableDataValue & value =
       _app.registerRestartableData(data_name, std::move(data_ptr), 0, false, _model_meta_data_name);
   RestartableData<T> & data_ref = static_cast<RestartableData<T> &>(value);
@@ -163,6 +163,12 @@ private:
 
   /// Sampler data for the current row
   std::vector<Real> _row_data;
+
+  /// Whether or not we are skipping samples that have unconverged solutions
+  const bool _skip_unconverged;
+
+  /// Whether or not the current sample has a converged solution
+  const bool * _converged;
 
   /// Vector of reporter names and their corresponding values (to be filled by getTrainingData)
   std::unordered_map<ReporterName, std::shared_ptr<TrainingDataBase>> _training_data;

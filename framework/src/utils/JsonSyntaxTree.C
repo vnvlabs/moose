@@ -147,6 +147,7 @@ JsonSyntaxTree::setParams(InputParameters * params, bool search_match, nlohmann:
     std::string doc = params->getDocString(iter.first);
     MooseUtils::escape(doc);
     param_json["description"] = doc;
+    param_json["controllable"] = params->isControllable(iter.first);
     param_json["deprecated"] = params->isParamDeprecated(iter.first);
     all_params[iter.first] = param_json;
   }
@@ -159,7 +160,7 @@ JsonSyntaxTree::addGlobal()
   // If they are doing a search they probably don't want to see this
   if (_search.empty())
   {
-    auto params = validParams<Action>();
+    auto params = Action::validParams();
     nlohmann::json jparams;
     setParams(&params, true, jparams);
     _root["global"]["parameters"] = jparams;

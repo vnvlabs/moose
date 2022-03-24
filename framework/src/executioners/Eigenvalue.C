@@ -18,15 +18,16 @@
 
 registerMooseObject("MooseApp", Eigenvalue);
 
-defineLegacyParams(Eigenvalue);
-
 InputParameters
 Eigenvalue::validParams()
 {
-  InputParameters params = Steady::validParams();
+  InputParameters params = Executioner::validParams();
 
   params.addClassDescription(
-      "Eigenvalue solves a standard/generalized linear or nonlinear eigenvaue problem");
+      "Eigenvalue solves a standard/generalized linear or nonlinear eigenvalue problem");
+
+  params += FEProblemSolve::validParams();
+  params.addParam<Real>("time", 0.0, "System time");
 
   // matrix_free will be an invalid for griffin once the integration is done.
   // In this PR, we can not change it. It will still be a valid option when users
@@ -44,6 +45,12 @@ Eigenvalue::validParams()
       "Whether or not to use a matrix free fashion for forming the preconditioning matrix. "
       "If true, a shell matrix will be used for preconditioner.");
 
+  params.addParam<bool>("constant_matrices",
+                        false,
+                        "Whether or not to use constant matrices so that we can use them to form "
+                        "residuals on both linear and "
+                        "nonlinear iterations");
+
   params.addParam<bool>("precond_matrix_includes_eigen",
                         false,
                         "Whether or not to include eigen kernels in the preconditioning matrix. "
@@ -51,6 +58,7 @@ Eigenvalue::validParams()
 
   params.addPrivateParam<bool>("_use_eigen_value", true);
 
+  params.addParam<Real>("initial_eigenvalue", 1, "Initial eigenvalue");
   params.addParam<PostprocessorName>(
       "normalization", "Postprocessor evaluating norm of eigenvector for normalization");
   params.addParam<Real>("normal_factor",
@@ -63,8 +71,6 @@ Eigenvalue::validParams()
 
   // If Newton and Inverse Power is combined in SLEPc side
   params.addPrivateParam<bool>("_newton_inverse_power", false);
-
-  params.addParam<Real>("time", 0.0, "System time");
 
 // Add slepc options and eigen problems
 #ifdef LIBMESH_HAVE_SLEPC
@@ -79,6 +85,7 @@ Eigenvalue::Eigenvalue(const InputParameters & parameters)
   : Executioner(parameters),
     _eigen_problem(*getCheckedPointerParam<EigenProblem *>(
         "_eigen_problem", "This might happen if you don't have a mesh")),
+    _feproblem_solve(*this),
     _normalization(isParamValid("normalization") ? &getPostprocessorValue("normalization")
                                                  : nullptr),
     _system_time(getParam<Real>("time")),
@@ -103,8 +110,7 @@ Eigenvalue::Eigenvalue(const InputParameters & parameters)
     paramError("normal_factor",
                "Cannot set scaling factor without defining normalization postprocessor.");
 
-  // _feproblem_solve calls FEProblemBase
-  _picard_solve.setInnerSolve(_feproblem_solve);
+  _fixed_point_solve->setInnerSolve(_feproblem_solve);
   _time = _system_time;
 
   if (isParamValid("normalization"))
@@ -116,10 +122,11 @@ Eigenvalue::Eigenvalue(const InputParameters & parameters)
       _eigen_problem.setNormalization(normpp);
   }
 
+  _eigen_problem.setInitialEigenvalue(getParam<Real>("initial_eigenvalue"));
+
   // Set a flag to nonlinear eigen system
   _eigen_problem.getNonlinearEigenSystem().precondMatrixIncludesEigenKernels(
       getParam<bool>("precond_matrix_includes_eigen"));
-
 #else
   mooseError("SLEPc is required to use Eigenvalue executioner, please use '--download-slepc in "
              "PETSc configuration'");
@@ -138,7 +145,7 @@ Eigenvalue::init()
 {
   if (_app.isRecovering())
   {
-    _console << "\nCannot recover eigenvaue solves!\nExiting...\n" << std::endl;
+    _console << "\nCannot recover eigenvalue solves!\nExiting...\n" << std::endl;
     return;
   }
 
@@ -196,9 +203,9 @@ Eigenvalue::prepareSolverOptions()
 void
 Eigenvalue::checkIntegrity()
 {
-  // check to make sure that we don't have any time kernels in eigenvaue simulation
+  // check to make sure that we don't have any time kernels in eigenvalue simulation
   if (_eigen_problem.getNonlinearSystemBase().containsTimeKernel())
-    mooseError("You have specified time kernels in your eigenvaue simulation");
+    mooseError("You have specified time kernels in your eigenvalue simulation");
 }
 
 #endif
@@ -238,19 +245,11 @@ Eigenvalue::execute()
 #endif // LIBMESH_ENABLE_AMR
     _eigen_problem.timestepSetup();
 
-    // This loop is for nonlinear multigrids (developed by Alex)
-    for (MooseIndex(_num_grid_steps) grid_step = 0; grid_step <= _num_grid_steps; ++grid_step)
+    _last_solve_converged = _fixed_point_solve->solve();
+    if (!lastSolveConverged())
     {
-      _last_solve_converged = _picard_solve.solve();
-
-      if (!lastSolveConverged())
-      {
-        _console << "Aborting as solve did not converge\n";
-        break;
-      }
-
-      if (grid_step != _num_grid_steps)
-        _eigen_problem.uniformRefine();
+      _console << "Aborting as solve did not converge" << std::endl;
+      break;
     }
 
     // Compute markers and indicators only when we do have at least one adaptivity step
@@ -278,6 +277,7 @@ Eigenvalue::execute()
     TIME_SECTION(_final_timer)
     _eigen_problem.execMultiApps(EXEC_FINAL);
     _eigen_problem.finalizeMultiApps();
+    _eigen_problem.postExecute();
     _eigen_problem.execute(EXEC_FINAL);
     _time = _time_step;
     _eigen_problem.outputStep(EXEC_FINAL);
@@ -287,7 +287,7 @@ Eigenvalue::execute()
   postExecute();
 
 #else
-  mooseError("SLEPc is required for eigenvaue executioner, please use --download-slepc when "
+  mooseError("SLEPc is required for eigenvalue executioner, please use --download-slepc when "
              "configuring PETSc ");
 #endif
 }

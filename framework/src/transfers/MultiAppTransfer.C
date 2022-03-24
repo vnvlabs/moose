@@ -19,8 +19,6 @@
 #include "libmesh/parallel_algebra.h"
 #include "libmesh/mesh_tools.h"
 
-defineLegacyParams(MultiAppTransfer);
-
 InputParameters
 MultiAppTransfer::validParams()
 {
@@ -111,6 +109,11 @@ MultiAppTransfer::getAppInfo()
   _to_meshes.clear();
   _to_positions.clear();
   _from_positions.clear();
+  // Clear this map since we build it from scratch every time we transfer
+  // Otherwise, this will cause two issues: 1) increasing memory usage
+  // for a simulation that requires many transfers, 2) producing wrong results
+  // when we do collective communication on this vector.
+  _local2global_map.clear();
 
   // Build the vectors for to problems, from problems, and subapps positions.
   switch (_direction)
@@ -210,7 +213,8 @@ MultiAppTransfer::getFromBoundingBoxes(BoundaryID boundary_id)
     const ConstBndNodeRange & bnd_nodes = *_from_meshes[i]->getBoundaryNodeRange();
     for (const auto & bnode : bnd_nodes)
     {
-      if (bnode->_bnd_id == boundary_id && bnode->_node->processor_id() == processor_id())
+      if (bnode->_bnd_id == boundary_id &&
+          bnode->_node->processor_id() == _from_meshes[i]->processor_id())
       {
         at_least_one = true;
         const auto & node = *bnode->_node;

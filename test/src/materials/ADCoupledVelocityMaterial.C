@@ -14,11 +14,11 @@ registerMooseObject("MooseTestApp", ADCoupledVelocityMaterial);
 InputParameters
 ADCoupledVelocityMaterial::validParams()
 {
-  InputParameters params = Material::validParams();
-  params.addRequiredCoupledVar("vel_x", "the x velocity");
-  params.addCoupledVar("vel_y", "the y velocity");
-  params.addCoupledVar("vel_z", "the z velocity");
-  params.addRequiredCoupledVar("rho", "The name of the density variable");
+  InputParameters params = FunctorMaterial::validParams();
+  params.addRequiredParam<MooseFunctorName>("vel_x", "the x velocity");
+  params.addParam<MooseFunctorName>("vel_y", "the y velocity");
+  params.addParam<MooseFunctorName>("vel_z", "the z velocity");
+  params.addRequiredParam<MooseFunctorName>("rho", "The name of the density variable");
   params.addClassDescription("A material used to create a velocity from coupled variables");
   params.addParam<MaterialPropertyName>(
       "velocity", "velocity", "The name of the velocity material property to create");
@@ -28,33 +28,45 @@ ADCoupledVelocityMaterial::validParams()
       "rho_v", "rho_v", "The product of the density and the y-velocity component");
   params.addParam<MaterialPropertyName>(
       "rho_w", "rho_w", "The product of the density and the z-velocity component");
+  params += SetupInterface::validParams();
+  params.set<ExecFlagEnum>("execute_on") = {EXEC_ALWAYS};
   return params;
 }
 
 ADCoupledVelocityMaterial::ADCoupledVelocityMaterial(const InputParameters & parameters)
-  : Material(parameters),
-    _velocity(declareADProperty<RealVectorValue>(getParam<MaterialPropertyName>("velocity"))),
-    _rho_u(declareADProperty<Real>(getParam<MaterialPropertyName>("rho_u"))),
-    _rho_v(declareADProperty<Real>(getParam<MaterialPropertyName>("rho_v"))),
-    _rho_w(declareADProperty<Real>(getParam<MaterialPropertyName>("rho_w"))),
-    _vel_x(adCoupledValue("vel_x")),
-    _vel_y(isParamValid("vel_y") ? &adCoupledValue("vel_y") : nullptr),
-    _vel_z(isParamValid("vel_z") ? &adCoupledValue("vel_z") : nullptr),
-    _rho(adCoupledValue("rho"))
+  : FunctorMaterial(parameters),
+    _vel_x(getFunctor<ADReal>("vel_x")),
+    _vel_y(isParamValid("vel_y") ? &getFunctor<ADReal>("vel_y") : nullptr),
+    _vel_z(isParamValid("vel_z") ? &getFunctor<ADReal>("vel_z") : nullptr),
+    _rho(getFunctor<ADReal>("rho"))
 {
-}
+  const std::set<ExecFlagType> clearance_schedule(_execute_enum.begin(), _execute_enum.end());
 
-void
-ADCoupledVelocityMaterial::computeQpProperties()
-{
-  ADRealVectorValue & velocity = _velocity[_qp];
+  addFunctorProperty<ADRealVectorValue>(
+      getParam<MaterialPropertyName>("velocity"),
+      [this](const auto & r, const auto & t) -> ADRealVectorValue
+      {
+        ADRealVectorValue velocity(_vel_x(r, t));
+        velocity(1) = _vel_y ? (*_vel_y)(r, t) : ADReal(0);
+        velocity(2) = _vel_z ? (*_vel_z)(r, t) : ADReal(0);
+        return velocity;
+      },
+      clearance_schedule);
 
-  velocity(0) = _vel_x[_qp];
-  _rho_u[_qp] = _rho[_qp] * velocity(0);
+  addFunctorProperty<ADReal>(
+      getParam<MaterialPropertyName>("rho_u"),
+      [this](const auto & r, const auto & t) -> ADReal { return _rho(r, t) * _vel_x(r, t); },
+      clearance_schedule);
 
-  velocity(1) = _vel_y ? (*_vel_y)[_qp] : 0;
-  _rho_v[_qp] = _vel_y ? _rho[_qp] * velocity(1) : 0;
+  addFunctorProperty<ADReal>(
+      getParam<MaterialPropertyName>("rho_v"),
+      [this](const auto & r, const auto & t) -> ADReal
+      { return _vel_y ? _rho(r, t) * (*_vel_y)(r, t) : ADReal(0); },
+      clearance_schedule);
 
-  velocity(2) = _vel_z ? (*_vel_z)[_qp] : 0;
-  _rho_w[_qp] = _vel_z ? _rho[_qp] * velocity(2) : 0;
+  addFunctorProperty<ADReal>(
+      getParam<MaterialPropertyName>("rho_w"),
+      [this](const auto & r, const auto & t) -> ADReal
+      { return _vel_z ? _rho(r, t) * (*_vel_z)(r, t) : ADReal(0); },
+      clearance_schedule);
 }

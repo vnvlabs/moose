@@ -11,153 +11,23 @@
 
 #include "MooseMesh.h"
 #include "MooseError.h"
-#include "SubProblem.h"
-#include "Assembly.h"
+#include "MooseMeshUtils.h"
 #include "FaceInfo.h"
-#include "MooseVariableFV.h"
 #include "libmesh/elem.h"
-#include "libmesh/compare_types.h"
 
 #include <tuple>
-
-template <typename>
-class MooseVariableFV;
 
 namespace Moose
 {
 namespace FV
 {
-/// This codifies a set of available ways to interpolate with elem+neighbor
-/// solution information to calculate values (e.g. solution, material
-/// properties, etc.) at the face (centroid).  These methods are used in the
-/// class's interpolate functions.  Some interpolation methods are only meant
-/// to be used with advective terms (e.g. upwind), others are more
-/// generically applicable.
-enum class InterpMethod
-{
-  /// (elem+neighbor)/2
-  Average,
-  /// weighted
-  Upwind,
-  // Rhie-Chow
-  RhieChow
-};
-
-/**
- * Produce the interpolation coefficients in the equation:
- *
- * \phi_f = c_1 * \phi_{F1} + c_2 * \phi_{F2}
- *
- * A couple of examples: if we are doing an average interpolation with
- * an orthogonal regular grid, then the pair will be (0.5, 0.5). If we are doing an
- * upwind interpolation with the velocity facing outward from the F1 element,
- * then the pair will be (1.0, 0.0).
- *
- * @param m The interpolation method
- * @param fi The face information
- * @param one_is_elem Whether fi.elem() == F1
- * @param advector The advecting velocity. Not relevant for an Average interpolation
- * @return a pair where the first Real is c_1 and the second Real is c_2
- */
-template <typename Vector = RealVectorValue>
-std::pair<Real, Real>
-interpCoeffs(const InterpMethod m,
-             const FaceInfo & fi,
-             const bool one_is_elem,
-             const Vector advector = Vector())
-{
-  switch (m)
-  {
-    case InterpMethod::Average:
-    {
-      if (one_is_elem)
-        return std::make_pair(fi.gC(), 1. - fi.gC());
-      else
-        return std::make_pair(1. - fi.gC(), fi.gC());
-    }
-
-    case InterpMethod::Upwind:
-    {
-      if ((advector * fi.normal() > 0) == one_is_elem)
-        return std::make_pair(1., 0.);
-      else
-        return std::make_pair(0., 1.);
-    }
-
-    default:
-      mooseError("Unrecognized interpolation method");
-  }
-}
-
-/**
- * A simple linear interpolation of values between cell centers to a cell face. The \p one_is_elem
- * parameter indicates whether value1 corresponds to the FaceInfo elem value; else it corresponds to
- * the FaceInfo neighbor value
- */
-template <typename T, typename T2>
-typename libMesh::CompareTypes<T, T2>::supertype
-linearInterpolation(const T & value1,
-                    const T2 & value2,
-                    const FaceInfo & fi,
-                    const bool one_is_elem)
-{
-  const auto coeffs = interpCoeffs(InterpMethod::Average, fi, one_is_elem);
-  return coeffs.first * value1 + coeffs.second * value2;
-}
-
-/// Provides interpolation of face values for non-advection-specific purposes (although it can/will
-/// still be used by advective kernels sometimes). The interpolated value is stored in result.
-/// This should be called when a face value needs to be computed from two neighboring
-/// cells/elements. value1 and value2 represent the cell property/values from which to compute the
-/// face value. The \p one_is_elem parameter indicates whether value1 corresponds to the FaceInfo
-/// elem value; else it corresponds to the FaceInfo neighbor value
-template <typename T, typename T2, typename T3>
-void
-interpolate(InterpMethod m,
-            T & result,
-            const T2 & value1,
-            const T3 & value2,
-            const FaceInfo & fi,
-            const bool one_is_elem)
-{
-  switch (m)
-  {
-    case InterpMethod::Average:
-      result = linearInterpolation(value1, value2, fi, one_is_elem);
-      break;
-    default:
-      mooseError("unsupported interpolation method for FVFaceInterface::interpolate");
-  }
-}
-
-/// Provides interpolation of face values for advective flux kernels.  This should be called by
-/// advective kernels when a face value is needed from two neighboring cells/elements.  The
-/// interpolated value is stored in result. value1 and value2 represent the two neighboring advected
-/// cell property/values. advector represents the vector quantity at the face that is doing the
-/// advecting (e.g. the flow velocity at the face); this value often will have been computed using a
-/// call to the non-advective interpolate function. The \p one_is_elem parameter indicates whether
-/// value1 corresponds to the FaceInfo elem value; else it corresponds to the FaceInfo neighbor
-/// value
-template <typename T, typename T2, typename T3, typename Vector>
-void
-interpolate(InterpMethod m,
-            T & result,
-            const T2 & value1,
-            const T3 & value2,
-            const Vector & advector,
-            const FaceInfo & fi,
-            const bool one_is_elem)
-{
-  const auto coeffs = interpCoeffs(m, fi, one_is_elem, advector);
-  result = coeffs.first * value1 + coeffs.second * value2;
-}
-
 template <typename ActionFunctor>
 void
 loopOverElemFaceInfo(const Elem & elem,
                      const MooseMesh & mesh,
-                     const SubProblem & subproblem,
-                     ActionFunctor & act)
+                     ActionFunctor & act,
+                     const Moose::CoordinateSystemType coord_type,
+                     const unsigned int rz_radial_coord = libMesh::invalid_uint)
 {
   mooseAssert(elem.active(), "We should never call this method with an inactive element");
 
@@ -225,13 +95,8 @@ loopOverElemFaceInfo(const Elem & elem,
 
       const Point elem_normal = elem_has_info ? fi->normal() : Point(-fi->normal());
 
-      mooseAssert(neighbor ? subproblem.getCoordSystem(elem.subdomain_id()) ==
-                                 subproblem.getCoordSystem(neighbor->subdomain_id())
-                           : true,
-                  "Coordinate systems must be the same between element and neighbor");
-
       Real coord;
-      coordTransformFactor(subproblem, elem.subdomain_id(), fi->faceCentroid(), coord);
+      MooseMeshUtils::coordTransformFactor(fi->faceCentroid(), coord, coord_type, rz_radial_coord);
 
       const Point surface_vector = elem_normal * fi->faceArea() * coord;
 
@@ -240,43 +105,33 @@ loopOverElemFaceInfo(const Elem & elem,
   }
 }
 
-/// Calculates and returns "grad_u dot normal" on the face to be used for
-/// diffusive terms.  If using any cross-diffusion corrections, etc. all
-/// those calculations should be handled appropriately by this function.
-template <typename T, typename T2>
-ADReal gradUDotNormal(const T & elem_value,
-                      const T2 & neighbor_value,
-                      const FaceInfo & face_info,
-                      const MooseVariableFV<Real> & fv_var);
-
 /**
  * This utility determines element one and element two given a \p FaceInfo \p fi and variable \p
  * var. You may ask what in the world "element one" and "element two" means, and that would be a
- * very good question. What it means is: a variable will *always* have degrees of freedom on element
- * one. A variable may or may not have degrees of freedom on element two. So we are introducing a
- * second terminology here. FaceInfo geometric objects have element-neighbor pairs. These
- * element-neighbor pairs are purely geometric and have no relation to the algebraic system of
- * variables. The elem1-elem2 notation introduced here is based on dof/algebraic information and may
- * very well be different from variable to variable, e.g. elem1 may correspond to the FaceInfo elem
- * for one variable (and correspondingly elem2 will be the FaceInfo neighbor), but elem1 may
- * correspond to the FaceInfo neighbor for another variable (and correspondingly for *that* variable
- * elem2 will be the FaceInfo elem).
- * @return A tuple, where the first item is elem1, the second item is elem2, and the third item is a
- * boolean indicating whether elem1 corresponds to the FaceInfo elem
+ * very good question. What it means is: a variable will *always* have degrees of freedom on
+ * element one. A variable may or may not have degrees of freedom on element two. So we are
+ * introducing a second terminology here. FaceInfo geometric objects have element-neighbor pairs.
+ * These element-neighbor pairs are purely geometric and have no relation to the algebraic system
+ * of variables. The elem1-elem2 notation introduced here is based on dof/algebraic information
+ * and may very well be different from variable to variable, e.g. elem1 may correspond to the
+ * FaceInfo elem for one variable (and correspondingly elem2 will be the FaceInfo neighbor), but
+ * elem1 may correspond to the FaceInfo neighbor for another variable (and correspondingly for
+ * *that* variable elem2 will be the FaceInfo elem).
+ * @return A tuple, where the first item is elem1, the second item is elem2, and the third item is
+ * a boolean indicating whether elem1 corresponds to the FaceInfo elem
  */
 template <typename OutputType>
 std::tuple<const Elem *, const Elem *, bool>
 determineElemOneAndTwo(const FaceInfo & fi, const MooseVariableFV<OutputType> & var)
 {
   auto ft = fi.faceType(var.name());
-  mooseAssert(
-      ft == FaceInfo::VarFaceNeighbors::BOTH
-          ? var.hasBlocks(fi.elem().subdomain_id()) && fi.neighborPtr() &&
-                var.hasBlocks(fi.neighborPtr()->subdomain_id())
-          : true,
-      "Finite volume variable "
-          << var.name()
-          << " does not exist on both sides of the face despite what the FaceInfo is telling us.");
+  mooseAssert(ft == FaceInfo::VarFaceNeighbors::BOTH
+                  ? var.hasBlocks(fi.elem().subdomain_id()) && fi.neighborPtr() &&
+                        var.hasBlocks(fi.neighborPtr()->subdomain_id())
+                  : true,
+              "Finite volume variable " << var.name()
+                                        << " does not exist on both sides of the face despite "
+                                           "what the FaceInfo is telling us.");
   mooseAssert(ft == FaceInfo::VarFaceNeighbors::ELEM
                   ? var.hasBlocks(fi.elem().subdomain_id()) &&
                         (!fi.neighborPtr() || !var.hasBlocks(fi.neighborPtr()->subdomain_id()))
@@ -301,5 +156,4 @@ determineElemOneAndTwo(const FaceInfo & fi, const MooseVariableFV<OutputType> & 
   return std::make_tuple(elem_one, elem_two, one_is_elem);
 }
 }
-
 }

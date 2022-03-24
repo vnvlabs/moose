@@ -16,14 +16,10 @@
 
 // Forward declarations
 class InputParameters;
-class Steady;
 class FEProblemBase;
 
 template <typename T>
 InputParameters validParams();
-
-template <>
-InputParameters validParams<Steady>();
 
 /**
  * Steady executioners usually only call "solve()" on the NonlinearSystem once.
@@ -52,11 +48,11 @@ public:
 protected:
   FEProblemBase & _problem;
 
+  FEProblemSolve _feproblem_solve;
+
   Real _system_time;
   int & _time_step;
   Real & _time;
-
-  PerfID _final_timer;
 
 private:
   bool _last_solve_converged;

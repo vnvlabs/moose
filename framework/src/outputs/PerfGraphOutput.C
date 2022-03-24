@@ -16,8 +16,6 @@
 
 registerMooseObject("MooseApp", PerfGraphOutput);
 
-defineLegacyParams(PerfGraphOutput);
-
 InputParameters
 PerfGraphOutput::validParams()
 {
@@ -71,12 +69,16 @@ PerfGraphOutput::output(const ExecFlagType & /*type*/)
 {
   if (!_app.getParam<bool>("no_timing"))
   {
-    _app.perfGraph().print(_console, _level);
+    _console << '\n';
+
+    perfGraph().print(_console, _level);
 
     if (_heaviest_branch)
-      _app.perfGraph().printHeaviestBranch(_console);
+      perfGraph().printHeaviestBranch(_console);
 
     if (_heaviest_sections)
-      _app.perfGraph().printHeaviestSections(_console, _heaviest_sections);
+      perfGraph().printHeaviestSections(_console, _heaviest_sections);
+
+    _console << std::flush;
   }
 }

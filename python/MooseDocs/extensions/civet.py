@@ -12,6 +12,7 @@ import time
 import mooseutils
 import collections
 import uuid
+import MooseDocs
 from ..base import components, HTMLRenderer
 from ..tree import tokens, html, latex, pages
 from ..common import exceptions
@@ -32,8 +33,9 @@ class CivetExtension(command.CommandExtension):
     @staticmethod
     def defaultConfig():
         config = command.CommandExtension.defaultConfig()
-        config['remotes'] = (dict(), "Remote CIVET repositories to pull result; each item in the dict should have another dict with a 'url' and 'repo' key.")
-
+        config['remotes'] = (dict(), "Remote CIVET repositories to pull result; each item in " \
+                             "the dict should have another dict with a 'url', 'repo', and 'repo_url'.")
+        config['branch'] = ('master', "The main stable branch for extracting test results.")
         config['download_test_results'] = (True, "Automatically download and aggregate test results for the current merge commits.")
         config['generate_test_reports'] = (True, "Generate test report pages, if results exist from download or local file(s).")
         config['test_reports_location'] = ('civet', "The local directory where the generated test reports will be inserted.")
@@ -44,6 +46,7 @@ class CivetExtension(command.CommandExtension):
     def __init__(self, *args, **kwargs):
         command.CommandExtension.__init__(self, *args, **kwargs)
         self.__database = dict()
+        self.__hashes = None
         self.__test_result_numbers = dict()
         self.__has_test_reports = False
 
@@ -69,6 +72,10 @@ class CivetExtension(command.CommandExtension):
         """Return the test results for the supplied name."""
         return self.__database.get(name, None)
 
+    def hashes(self):
+        """Return the git SHA-1 hashes for the CIVET results, returns None if not collected."""
+        return self.__hashes
+
     def testBaseFileName(self, test):
         """
         Return the test page filename base.
@@ -79,39 +86,59 @@ class CivetExtension(command.CommandExtension):
         """(override) Generate test reports."""
 
         # Test result database
-        if self.get('download_test_results', True):
-            start = time.time()
-            LOG.info("Collecting CIVET results...")
+        self.__database = dict()
+        self.__hashes = None
 
-            sites = list()
-            hashes = mooseutils.git_merge_commits()
-            for category in self.get('remotes').values():
-                sites.append((category['url'], category['repo']))
+        # Only populate the database if the specified branch and author match current repository
+        start = time.time()
+        LOG.info("Collecting CIVET results...")
+        branch = self.get('branch')
+        remotes = mooseutils.git_remotes()
+        for name, category in self.get('remotes').items():
+            LOG.info("Gathering CIVET results for '%s'.", name)
+            if category.get('download_test_results', self.get('download_test_results', True)):
+                repo_url = category.get('repo_url', 'https://github.com').rstrip('/')
+                repo_url += '/{}'.format(category.get('repo'))
 
-            self.__database = mooseutils.get_civet_results(hashes=hashes,
-                                                           sites=sites,
-                                                           cache=self.get('test_results_cache'),
-                                                           possible=['OK', 'FAIL', 'DIFF', 'TIMEOUT'],
-                                                           logger=LOG)
+                remote = remotes.get(repo_url, None)
+                if remote is None:
+                    remote = '__MooseDocs.extensions.civet__'
+                    mooseutils.git_add_and_fetch_remote(repo_url, remote, branch)
+                else:
+                    mooseutils.get_fetch_remote(remote, branch)
 
-            LOG.info("Collecting CIVET results complete [%s sec.]", time.time() - start)
+                self.__hashes = mooseutils.get_civet_hashes(f'{remote}/{branch}')
+                LOG.info("Downloading CIVET results for '%s' category.", name)
+
+            local = mooseutils.eval_path(category.get('test_results_cache', self.get('test_results_cache')))
+            site = (category['url'], category['repo'])
+            local_db = mooseutils.get_civet_results(local=local,
+                                                    hashes=self.__hashes,
+                                                    site=site,
+                                                    cache=local,
+                                                    possible=['OK', 'FAIL', 'DIFF', 'TIMEOUT'],
+                                                    logger=LOG)
+            self.__database.update(local_db)
+        LOG.info("Collecting CIVET results complete [%s sec.]", time.time() - start)
 
         if not self.__database and self.get('generate_test_reports', True):
-            LOG.warning("'generate_test_reports' is being disabled, it requires results to exist but none were located.")
+            LOG.info("CIVET test result reports are being disabled, it requires results to exist and the specified branch ('%s') to match the current repository.", self.get('branch'))
             self.update(generate_test_reports=False)
 
         if self.get('generate_test_reports', True):
             self.__has_test_reports = True
+
             start = time.time()
             LOG.info("Creating CIVET result pages...")
 
+            result_pages = list()
             report_root = self.get('test_reports_location')
             if not self.translator.findPage(report_root, exact=True, throw_on_zero=False):
-                self.translator.addPage(pages.Directory(report_root, source=report_root))
+                result_pages.append(pages.Directory(report_root, source=report_root))
 
-            src = pages.Source('{}/index.md'.format(report_root), source='{}/index.md'.format(report_root),
-                               read=False, tokenize=False)
-            self.translator.addPage(src)
+            result_pages.append(pages.Source('{}/index.md'.format(report_root),
+                                             source='{}/index.md'.format(report_root),
+                                             read=False, tokenize=False))
 
             count = 0
             for key, item in self.__database.items():
@@ -120,8 +147,11 @@ class CivetExtension(command.CommandExtension):
                 count += 1
 
                 fullname = '{}/{}.md'.format(report_root, name)
-                src = pages.Source(fullname, source=fullname, read=False, tokenize=False, key=key)
-                self.translator.addPage(src)
+                result_pages.append(pages.Source(fullname, source=fullname,
+                                                 read=False, tokenize=False, key=key))
+
+            self.translator.addPages(result_pages)
+            self.translator.executioner.initPages(result_pages)
 
             LOG.info("Creating CIVET result pages complete [%s sec.]", time.time() - start)
 
@@ -161,15 +191,15 @@ class CivetCommandBase(command.CommandComponent):
         settings['repo'] = (None, "Override for the repository name provided in the 'category' option, e.g. 'idaholab/moose'.")
         return settings
 
-    def getCivetInfo(self):
+    def getCivetInfo(self, settings):
         available = self.extension.get('remotes')
         if len(available) > 0:
-            category = available.get(self.settings.get('remote') or list(available.keys())[0])
-            url = self.settings.get('url') or category['url']
-            repo = self.settings.get('repo') or category['repo']
+            category = available.get(settings.get('remote') or list(available.keys())[0])
+            url = settings.get('url') or category['url']
+            repo = settings.get('repo') or category['repo']
         else:
-            url = self.settings.get('url')
-            repo = self.settings.get('repo')
+            url = settings.get('url')
+            repo = settings.get('repo')
         return url, repo
 
 class CivetMergeResultsCommand(CivetCommandBase):
@@ -180,11 +210,11 @@ class CivetMergeResultsCommand(CivetCommandBase):
         settings = CivetCommandBase.defaultSettings()
         return settings
 
-    def createToken(self, parent, info, page):
-        site, repo = self.getCivetInfo()
+    def createToken(self, parent, info, page, settings):
+        site, repo = self.getCivetInfo(settings)
 
         rows = []
-        for sha in mooseutils.git_merge_commits():
+        for sha in self.extension.hashes() or list():
             url = '{}/sha_events/{}/{}'.format(site, repo, sha)
             link = core.Link(parent, url=url, string=sha)
             core.LineBreak(parent)
@@ -198,8 +228,8 @@ class CivetResultsCommand(CivetCommandBase):
         settings = CivetCommandBase.defaultSettings()
         return settings
 
-    def createToken(self, parent, info, page):
-        site, repo = self.getCivetInfo()
+    def createToken(self, parent, info, page, settings):
+        site, repo = self.getCivetInfo(settings)
         sha = mooseutils.git_commit()
         url = '{}/sha_events/{}/{}'.format(site, repo, sha)
         if info['inline']:
@@ -216,8 +246,8 @@ class CivetTestBadgesCommand(CivetCommandBase):
         config['tests'] = (None, "The name of the test(s) to report.")
         return config
 
-    def createToken(self, parent, info, page):
-        return CivetTestBadges(parent, tests=self.settings.get('tests').split())
+    def createToken(self, parent, info, page, settings):
+        return CivetTestBadges(parent, tests=settings.get('tests').split())
 
 class CivetTestReportCommand(CivetCommandBase):
     SUBCOMMAND = 'report'
@@ -228,8 +258,8 @@ class CivetTestReportCommand(CivetCommandBase):
         config['tests'] = (None, "The name of the test(s) to report.")
         return config
 
-    def createToken(self, parent, info, page):
-        return CivetTestReport(parent, tests=self.settings.get('tests').split())
+    def createToken(self, parent, info, page, settings):
+        return CivetTestReport(parent, tests=settings.get('tests').split())
 
 class RenderCivetTestBadges(components.RenderComponent):
 

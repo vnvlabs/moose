@@ -22,16 +22,11 @@
   using MooseObject::paramError
 
 class MooseApp;
-class MooseObject;
-
-template <>
-InputParameters validParams<MooseObject>();
-
 // needed to avoid #include cycle with MooseApp and MooseObject
 [[noreturn]] void callMooseErrorRaw(std::string & msg, MooseApp * app);
 
 /**
- * Generates a canonical paramError prefix for param-related error/warning/info messages.
+ * Get canonical paramError prefix for param-related error/warning/info messages.
  *
  * Use this for building custom messages when the default paramError isn't
  * quite what you need.
@@ -88,14 +83,21 @@ public:
   const T & getParam(const std::string & name) const;
 
   /**
+   * Retrieve two parameters and provide pair of parameters for the object
+   * @param param1 The name of first parameter
+   * @param param2 The name of second parameter
+   * @return Vector of pairs of first and second parameters
+   */
+  template <typename T1, typename T2>
+  std::vector<std::pair<T1, T2>> getParam(const std::string & param1,
+                                          const std::string & param2) const;
+
+  /**
    * Verifies that the requested parameter exists and is not NULL and returns it to the caller.
    * The template parameter must be a pointer or an error will be thrown.
    */
   template <typename T>
-  T getCheckedPointerParam(const std::string & name, const std::string & error_string = "") const
-  {
-    return parameters().getCheckedPointerParam<T>(name, error_string);
-  }
+  T getCheckedPointerParam(const std::string & name, const std::string & error_string = "") const;
 
   /**
    * Test if the supplied parameter is valid
@@ -277,4 +279,19 @@ void
 MooseObject::paramInfo(const std::string & param, Args... args) const
 {
   mooseInfo(paramErrorMsg(param, std::forward<Args>(args)...));
+}
+
+template <typename T1, typename T2>
+std::vector<std::pair<T1, T2>>
+MooseObject::getParam(const std::string & param1, const std::string & param2) const
+{
+  return _pars.get<T1, T2>(param1, param2);
+}
+
+template <typename T>
+T
+MooseObject::getCheckedPointerParam(const std::string & name,
+                                    const std::string & error_string) const
+{
+  return parameters().getCheckedPointerParam<T>(name, error_string);
 }

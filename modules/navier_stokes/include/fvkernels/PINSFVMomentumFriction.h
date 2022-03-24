@@ -9,33 +9,30 @@
 
 #pragma once
 
-#include "FVElementalKernel.h"
+#include "INSFVElementalKernel.h"
 
 /**
- * Imposes a friction force on the momentum equation in porous media.
+ * Imposes a friction force on the momentum equation in porous media in Rhie-Chow contexts
  */
-class PINSFVMomentumFriction : public FVElementalKernel
+class PINSFVMomentumFriction : public INSFVElementalKernel
 {
 public:
   static InputParameters validParams();
   PINSFVMomentumFriction(const InputParameters & params);
 
-protected:
-  ADReal computeQpResidual() override;
+  using INSFVElementalKernel::gatherRCData;
+  void gatherRCData(const Elem &) override;
 
-  /// Momentum equation component (x = 0, y = 1, z = 2)
-  const unsigned int _component;
+protected:
   /// Darcy coefficient
-  const ADMaterialProperty<RealVectorValue> * const _cL;
+  const Moose::Functor<ADRealVectorValue> * const _cL;
   /// Forchheimer coefficient
-  const ADMaterialProperty<RealVectorValue> * const _cQ;
+  const Moose::Functor<ADRealVectorValue> * const _cQ;
   /// Booleans to select the right models
   const bool _use_Darcy_friction_model;
   const bool _use_Forchheimer_friction_model;
   /// Porosity to compute the intersitial velocity from the superficial velocity
-  const VariableValue & _eps;
-  /// Momentum as a material property
-  const ADMaterialProperty<Real> * const _momentum;
-  /// Constant density, use only with incompressible flow
-  const Real _rho;
+  const Moose::Functor<ADReal> & _eps;
+  /// Density as a functor
+  const Moose::Functor<ADReal> & _rho;
 };

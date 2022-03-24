@@ -47,6 +47,7 @@ Extensions:
     MooseDocs.extensions.content: default
     MooseDocs.extensions.graph: default
     MooseDocs.extensions.heading: default
+    MooseDocs.extensions.shortcut: default
     MooseDocs.extensions.gallery: default
     MooseDocs.extensions.pysyntax: default
     MooseDocs.extensions.modal: default
@@ -80,7 +81,7 @@ Extensions:
     MooseDocs.extensions.navigation:
         name: MOOSEDocs
         repo: https://github.com/idaholab/moose
-        home: https://www.mooseframework.org
+        home: /index.md
         menu:
             Direct: core.md
             Mega: mega.menu.md
@@ -102,6 +103,7 @@ Extensions:
             - framework/include
             - test/include
     MooseDocs.extensions.ifelse: default
+    MooseDocs.extensions.algorithm: default
 
 Translator:
     type: MooseDocs.base.Translator

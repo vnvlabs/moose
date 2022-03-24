@@ -135,7 +135,7 @@ public:
     }
 
     // Print out the line below the header
-    stream << std::string(total_width, '-') << "\n";
+    stream << std::string(total_width, '-') << std::endl;
   }
 
   /**
@@ -265,7 +265,7 @@ protected:
   }
 
   /**
-   * his is what gets called first
+   * This is what gets called first
    */
   template <typename TupleType, typename StreamType>
   void print_each(TupleType && t, StreamType & stream)

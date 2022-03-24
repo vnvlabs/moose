@@ -20,8 +20,6 @@
 
 registerMooseObject("MooseApp", OrientedBoxMarker);
 
-defineLegacyParams(OrientedBoxMarker);
-
 InputParameters
 OrientedBoxMarker::validParams()
 {
@@ -54,7 +52,7 @@ OrientedBoxMarker::OrientedBoxMarker(const InputParameters & parameters)
 Marker::MarkerValue
 OrientedBoxMarker::computeElementMarker()
 {
-  Point centroid = _current_elem->centroid();
+  Point centroid = _current_elem->vertex_average();
 
   if (containsPoint(centroid))
     return _inside;

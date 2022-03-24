@@ -11,13 +11,11 @@
 
 registerMooseObject("MooseApp", InversePowerMethod);
 
-defineLegacyParams(InversePowerMethod);
-
 InputParameters
 InversePowerMethod::validParams()
 {
   InputParameters params = EigenExecutionerBase::validParams();
-  params.addClassDescription("Inverse power method for Eigen value problems.");
+  params.addClassDescription("Inverse power method for eigenvalue problems.");
   params.addParam<PostprocessorName>(
       "xdiff", "", "To evaluate |x-x_previous| for power iterations");
   params.addParam<unsigned int>(
@@ -49,6 +47,13 @@ InversePowerMethod::InversePowerMethod(const InputParameters & parameters)
     mooseError("eig_check_tol<0!");
   if (_l_tol < 0.0)
     paramError("l_tol", "l_tol<0!");
+
+  mooseInfo(
+      "'InversePowerMethod' executioner is deprecated in favor of 'Eigenvalue' executioner.\n",
+      "Few parameters such as 'bx_norm', 'k0', 'xdiff', 'max_power_iterations', "
+      "'min_power_iterations', 'eig_check_tol', 'sol_check_tol', and 'output_before_normalization' "
+      "are no longer supported.\n",
+      "However, 'Eigenvalue' executioner supports more solving options by interfacing SLEPc.\n");
 }
 
 void

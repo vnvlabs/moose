@@ -16,14 +16,31 @@
 #include "MathUtils.h"
 #include "MooseObjectName.h"
 #include "InputParameters.h"
+#include "SubProblem.h"
 
 // Forward declarations
-class MaterialPropertyInterface;
 class MooseObject;
 class FEProblemBase;
 
-template <>
-InputParameters validParams<MaterialPropertyInterface>();
+/**
+ * Helper class for deferred getting of material properties after the construction
+ * phase for materials. This enables "optional material properties" in materials.
+ * It works by returning a reference to a pointer to a material property (rather
+ * than a reference to the property value). The pointer will be set to point to
+ * either an existing material property or to nullptr if the requested property
+ * does not exist.
+ */
+template <class M>
+class OptionalMaterialPropertyProxyBase
+{
+public:
+  OptionalMaterialPropertyProxyBase(const std::string & name) : _name(name) {}
+  virtual ~OptionalMaterialPropertyProxyBase() {}
+  virtual void resolve(M & material) = 0;
+
+protected:
+  const std::string _name;
+};
 
 /**
  * \class MaterialPropertyInterface
@@ -98,6 +115,22 @@ public:
   const MaterialProperty<T> & getMaterialPropertyOldByName(const MaterialPropertyName & name);
   template <typename T>
   const MaterialProperty<T> & getMaterialPropertyOlderByName(const MaterialPropertyName & name);
+  ///@}
+
+  ///@{ Optional material property getters
+  template <typename T, bool is_ad>
+  const GenericOptionalMaterialProperty<T, is_ad> &
+  getGenericOptionalMaterialProperty(const std::string & name);
+  template <typename T>
+  const OptionalMaterialProperty<T> & getOptionalMaterialProperty(const std::string & name)
+  {
+    return getGenericOptionalMaterialProperty<T, false>(name);
+  }
+  template <typename T>
+  const OptionalADMaterialProperty<T> & getOptionalADMaterialProperty(const std::string & name)
+  {
+    return getGenericOptionalMaterialProperty<T, true>(name);
+  }
   ///@}
 
   /**
@@ -247,6 +280,9 @@ public:
     return _material_property_dependencies;
   }
 
+  /// resolve all optional properties
+  virtual void resolveOptionalProperties();
+
 protected:
   /// Parameters of the object with this interface
   const InputParameters & _mi_params;
@@ -266,6 +302,9 @@ protected:
   /// Reference to the FEProblemBase class
   FEProblemBase & _mi_feproblem;
 
+  /// Reference to the subproblem
+  SubProblem & _mi_subproblem;
+
   /// Current threaded it
   const THREAD_ID _mi_tid;
 
@@ -284,7 +323,7 @@ protected:
   /**
    * Small helper to look up a material property name through the input parameter keys
    */
-  std::string deducePropertyName(const std::string & name);
+  std::string deducePropertyName(const std::string & name) const;
 
   /**
    * Helper function to parse default material property values. This is implemented
@@ -344,6 +383,8 @@ protected:
   /// The set of material properties (as given by their IDs) that _this_ object depends on
   std::set<unsigned int> _material_property_dependencies;
 
+  const MaterialPropertyName _get_suffix;
+
 private:
   /*
    * A proxy method for _mi_feproblem.getMaxQps()
@@ -363,6 +404,29 @@ private:
 
   /// Storage for the boundary ids created by BoundaryRestrictable
   const std::set<BoundaryID> & _mi_boundary_ids;
+
+  /// optional material properties
+  std::vector<std::unique_ptr<OptionalMaterialPropertyProxyBase<MaterialPropertyInterface>>>
+      _optional_property_proxies;
+};
+
+template <class M, typename T, bool is_ad>
+class OptionalMaterialPropertyProxy : public OptionalMaterialPropertyProxyBase<M>
+{
+public:
+  OptionalMaterialPropertyProxy(const std::string & name)
+    : OptionalMaterialPropertyProxyBase<M>(name)
+  {
+  }
+  const GenericOptionalMaterialProperty<T, is_ad> & value() const { return _value; }
+  void resolve(M & mpi) override
+  {
+    if (mpi.template hasGenericMaterialProperty<T, is_ad>(this->_name))
+      _value.set(&mpi.template getGenericMaterialProperty<T, is_ad>(this->_name));
+  }
+
+private:
+  GenericOptionalMaterialProperty<T, is_ad> _value;
 };
 
 template <typename T>
@@ -472,8 +536,11 @@ MaterialPropertyInterface::defaultADMaterialProperty<RealVectorValue>(const std:
 
 template <typename T>
 const MaterialProperty<T> &
-MaterialPropertyInterface::getMaterialPropertyByName(const MaterialPropertyName & name)
+MaterialPropertyInterface::getMaterialPropertyByName(const MaterialPropertyName & name_in)
 {
+  const auto name = _get_suffix.empty()
+                        ? static_cast<const std::string &>(name_in)
+                        : MooseUtils::join(std::vector<std::string>({name_in, _get_suffix}), "_");
   checkExecutionStage();
   checkMaterialProperty(name);
 
@@ -493,8 +560,11 @@ MaterialPropertyInterface::getMaterialPropertyByName(const MaterialPropertyName 
 
 template <typename T>
 const ADMaterialProperty<T> &
-MaterialPropertyInterface::getADMaterialPropertyByName(const MaterialPropertyName & name)
+MaterialPropertyInterface::getADMaterialPropertyByName(const MaterialPropertyName & name_in)
 {
+  const auto name = _get_suffix.empty()
+                        ? static_cast<const std::string &>(name_in)
+                        : MooseUtils::join(std::vector<std::string>({name_in, _get_suffix}), "_");
   checkExecutionStage();
   checkMaterialProperty(name);
 
@@ -514,8 +584,12 @@ MaterialPropertyInterface::getADMaterialPropertyByName(const MaterialPropertyNam
 
 template <typename T>
 const MaterialProperty<T> &
-MaterialPropertyInterface::getMaterialPropertyOldByName(const MaterialPropertyName & name)
+MaterialPropertyInterface::getMaterialPropertyOldByName(const MaterialPropertyName & name_in)
 {
+  const auto name = _get_suffix.empty()
+                        ? static_cast<const std::string &>(name_in)
+                        : MooseUtils::join(std::vector<std::string>({name_in, _get_suffix}), "_");
+
   if (!_stateful_allowed)
     mooseError("Stateful material properties not allowed for this object."
                " Old property for \"",
@@ -532,8 +606,12 @@ MaterialPropertyInterface::getMaterialPropertyOldByName(const MaterialPropertyNa
 
 template <typename T>
 const MaterialProperty<T> &
-MaterialPropertyInterface::getMaterialPropertyOlderByName(const MaterialPropertyName & name)
+MaterialPropertyInterface::getMaterialPropertyOlderByName(const MaterialPropertyName & name_in)
 {
+  const auto name = _get_suffix.empty()
+                        ? static_cast<const std::string &>(name_in)
+                        : MooseUtils::join(std::vector<std::string>({name_in, _get_suffix}), "_");
+
   if (!_stateful_allowed)
     mooseError("Stateful material properties not allowed for this object."
                " Older property for \"",
@@ -550,8 +628,12 @@ MaterialPropertyInterface::getMaterialPropertyOlderByName(const MaterialProperty
 
 template <typename T>
 std::pair<const MaterialProperty<T> *, std::set<SubdomainID>>
-MaterialPropertyInterface::getBlockMaterialProperty(const MaterialPropertyName & name)
+MaterialPropertyInterface::getBlockMaterialProperty(const MaterialPropertyName & name_in)
 {
+  const auto name = _get_suffix.empty()
+                        ? static_cast<const std::string &>(name_in)
+                        : MooseUtils::join(std::vector<std::string>({name_in, _get_suffix}), "_");
+
   if (_mi_block_ids.empty())
     mooseError("getBlockMaterialProperty must be called by a block restrictable object");
 
@@ -579,8 +661,11 @@ MaterialPropertyInterface::hasMaterialProperty(const std::string & name)
 
 template <typename T>
 bool
-MaterialPropertyInterface::hasMaterialPropertyByName(const std::string & name)
+MaterialPropertyInterface::hasMaterialPropertyByName(const std::string & name_in)
 {
+  const auto name = _get_suffix.empty()
+                        ? name_in
+                        : MooseUtils::join(std::vector<std::string>({name_in, _get_suffix}), "_");
   return _material_data->haveProperty<T>(name);
 }
 
@@ -647,7 +732,21 @@ MaterialPropertyInterface::hasADMaterialProperty(const std::string & name)
 
 template <typename T>
 bool
-MaterialPropertyInterface::hasADMaterialPropertyByName(const std::string & name)
+MaterialPropertyInterface::hasADMaterialPropertyByName(const std::string & name_in)
 {
+  const auto name = _get_suffix.empty()
+                        ? name_in
+                        : MooseUtils::join(std::vector<std::string>({name_in, _get_suffix}), "_");
   return _material_data->haveADProperty<T>(name);
+}
+
+template <typename T, bool is_ad>
+const GenericOptionalMaterialProperty<T, is_ad> &
+MaterialPropertyInterface::getGenericOptionalMaterialProperty(const std::string & name)
+{
+  auto proxy =
+      std::make_unique<OptionalMaterialPropertyProxy<MaterialPropertyInterface, T, is_ad>>(name);
+  auto & optional_property = proxy->value();
+  _optional_property_proxies.push_back(std::move(proxy));
+  return optional_property;
 }

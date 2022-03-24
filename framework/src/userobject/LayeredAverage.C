@@ -11,12 +11,11 @@
 
 registerMooseObject("MooseApp", LayeredAverage);
 
-defineLegacyParams(LayeredAverage);
-
 InputParameters
 LayeredAverage::validParams()
 {
   InputParameters params = LayeredIntegral::validParams();
+  params.addClassDescription("Computes averages of variables over layers");
 
   return params;
 }
@@ -40,7 +39,7 @@ LayeredAverage::execute()
 {
   LayeredIntegral::execute();
 
-  unsigned int layer = getLayer(_current_elem->centroid());
+  unsigned int layer = getLayer(_current_elem->vertex_average());
   _layer_volumes[layer] += _current_elem_volume;
 }
 

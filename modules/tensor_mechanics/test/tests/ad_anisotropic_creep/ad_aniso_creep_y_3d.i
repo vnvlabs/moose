@@ -50,6 +50,10 @@
     order = CONSTANT
     family = MONOMIAL
   []
+  [creep_strain_zz]
+    order = CONSTANT
+    family = MONOMIAL
+  []
 []
 
 [AuxKernels]
@@ -74,6 +78,13 @@
     index_j = 1
   []
   [creep_strain_yy]
+    type = ADRankTwoAux
+    rank_two_tensor = creep_strain
+    variable = creep_strain_yy
+    index_i = 1
+    index_j = 1
+  []
+  [creep_strain_zz]
     type = ADRankTwoAux
     rank_two_tensor = creep_strain
     variable = creep_strain_yy
@@ -120,19 +131,23 @@
     absolute_tolerance = 1e-16
   []
 
+  [hill_tensor]
+    type = HillConstants
+    # F G H L M N
+    hill_constants = "0.5 0.25 0.3866 1.6413 1.6413 1.2731"
+  []
+
   [trial_creep_two]
     type = ADHillCreepStressUpdate
     coefficient = 1e-16
     n_exponent = 9
     m_exponent = 0
     activation_energy = 0
-    # F G H L M N
-    hill_constants = "0.5 0.25 0.3866 1.6413 1.6413 1.2731"
     max_inelastic_increment = 0.00003
     absolute_tolerance = 1e-20
     relative_tolerance = 1e-20
     # Force it to not use integration error
-    max_integration_error = 100.0
+    max_integration_error = 0.000001
   []
 []
 
@@ -158,11 +173,12 @@
     value = 0.0
   []
 
-  [Pressure]
-    [Side1]
-      boundary = top
-      function = pull
-    []
+  [pressure]
+    type = ADPressure
+    boundary = top
+    function = pull
+    variable = disp_y
+    component = 1
   []
 []
 

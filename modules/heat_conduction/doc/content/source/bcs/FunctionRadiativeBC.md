@@ -12,7 +12,7 @@ where $\sigma$ is the Stephan-Boltzmann constant, $F_e$ is the emissivity functi
 $T_\infty$ is the temperature far from the surface, and $T_s$ is the temperature of
 the surface.
 
-!listing function_radiative_bc.i block=BCs/bot_right
+!listing radiative_bcs/function_radiative_bc.i block=BCs/bot_right
 
 !syntax parameters /BCs/FunctionRadiativeBC
 

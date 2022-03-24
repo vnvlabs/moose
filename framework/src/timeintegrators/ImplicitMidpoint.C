@@ -14,8 +14,6 @@
 
 registerMooseObject("MooseApp", ImplicitMidpoint);
 
-defineLegacyParams(ImplicitMidpoint);
-
 InputParameters
 ImplicitMidpoint::validParams()
 {
@@ -51,7 +49,9 @@ ImplicitMidpoint::computeTimeDerivatives()
 }
 
 void
-ImplicitMidpoint::computeADTimeDerivatives(DualReal & ad_u_dot, const dof_id_type & dof) const
+ImplicitMidpoint::computeADTimeDerivatives(DualReal & ad_u_dot,
+                                           const dof_id_type & dof,
+                                           DualReal & /*ad_u_dotdot*/) const
 {
   computeTimeDerivativeHelper(ad_u_dot, _solution_old(dof));
 }
@@ -69,7 +69,7 @@ ImplicitMidpoint::solve()
 
   // Compute first stage
   _fe_problem.initPetscOutput();
-  _console << "1st stage\n";
+  _console << "1st stage" << std::endl;
   _stage = 1;
   _fe_problem.time() = time_half;
   _fe_problem.getNonlinearSystemBase().system().solve();
@@ -82,7 +82,7 @@ ImplicitMidpoint::solve()
 
   // Compute second stage
   _fe_problem.initPetscOutput();
-  _console << "2nd stage\n";
+  _console << "2nd stage" << std::endl;
   _stage = 2;
   _fe_problem.time() = time_new;
   _fe_problem.getNonlinearSystemBase().system().solve();

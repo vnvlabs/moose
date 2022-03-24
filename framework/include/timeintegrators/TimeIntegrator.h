@@ -13,8 +13,6 @@
 #include "MooseObject.h"
 #include "Restartable.h"
 
-// Forward declarations
-class TimeIntegrator;
 class FEProblemBase;
 class SystemBase;
 class NonlinearSystemBase;
@@ -25,9 +23,6 @@ template <typename T>
 class NumericVector;
 class NonlinearImplicitSystem;
 } // namespace libMesh
-
-template <>
-InputParameters validParams<TimeIntegrator>();
 
 /**
  * Base class for time integrators
@@ -113,7 +108,9 @@ public:
   /**
    * method for computing local automatic differentiation time derivatives
    */
-  virtual void computeADTimeDerivatives(DualReal & ad_u_dot, const dof_id_type & dof) const = 0;
+  virtual void computeADTimeDerivatives(DualReal & ad_u_dot,
+                                        const dof_id_type & dof,
+                                        DualReal & ad_u_dot_dot) const = 0;
 
   /**
    * Gets the total number of nonlinear iterations over all stages of the time step.

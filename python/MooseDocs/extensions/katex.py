@@ -14,7 +14,7 @@ import moosetree
 from .. import common
 from ..base import components, renderers
 from ..tree import tokens, html, latex
-from . import command, core, floats, heading
+from . import command, core, heading
 
 LOG = logging.getLogger(__name__)
 
@@ -37,15 +37,11 @@ class KatexExtension(command.CommandExtension):
         config['macros'] = (None, "Macro definitions to apply to equations.")
         return config
 
-    def __init__(self, *args, **kwargs):
-        super(KatexExtension, self).__init__(*args, **kwargs)
-        self.macros = None
-
     def extend(self, reader, renderer):
         """
         Add the necessary components for reading and rendering LaTeX.
         """
-        self.requires(core, floats, heading)
+        self.requires(core, heading)
         self.addCommand(reader, EquationCommand())
         self.addCommand(reader, EquationReferenceCommand())
 
@@ -88,13 +84,13 @@ class KatexExtension(command.CommandExtension):
 
         renderer = self.translator.renderer
         if common.has_tokens(ast, 'Equation') and isinstance(renderer, renderers.HTMLRenderer):
-            renderer.addCSS('katex', "contrib/katex/katex.min.css", puid=page.uid)
-            renderer.addCSS('katex_moose', "css/katex_moose.css", puid=page.uid)
-            renderer.addJavaScript('katex', "contrib/katex/katex.min.js", head=True, puid=page.uid)
+            renderer.addCSS('katex', "contrib/katex/katex.min.css", page)
+            renderer.addCSS('katex_moose', "css/katex_moose.css", page)
+            renderer.addJavaScript('katex', "contrib/katex/katex.min.js", page, head=True)
 
             if self.get('macros', None):
                 mc = ','.join('"{}":"{}"'.format(k, v) for k, v in self.get('macros').items())
-                self.macros = '{' + mc + '}'
+                self.setAttribute('macros', '{' + mc + '}')
 
 class EquationCommand(command.CommandComponent):
     COMMAND = ('equation', 'eq')
@@ -107,13 +103,13 @@ class EquationCommand(command.CommandComponent):
                                  "the equation is numbered.")
         return settings
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         inline = 'inline' in info
         if inline and info['command'] == 'equation':
             raise common.exceptions.MooseDocsException("The '!equation' command is a block level command, use '!eq' instead.")
         if not inline and info['command'] == 'eq':
             raise common.exceptions.MooseDocsException("The '!eq' command is an inline level command, use '!equation' instead.")
-        if inline and (self.settings.get('id', None) is not None):
+        if inline and (settings.get('id', None) is not None):
             raise common.exceptions.MooseDocsException("The 'id' setting is not allowed within in the inline equation command.")
 
         # Extract the TeX
@@ -124,7 +120,7 @@ class EquationCommand(command.CommandComponent):
         eq_id = 'moose-equation-{}'.format(uuid.uuid4())
 
         # Build the token
-        Equation(parent, tex=tex, bookmark=eq_id, label=self.settings['id'], inline=inline)
+        Equation(parent, tex=tex, bookmark=eq_id, label=settings['id'], inline=inline)
         return parent
 
 class KatexBlockEquationComponent(components.ReaderComponent):
@@ -137,7 +133,7 @@ class KatexBlockEquationComponent(components.ReaderComponent):
                     flags=re.DOTALL|re.MULTILINE|re.UNICODE)
     LABEL_RE = re.compile(r'\\label{(?P<id>.*?)}', flags=re.UNICODE)
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         """Create a LatexBlockEquation token."""
 
         # TODO: Change to new syntax
@@ -166,7 +162,7 @@ class KatexInlineEquationComponent(components.ReaderComponent):
     RE = re.compile(r'(?P<token>\$)(?=\S)(?P<equation>.*?)(?<=\S)(?:\1)',
                     flags=re.MULTILINE|re.DOTALL|re.DOTALL)
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         """Create LatexInlineEquation"""
 
         # Raw LaTeX appropriate for passing to KaTeX render method
@@ -195,7 +191,7 @@ class EquationReferenceCommand(command.CommandComponent):
         settings = command.CommandComponent.defaultSettings()
         return settings
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         inline = 'inline' in info
         if not inline:
             raise common.exceptions.MooseDocsException("The '!eqref' command is an inline level command.")
@@ -233,8 +229,10 @@ class RenderEquation(components.RenderComponent):
         config = dict()
         config['displayMode'] = display
         config['throwOnError'] = 'false'
-        if self.extension.macros:
-            config['macros'] = self.extension.macros
+
+        macros = self.extension.getAttribute('macros', None)
+        if macros:
+            config['macros'] = macros
 
         config_str = ','.join('{}:{}'.format(key, value) for key, value in config.items())
 
@@ -295,7 +293,13 @@ class RenderEquationReference(core.RenderShortcutLink):
         else:
             a['href']='#{}'.format(id_)
 
-        html.String(a, content='{} ({})'.format(self.extension['prefix'], num))
+        if num is None:
+            a['class'] = 'moose-error'
+            html.String(a, content='{}#{}'.format(eq_page.local, token['label']))
+            msg = "Could not find equation with key {} on page {}".format(token['label'], eq_page.local)
+            raise common.exceptions.MooseDocsException(msg)
+        else:
+            html.String(a, content='{} ({})'.format(self.extension['prefix'], num))
 
     def createLatex(self, parent, token, page):
         key = token['label']

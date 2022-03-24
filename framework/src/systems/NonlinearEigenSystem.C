@@ -21,13 +21,14 @@
 #include "TimeIntegrator.h"
 #include "SlepcSupport.h"
 #include "DGKernelBase.h"
-#include "ScalarKernel.h"
+#include "ScalarKernelBase.h"
 #include "MooseVariableScalar.h"
 #include "ResidualObject.h"
 
 #include "libmesh/libmesh_config.h"
 #include "libmesh/petsc_matrix.h"
 #include "libmesh/sparse_matrix.h"
+#include "libmesh/diagonal_matrix.h"
 #include "libmesh/petsc_shell_matrix.h"
 
 #ifdef LIBMESH_HAVE_SLEPC
@@ -117,8 +118,7 @@ NonlinearEigenSystem::NonlinearEigenSystem(EigenProblem & eigen_problem, const s
     mooseError("A slepc eigen solver is required");
 
   // setup of our class @SlepcSolverConfiguration
-  _solver_configuration =
-      libmesh_make_unique<SlepcEigenSolverConfiguration>(eigen_problem, *solver);
+  _solver_configuration = std::make_unique<SlepcEigenSolverConfiguration>(eigen_problem, *solver);
 
   solver->set_solver_configuration(*_solver_configuration);
 
@@ -365,21 +365,28 @@ NonlinearEigenSystem::nonlinearSolver()
 SNES
 NonlinearEigenSystem::getSNES()
 {
-  SlepcEigenSolver<Number> * solver =
-      cast_ptr<SlepcEigenSolver<Number> *>(&(*_eigen_sys.eigen_solver));
-
-  if (!solver)
-    mooseError("There is no a eigen solver");
+  EPS eps = getEPS();
 
   if (_eigen_problem.isNonlinearEigenvalueSolver())
   {
-    EPS eps = solver->eps();
     SNES snes = nullptr;
     Moose::SlepcSupport::mooseSlepcEPSGetSNES(eps, &snes);
     return snes;
   }
   else
     mooseError("There is no SNES in linear eigen solver");
+}
+
+EPS
+NonlinearEigenSystem::getEPS()
+{
+  SlepcEigenSolver<Number> * solver =
+      cast_ptr<SlepcEigenSolver<Number> *>(&(*_eigen_sys.eigen_solver));
+
+  if (!solver)
+    mooseError("Unable to retrieve eigen solver");
+
+  return solver->eps();
 }
 
 void
@@ -465,7 +472,7 @@ NonlinearEigenSystem::turnOffJacobian()
 void
 NonlinearEigenSystem::computeScalingJacobian()
 {
-  _eigen_problem.computeJacobianTag(*_current_solution, _scaling_matrix, precondMatrixTag());
+  _eigen_problem.computeJacobianTag(*_current_solution, *_scaling_matrix, precondMatrixTag());
 }
 
 void

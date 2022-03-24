@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+#* This file is part of the MOOSE framework
+#* https://www.mooseframework.org
+#*
+#* All rights reserved, see COPYRIGHT for full restrictions
+#* https://github.com/idaholab/moose/blob/master/COPYRIGHT
+#*
+#* Licensed under LGPL 2.1, please see LICENSE for details
+#* https://www.gnu.org/licenses/lgpl-2.1.html
 
 function exitIfExitCode() {
     # When --with-packages-download-dir=path is used, PETSc will print out how to
@@ -89,18 +97,13 @@ if [ ! -z "$PETSC_PREFIX" ]; then
   PFX_STR="--prefix=$PETSC_PREFIX"
 fi
 
-# Use --with-make-np if MOOSE_JOBS is given
-MAKE_NP_STR=""
-if [ ! -z "$MOOSE_JOBS" ]; then
-  MAKE_NP_STR="--with-make-np=$MOOSE_JOBS"
-fi
-
 cd $SCRIPT_DIR/../petsc
 
 # If we're not going fast, remove the build directory and reconfigure
 if [ -z "$go_fast" ]; then
   rm -rf $SCRIPT_DIR/../petsc/$PETSC_ARCH
 
+<<<<<<< HEAD
   ./configure $(echo $PFX_STR) $(echo $MAKE_NP_STR) \
       --with-hypre-dir=/home/ben/software/hypre \
       --with-vnv-dir=/home/ben/software/vnv \
@@ -121,6 +124,10 @@ if [ -z "$go_fast" ]; then
       --with-sowing=0 \
       --with-64-bit-indices \
       $*
+=======
+  source $SCRIPT_DIR/configure_petsc.sh
+  configure_petsc "$PFX_STR" $*
+>>>>>>> 71e154c564a08e6b29f64374f094721c700d8141
 
   exitIfExitCode $?
 fi

@@ -26,6 +26,21 @@ public:
   virtual bool solveStep(Real dt, Real target_time, bool auto_advance = true) override;
   virtual void preTransfer(Real dt, Real target_time) override;
 
+  /**
+   * Helper for inserting row data into commandline arguments
+   * Used here and in SamplerTransientMultiApp
+   *
+   * How it works:
+   * - Scalar parameters are done in order of row data:
+   *      param1;param2;param3 -> param1=row[0] param2=row[1] param3=row[2]
+   * - Vector parameters are assigned with brackets:
+   *      vec_param1[0,1];vec_param2[1,2] -> vec_param1='row[0] row[1]' vec_param2='row[1] row[2]'
+   * - Any parameter already with an equal sign is not modified:
+   *      param1=3.14;param2[0,1,2] -> param1=3.14 param2='row[0] row[1] row[2]'
+   */
+  static std::string sampledCommandLineArgs(const std::vector<Real> & row,
+                                            const std::vector<std::string> & full_args_name);
+
 protected:
   /// Sampler to utilize for creating MultiApps
   Sampler & _sampler;
@@ -46,11 +61,6 @@ private:
   bool solveStepBatch(Real dt, Real target_time, bool auto_advance = true);
 
   /**
-   * Checks whether the MultiApp partitioning is consistent with the sampler
-   */
-  void checkRankConfig();
-
-  /**
    * Helper function for updating _row_data and _local_row_index.
    * This allows multiple calls to the same row index
    */
@@ -64,13 +74,6 @@ private:
 
   // Flag indicating a solve has occured
   bool _solved_once;
-
-  ///@{
-  /// PrefGraph timers
-  const PerfID _perf_solve_step;
-  const PerfID _perf_solve_batch_step;
-  const PerfID _perf_command_line_args;
-  ///@}
 
   // Sampler size, to test if the MultiApp object needs to be re-initialize
   dof_id_type _number_of_sampler_rows;

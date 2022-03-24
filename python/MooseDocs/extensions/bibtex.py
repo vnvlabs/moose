@@ -52,16 +52,15 @@ class BibtexExtension(command.CommandExtension):
         self.__bib_file_database = dict()
 
     def preExecute(self):
+        set_strict_mode(False) # allow incorrectly formatted author/editor names
 
-        duplicates = self.get('duplicates', list())
-        set_strict_mode(False)
-        self.__database = BibliographyData()
-
+        # If this is invoked during a live serve, we need to recompile the list of '.bib' files and
+        # read them again, otherwise there's no way to distinguish existing entries from duplicates
         self.__bib_files = []
-        for node in self.translator.getPages():
-            if node.source.endswith('.bib'):
-                self.__bib_files.append(node.source)
+        for node in self.translator.findPages(lambda p: p.source.endswith('.bib')):
+            self.__bib_files.append(node.source)
 
+        self.__database = BibliographyData()
         for bfile in self.__bib_files:
             try:
                 db = parse_file(bfile)
@@ -72,18 +71,16 @@ class BibtexExtension(command.CommandExtension):
 
             #TODO: https://bitbucket.org/pybtex-devs/pybtex/issues/93/
             #      databaseadd_entries-method-not-considering
-            warn = self.get('duplicate_warning')
             for key in db.entries:
-                duplicate_key = key in self.__database.entries
-                duplicate_key_allowed = key in duplicates
-                if duplicate_key and (not duplicate_key_allowed):
-                    if warn:
+                if key in self.__database.entries:
+                    if self.get('duplicate_warning') and (key not in self.get('duplicates')):
                         msg = "The BibTeX entry '%s' defined in %s already exists."
                         LOG.warning(msg, key, bfile)
-                elif not duplicate_key:
+                else:
                     self.__database.add_entry(key, db.entries[key])
 
-    def preTokenize(self, page, ast):
+    def preRead(self, page):
+        """Initialize the page citations list."""
         page['citations'] = list()
 
     def postTokenize(self, page, ast):
@@ -125,7 +122,7 @@ class BibtexReferenceComponent(command.CommandComponent):
     COMMAND = ('cite', 'citet', 'citep', 'nocite')
     SUBCOMMAND = None
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         keys = [key.strip() for key in info['inline'].split(',')]
         BibtexCite(parent, keys=keys, cite=info['command'])
         page['citations'].extend(keys)
@@ -143,11 +140,11 @@ class BibtexCommand(command.CommandComponent):
         config['title-level'] = (2, "The heading level for the section title for the references.")
         return config
 
-    def createToken(self, parent, token, page):
-        if self.settings['title']:
-            h = core.Heading(parent, level=int(self.settings['title-level']))
-            self.reader.tokenize(h, self.settings['title'], page, MarkdownReader.INLINE)
-        BibtexBibliography(parent, bib_style=self.settings['style'])
+    def createToken(self, parent, token, page, settings):
+        if settings['title']:
+            h = core.Heading(parent, level=int(settings['title-level']))
+            self.reader.tokenize(h, settings['title'], page, MarkdownReader.INLINE)
+        BibtexBibliography(parent, bib_style=settings['style'])
         return parent
 
 class BibtexListCommand(command.CommandComponent):
@@ -160,8 +157,8 @@ class BibtexListCommand(command.CommandComponent):
         config['bib_files'] = (None, "The list of *.bib files to use for a complete citation list.")
         return config
 
-    def createToken(self, parent, token, page):
-        bfiles = self.settings['bib_files']
+    def createToken(self, parent, token, page, settings):
+        bfiles = settings['bib_files']
         bib_files = list()
         if bfiles is None:
             bib_files = self.extension.bibfiles()
@@ -270,20 +267,27 @@ class RenderBibtexBibliography(components.RenderComponent):
 
         citations = self.getCitations(parent, token, page)
         formatted_bibliography = style().format_bibliography(self.extension.database(), citations)
-        html_backend = find_plugin('pybtex.backends', 'html')
 
-        div = html.Tag(parent, 'div', class_='moose-bibliography')
-        ol = html.Tag(div, 'ol')
+        if formatted_bibliography.entries:
+            html_backend = find_plugin('pybtex.backends', 'html')
+            div = html.Tag(parent, 'div', class_='moose-bibliography')
+            ol = html.Tag(div, 'ol')
 
-        backend = html_backend(encoding='utf-8')
-        for entry in formatted_bibliography:
-            text = entry.text.render(backend)
-            html.Tag(ol, 'li', id_=entry.key, string=text)
+            backend = html_backend(encoding='utf-8')
+            for entry in formatted_bibliography:
+                text = entry.text.render(backend)
+                html.Tag(ol, 'li', id_=entry.key, string=text)
 
-        return ol
+            return ol
+
+        else:
+            html.String(parent, content="No citations exist within this document.")
 
     def createMaterialize(self, parent, token, page):
         ol = self.createHTML(parent, token, page)
+        if ol is None:
+            return
+
         for child in ol.children:
             key = child['id']
             db = BibliographyData()

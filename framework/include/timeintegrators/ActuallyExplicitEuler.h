@@ -11,11 +11,6 @@
 
 #include "ExplicitTimeIntegrator.h"
 
-class ActuallyExplicitEuler;
-
-template <>
-InputParameters validParams<ActuallyExplicitEuler>();
-
 /**
  * Implements a truly explicit (no nonlinear solve) first-order, forward Euler
  * time integration scheme.
@@ -29,7 +24,9 @@ public:
 
   virtual int order() override { return 1; }
   virtual void computeTimeDerivatives() override;
-  void computeADTimeDerivatives(DualReal & ad_u_dot, const dof_id_type & dof) const override;
+  void computeADTimeDerivatives(DualReal & ad_u_dot,
+                                const dof_id_type & dof,
+                                DualReal & ad_u_dotdot) const override;
   virtual void solve() override;
   virtual void postResidual(NumericVector<Number> & residual) override;
 

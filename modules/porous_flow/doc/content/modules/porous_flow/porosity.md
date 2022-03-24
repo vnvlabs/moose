@@ -5,17 +5,26 @@ effective porepressure, the volumetric strain, the temperature and/or chemical p
 
 Available porosity formulations include:
 
-## Constant
-
-[`PorousFlowPorosityConst`](/PorousFlowPorosityConst.md)
+## Constant: [PorousFlowPorosityConst](/PorousFlowPorosityConst.md)
 
 The simplest case where porosity does not change during the simulation. A single value of porosity
 can be used, or a spatially varying porosity `AuxVariable` can be used to define a heterogeneous
 porosity distribution.
 
-## Porosity dependent on total strain, effective porepressure, temperature and/or mineralisation
+## Linear: [PorousFlowPorosityLinear](/PorousFlowPorosityLinear.md)
 
-Using [`PorousFlowPorosity`](/PorousFlowPorosity.md) with appropriately set flags,
+In this case
+
+\begin{equation}
+\label{eq:poro_evolve_linear}
+\phi = \phi_{\mathrm{ref}} + A(P_{f} - P_{f\ \mathrm{ref}}) + B(T - T_{\mathrm{ref}}) + C(\epsilon^{\mathrm{total}}_{ii} - \epsilon^{\mathrm{total}}_{ii\ \mathrm{ref}}) \ .
+\end{equation}
+
+Here the "ref" values are reference values, $P_{f}$ is the [effective fluid pressure](PorousFlowEffectiveFluidPressure.md), $T$ is the [temperature](PorousFlowTemperature.md) and $\epsilon^{\mathrm{total}}_{ii}$ is the [total volumetric strain](PorousFlowVolumetricStrain.md).  These may be spatially-varying `AuxVariables` to define a heterogeneous porosity distribution.  $A$, $B$ and $C$ are real-valued coefficients.  A lower-bound on porosity, $\phi \geq \phi_{\mathrm{min}}$, may also be defined.
+
+## Exponential: [PorousFlowPorosity](/PorousFlowPorosity.md)
+
+Using [PorousFlowPorosity](/PorousFlowPorosity.md) with appropriately set flags,
 porosity can depend on:
 
 - total strain, with `mechanical = true`
@@ -25,7 +34,7 @@ porosity can depend on:
 
 A combination of these may be used, to simulate, for instance, THM or HM coupling.
 
-## Evolution of porosity
+## Theoretical evolution of porosity leading to the exponential form
 
 The evolution of the porosity is governed by [!citep](detournayET93, chen2009)
 \begin{equation}
@@ -44,15 +53,32 @@ M = \sum_{\mathrm{minerals}}w_{\mathrm{mineral}} C_{\mathrm{mineral}} \ ,
 where $w$ is the user-defined weight for each mineral and $C$ is the concentration (m$^{3}$/m$^{3}$)
 of precipitated mineral.
 
+#### Special form for fracture flow
+
+It is sometimes convenient to extend [eq:phi_dog] to include a new Biot coefficient, $\alpha_{B}'$:
+\begin{equation}
+\label{eq:phi_dog_prime}
+\frac{\partial}{\partial t}(\phi + M) = (\alpha_{B} -
+(\phi + M))\frac{\partial}{\partial t}
+\left(\epsilon^{\mathrm{total}}_{ii} - \alpha_{T} T +
+\frac{1-\alpha_{B}'}{K}
+P_{\mathrm{f}} \right) \ .
+\end{equation}
+This form is useful when modelling flow through fractures, where the porosity *increases* with porepressure, which can be simulated with $\alpha_{B}'>1$.
+
+#### Solution
+
 The equation for porosity has solution
 \begin{equation}
 \label{eq:poro_evolve}
-\phi + M = \alpha_{B} + (\phi_{0} + M_{\mathrm{ref}} - \alpha_{B})\times \exp \left( \frac{\alpha_{B}
+\phi + M = \alpha_{B} + (\phi_{0} + M_{\mathrm{ref}} - \alpha_{B})\times \exp \left( \frac{\alpha_{B}'
   - 1}{K}(P_{f} - P_{f}^{\mathrm{ref}}) - \epsilon^{\mathrm{total}}_{ii} + \alpha_{T}(T - T^{\mathrm{ref}}) \right) \ ,
 \end{equation}
 where $\phi_{0}$ is the porosity at reference porepressure, zero elastic strain, reference
 temperature and reference mineral concentration.  Note this porosity can become negative, and an
 option for ensuring positivity is detailed below.
+
+#### Time-lag in mineralisation problems
 
 With mineralisation, $\phi$ now depends on total mineral concentration, $M$.  However, the evolution
 of $M$ is governed by $\dot{M} = \phi S_{\mathrm{aq}} I$, where $I$ is a reaction rate which is independent of
@@ -65,6 +91,8 @@ M \rightarrow M_{\mathrm{old}} + \phi_{\mathrm{old}} S_{\mathrm{aq}} I \mathrm{d
 \end{equation}
 Note that the *old* value of porosity is used on the right-hand-side, which breaks the cyclic dependency problem.
 
+#### Thermal-mechanical simulations
+
 Without porepressure and mineralisation effects, the correct expression for porosity as a
 function of volumetric strain and temperature is
 \begin{equation}
@@ -74,6 +102,8 @@ function of volumetric strain and temperature is
 \end{equation}
 
 These expressions may be modified to include the effects of plasticity.
+
+#### Preventing negative porosity
 
 The exponential expressions [eq:poro_evolve] and [eq:poroTM_evolve] can yield
 negative porosity values, which are unphysical.  To ensure positivity

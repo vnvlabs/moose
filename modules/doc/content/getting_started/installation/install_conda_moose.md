@@ -1,20 +1,35 @@
 ## Install MOOSE Conda Packages id=moosepackages
 
-Install the moose-libmesh and moose-tools package from mooseframework.org, and name your environment 'moose':
+Before we create our virtual conda environment, we first need to initialize mamba.
+For this, execute the following command and +restart your terminal session+.
 
 ```bash
-conda create --name moose moose-libmesh moose-tools
+mamba init
 ```
 
-Activate the moose environment +(do this for any new terminal opened)+:
+Next, create a unique conda environment for moose, named `moose`, and attempt to activate it:
 
 ```bash
-conda activate moose
+mamba create --name moose -q -y
+mamba activate moose
 ```
 
-You may receive an error, accompanied by additional instructions when attempting to activate a profile. Follow those on-screen instructions, and try to activate the moose environment again. If you are unsure how to proceed, please see `conda activate moose` section in our [troubleshooting guide for Conda](troubleshooting.md#condaissues optional=True).
+Within the `moose` environment, install the necessary packages:
 
-You will have successfully activated the moose environment when you see (moose) prefixed within your prompt.
+```bash
+mamba install moose-tools moose-libmesh
+```
+
+Once the packages are installed, the `moose` environment needs to be deactivated and
+reactivated to ensure that the environmental variables in the installed
+packages are set properly.
+
+```bash
+mamba deactivate
+mamba activate moose
+```
+
+If you are running into errors, please see our [troubleshooting guide for Conda](troubleshooting.md#condaissues optional=True).
 
 !alert note
-Know that you will need to `conda activate moose` again for +each terminal window you open+. If you wish to make this automatic, you can add that command to the end of your shell profile.
+Know that you will need to `mamba activate moose` again for +each terminal window you open+. If you wish to make this automatic, you can add that command to the end of your shell profile.

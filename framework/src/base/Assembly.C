@@ -19,6 +19,7 @@
 #include "MooseVariableScalar.h"
 #include "XFEMInterface.h"
 #include "DisplacedSystem.h"
+#include "MooseMeshUtils.h"
 
 // libMesh
 #include "libmesh/coupling_matrix.h"
@@ -39,30 +40,29 @@ coordTransformFactor(const SubProblem & s,
                      const SubdomainID sub_id,
                      const P & point,
                      C & factor,
+                     const SubdomainID neighbor_sub_id)
+{
+  coordTransformFactor(s.mesh(), sub_id, point, factor, neighbor_sub_id);
+}
+
+template <typename P, typename C>
+void
+coordTransformFactor(const MooseMesh & mesh,
+                     const SubdomainID sub_id,
+                     const P & point,
+                     C & factor,
                      const SubdomainID libmesh_dbg_var(neighbor_sub_id))
 {
   mooseAssert(neighbor_sub_id != libMesh::Elem::invalid_subdomain_id
-                  ? s.getCoordSystem(sub_id) == s.getCoordSystem(neighbor_sub_id)
+                  ? mesh.getCoordSystem(sub_id) == mesh.getCoordSystem(neighbor_sub_id)
                   : true,
               "Coordinate systems must be the same between element and neighbor");
-
-  switch (s.getCoordSystem(sub_id))
-  {
-    case Moose::COORD_XYZ:
-      factor = 1.0;
-      break;
-    case Moose::COORD_RZ:
-    {
-      unsigned int rz_radial_coord = s.getAxisymmetricRadialCoord();
-      factor = 2 * M_PI * point(rz_radial_coord);
-      break;
-    }
-    case Moose::COORD_RSPHERICAL:
-      factor = 4 * M_PI * point(0) * point(0);
-      break;
-    default:
-      mooseError("Unknown coordinate system");
-  }
+  const auto coord_type = mesh.getCoordSystem(sub_id);
+  MooseMeshUtils::coordTransformFactor(
+      point,
+      factor,
+      coord_type,
+      coord_type == Moose::COORD_RZ ? mesh.getAxisymmetricRadialCoord() : libMesh::invalid_uint);
 }
 
 Assembly::Assembly(SystemBase & sys, THREAD_ID tid)
@@ -84,6 +84,7 @@ Assembly::Assembly(SystemBase & sys, THREAD_ID tid)
     _current_qrule_neighbor(nullptr),
     _need_JxW_neighbor(false),
     _qrule_msm(nullptr),
+    _custom_mortar_qrule(false),
     _current_qrule_lower(nullptr),
 
     _current_elem(nullptr),
@@ -103,6 +104,9 @@ Assembly::Assembly(SystemBase & sys, THREAD_ID tid)
 
     _current_lower_d_elem(nullptr),
     _current_neighbor_lower_d_elem(nullptr),
+    _need_lower_d_elem_volume(false),
+    _need_neighbor_lower_d_elem_volume(false),
+    _need_dual(false),
 
     _residual_vector_tags(_subproblem.getVectorTags(Moose::VECTOR_TAG_RESIDUAL)),
     _cached_residual_values(2), // The 2 is for TIME and NONTIME
@@ -122,6 +126,7 @@ Assembly::Assembly(SystemBase & sys, THREAD_ID tid)
   buildFaceFE(FEType(helper_order, LAGRANGE));
   buildNeighborFE(FEType(helper_order, LAGRANGE));
   buildFaceNeighborFE(FEType(helper_order, LAGRANGE));
+  buildLowerDFE(FEType(helper_order, LAGRANGE));
 
   // Build an FE helper object for this type for each dimension up to the dimension of the current
   // mesh
@@ -150,7 +155,20 @@ Assembly::Assembly(SystemBase & sys, THREAD_ID tid)
     (*_holder_fe_neighbor_helper[dim])->get_JxW();
   }
 
-  _fe_msm = FEGenericBase<Real>::build(_mesh_dimension - 1, FEType(helper_order, LAGRANGE));
+  for (unsigned int dim = 0; dim <= _mesh_dimension - 1; dim++)
+  {
+    _holder_fe_lower_helper[dim] = &_fe_lower[dim][FEType(helper_order, LAGRANGE)];
+    // We need these computations in order to compute correct lower-d element volumes in curvilinear
+    // coordinates
+    (*_holder_fe_lower_helper[dim])->get_xyz();
+    (*_holder_fe_lower_helper[dim])->get_JxW();
+  }
+
+  // For 3D mortar, mortar segments are always TRI3 elements so we want FIRST LAGRANGE regardless
+  // of discretization
+  _fe_msm = (_mesh_dimension == 2)
+                ? FEGenericBase<Real>::build(_mesh_dimension - 1, FEType(helper_order, LAGRANGE))
+                : FEGenericBase<Real>::build(_mesh_dimension - 1, FEType(FIRST, LAGRANGE));
   _JxW_msm = &_fe_msm->get_JxW();
   // Prerequest xyz so that it is computed for _fe_msm so that it can be used for calculating
   // _coord_msm
@@ -245,9 +263,6 @@ Assembly::~Assembly()
 
   for (auto & it : _ad_vector_grad_phi_data_face)
     it.second.release();
-
-  delete _current_side_elem;
-  delete _current_neighbor_side_elem;
 
   _current_physical_points.release();
 
@@ -604,8 +619,12 @@ Assembly::bumpAllQRuleOrder(Order order, SubdomainID block)
 }
 
 void
-Assembly::createQRules(
-    QuadratureType type, Order order, Order volume_order, Order face_order, SubdomainID block)
+Assembly::createQRules(QuadratureType type,
+                       Order order,
+                       Order volume_order,
+                       Order face_order,
+                       SubdomainID block,
+                       bool allow_negative_qweights)
 {
   auto & qvec = _qrules[block];
   unsigned int ndims = _mesh_dimension + 1; // must account for 0-dimensional quadrature.
@@ -617,22 +636,24 @@ Assembly::createQRules(
     int dim = i;
     auto & q = qvec[dim];
     q.vol = QBase::build(type, dim, volume_order);
+    q.vol->allow_rules_with_negative_weights = allow_negative_qweights;
     q.face = QBase::build(type, dim - 1, face_order);
+    q.face->allow_rules_with_negative_weights = allow_negative_qweights;
     q.fv_face = QBase::build(QMONOMIAL, dim - 1, CONSTANT);
-    q.neighbor = libmesh_make_unique<ArbitraryQuadrature>(dim - 1, face_order);
-    q.arbitrary_vol = libmesh_make_unique<ArbitraryQuadrature>(dim, order);
-    q.arbitrary_face = libmesh_make_unique<ArbitraryQuadrature>(dim - 1, face_order);
+    q.fv_face->allow_rules_with_negative_weights = allow_negative_qweights;
+    q.neighbor = std::make_unique<ArbitraryQuadrature>(dim - 1, face_order);
+    q.neighbor->allow_rules_with_negative_weights = allow_negative_qweights;
+    q.arbitrary_vol = std::make_unique<ArbitraryQuadrature>(dim, order);
+    q.arbitrary_vol->allow_rules_with_negative_weights = allow_negative_qweights;
+    q.arbitrary_face = std::make_unique<ArbitraryQuadrature>(dim - 1, face_order);
+    q.arbitrary_face->allow_rules_with_negative_weights = allow_negative_qweights;
   }
 
   delete _qrule_msm;
+  _custom_mortar_qrule = false;
   _const_qrule_msm = _qrule_msm = QBase::build(type, _mesh_dimension - 1, face_order).release();
+  _qrule_msm->allow_rules_with_negative_weights = allow_negative_qweights;
   _fe_msm->attach_quadrature_rule(_qrule_msm);
-}
-
-void
-Assembly::createQRules(QuadratureType type, Order order, Order volume_order, Order face_order)
-{
-  createQRules(type, order, volume_order, face_order, Moose::ANY_BLOCK_ID);
 }
 
 void
@@ -683,6 +704,31 @@ Assembly::setNeighborQRule(QBase * qrule, unsigned int dim)
     it.second->attach_quadrature_rule(qrule);
   for (auto & it : _vector_fe_face_neighbor[dim])
     it.second->attach_quadrature_rule(qrule);
+}
+
+void
+Assembly::setMortarQRule(Order order)
+{
+  if (order != _qrule_msm->get_order())
+  {
+    // If custom mortar qrule has not yet been specified
+    if (!_custom_mortar_qrule)
+    {
+      _custom_mortar_qrule = true;
+      const unsigned int dim = _qrule_msm->get_dim();
+      const QuadratureType type = _qrule_msm->type();
+      delete _qrule_msm;
+
+      _const_qrule_msm = _qrule_msm = QBase::build(type, dim, order).release();
+      _fe_msm->attach_quadrature_rule(_qrule_msm);
+    }
+    else
+      mooseError("Mortar quadrature_order: ",
+                 order,
+                 " does not match previously specified quadrature_order: ",
+                 _qrule_msm->get_order(),
+                 ". Quadrature_order (when specified) must match for all mortar constraints.");
+  }
 }
 
 void
@@ -744,11 +790,8 @@ Assembly::reinitFE(const Elem * elem)
     if (_displaced)
     {
       const auto & qw = _current_qrule->get_weights();
-      if (elem->has_affine_map())
-        computeAffineMapAD(elem, qw, n_qp, *_holder_fe_helper[dim]);
-      else
-        for (unsigned int qp = 0; qp != n_qp; qp++)
-          computeSinglePointMapAD(elem, qw, qp, *_holder_fe_helper[dim]);
+      for (unsigned int qp = 0; qp != n_qp; qp++)
+        computeSinglePointMapAD(elem, qw, qp, *_holder_fe_helper[dim]);
     }
     else
       for (unsigned qp = 0; qp < n_qp; ++qp)
@@ -1335,7 +1378,7 @@ Assembly::reinitFEFace(const Elem * elem, unsigned int side)
     _curvatures.shallowCopy(
         const_cast<std::vector<Real> &>((*_holder_fe_face_helper[dim])->get_curvatures()));
 
-  computeADFace(elem, side);
+  computeADFace(*elem, side);
 
   if (_xfem != nullptr)
     modifyFaceWeightsDueToXFEM(elem, side);
@@ -1347,7 +1390,7 @@ Assembly::reinitFEFace(const Elem * elem, unsigned int side)
 }
 
 void
-Assembly::computeFaceMap(unsigned dim, const std::vector<Real> & qw, const Elem * side)
+Assembly::computeFaceMap(const Elem & elem, const unsigned int side, const std::vector<Real> & qw)
 {
   // Important quantities calculated by this method:
   //   - _ad_JxW_face
@@ -1355,11 +1398,9 @@ Assembly::computeFaceMap(unsigned dim, const std::vector<Real> & qw, const Elem 
   //   - _ad_normals
   //   - _ad_curvatures
 
+  const Elem & side_elem = _compute_face_map_side_elem_builder(elem, side);
+  const auto dim = elem.dim();
   const auto n_qp = qw.size();
-  const Elem * elem = side->interior_parent();
-#ifndef MOOSE_GLOBAL_AD_INDEXING
-  auto side_number = elem->which_side_am_i(side);
-#endif
   const auto & dpsidxi_map = (*_holder_fe_face_helper[dim])->get_fe_map().get_dpsidxi();
   const auto & dpsideta_map = (*_holder_fe_face_helper[dim])->get_fe_map().get_dpsideta();
   const auto & psi_map = (*_holder_fe_face_helper[dim])->get_fe_map().get_psi();
@@ -1384,7 +1425,7 @@ Assembly::computeFaceMap(unsigned dim, const std::vector<Real> & qw, const Elem 
       if (!n_qp)
         break;
 
-      if (side->node_id(0) == elem->node_id(0))
+      if (side_elem.node_id(0) == elem.node_id(0))
         _ad_normals[0] = Point(-1.);
       else
         _ad_normals[0] = Point(1.);
@@ -1392,10 +1433,10 @@ Assembly::computeFaceMap(unsigned dim, const std::vector<Real> & qw, const Elem 
       VectorValue<DualReal> side_point;
       if (_calculate_face_xyz)
       {
-        const Node & node = side->node_ref(0);
+        const Node & node = side_elem.node_ref(0);
         side_point = node;
 #ifndef MOOSE_GLOBAL_AD_INDEXING
-        auto element_node_number = elem->local_side_node(side_number, 0);
+        auto element_node_number = elem.local_side_node(side, 0);
 #endif
 
         unsigned dimension = 0;
@@ -1442,14 +1483,14 @@ Assembly::computeFaceMap(unsigned dim, const std::vector<Real> & qw, const Elem 
       }
 
       const auto n_mapping_shape_functions =
-          FE<2, LAGRANGE>::n_shape_functions(side->type(), side->default_order());
+          FE<2, LAGRANGE>::n_shape_functions(side_elem.type(), side_elem.default_order());
 
       for (unsigned int i = 0; i < n_mapping_shape_functions; i++)
       {
-        const Node & node = side->node_ref(i);
+        const Node & node = side_elem.node_ref(i);
         VectorValue<DualReal> side_point = node;
 #ifndef MOOSE_GLOBAL_AD_INDEXING
-        auto element_node_number = elem->local_side_node(side_number, i);
+        auto element_node_number = elem.local_side_node(side, i);
 #endif
 
         unsigned dimension = 0;
@@ -1518,14 +1559,14 @@ Assembly::computeFaceMap(unsigned dim, const std::vector<Real> & qw, const Elem 
       }
 
       const unsigned int n_mapping_shape_functions =
-          FE<3, LAGRANGE>::n_shape_functions(side->type(), side->default_order());
+          FE<3, LAGRANGE>::n_shape_functions(side_elem.type(), side_elem.default_order());
 
       for (unsigned int i = 0; i < n_mapping_shape_functions; i++)
       {
-        const Node & node = side->node_ref(i);
+        const Node & node = side_elem.node_ref(i);
         VectorValue<DualReal> side_point = node;
 #ifndef MOOSE_GLOBAL_AD_INDEXING
-        auto element_node_number = elem->local_side_node(side_number, i);
+        auto element_node_number = elem.local_side_node(side, i);
 #endif
 
         unsigned dimension = 0;
@@ -1892,10 +1933,7 @@ Assembly::reinitFVFace(const FaceInfo & fi)
       _current_qrule_face->init(EDGE2);
   }
 
-  // TODO: maybe we don't need this and can delete it? - investigate
-  if (_current_side_elem)
-    delete _current_side_elem;
-  _current_side_elem = _current_elem->build_side_ptr(_current_side).release();
+  _current_side_elem = &_current_side_elem_builder(*_current_elem, _current_side);
 
   // We've initialized the reference points. Now we need to compute the physical location of the
   // quadrature points. We do not do any FE initialization so we cannot simply copy over FE results
@@ -1935,9 +1973,7 @@ Assembly::reinit(const Elem * elem, unsigned int side)
 
   unsigned int elem_dimension = elem->dim();
 
-  if (_current_side_elem)
-    delete _current_side_elem;
-  _current_side_elem = elem->build_side_ptr(side).release();
+  _current_side_elem = &_current_side_elem_builder(*elem, side);
 
   //// Make sure the qrule is the right one
   auto rule = qruleFace(elem, side);
@@ -1970,9 +2006,7 @@ Assembly::reinit(const Elem * elem, unsigned int side, const std::vector<Point> 
 
   _current_qrule_arbitrary->setPoints(reference_points);
 
-  if (_current_side_elem)
-    delete _current_side_elem;
-  _current_side_elem = elem->build_side_ptr(side).release();
+  _current_side_elem = &_current_side_elem_builder(*elem, side);
 
   reinitFEFace(elem, side);
 
@@ -2011,8 +2045,7 @@ Assembly::reinitElemAndNeighbor(const Elem * elem,
     reference_points_ptr = &reference_points;
   }
 
-  delete _current_neighbor_side_elem;
-  _current_neighbor_side_elem = neighbor->build_side_ptr(neighbor_side).release();
+  _current_neighbor_side_elem = &_current_neighbor_side_elem_builder(*neighbor, neighbor_side);
 
   if (_need_JxW_neighbor)
   {
@@ -2109,18 +2142,16 @@ Assembly::reinitElemFaceRef(const Elem * elem,
     _curvatures.shallowCopy(
         const_cast<std::vector<Real> &>((*_holder_fe_face_helper[elem_dim])->get_curvatures()));
 
-  computeADFace(elem, elem_side);
+  computeADFace(*elem, elem_side);
 }
 
 void
-Assembly::computeADFace(const Elem * elem, unsigned int side)
+Assembly::computeADFace(const Elem & elem, const unsigned int side)
 {
-  auto dim = elem->dim();
+  const auto dim = elem.dim();
 
   if (_subproblem.haveADObjects())
   {
-    const std::unique_ptr<const Elem> side_elem(elem->build_side_ptr(side));
-
     auto n_qp = _current_qrule_face->n_points();
     resizeADMappingObjects(n_qp, dim);
     _ad_normals.resize(n_qp);
@@ -2133,14 +2164,11 @@ Assembly::computeADFace(const Elem * elem, unsigned int side)
     if (_displaced)
     {
       const auto & qw = _current_qrule_face->get_weights();
-      computeFaceMap(dim, qw, side_elem.get());
-      std::vector<Real> dummy_qw(n_qp, 1.);
+      computeFaceMap(elem, side, qw);
+      const std::vector<Real> dummy_qw(n_qp, 1.);
 
-      if (elem->has_affine_map())
-        computeAffineMapAD(elem, dummy_qw, n_qp, *_holder_fe_face_helper[dim]);
-      else
-        for (unsigned int qp = 0; qp != n_qp; qp++)
-          computeSinglePointMapAD(elem, dummy_qw, qp, *_holder_fe_face_helper[dim]);
+      for (unsigned int qp = 0; qp != n_qp; qp++)
+        computeSinglePointMapAD(&elem, dummy_qw, qp, *_holder_fe_face_helper[dim]);
     }
     else
       for (unsigned qp = 0; qp < n_qp; ++qp)
@@ -2167,7 +2195,7 @@ Assembly::computeADFace(const Elem * elem, unsigned int side)
       const auto & regular_grad_phi = _fe_shape_data_face[fe_type]->_grad_phi;
 
       if (_displaced)
-        computeGradPhiAD(elem, n_qp, grad_phi, fe);
+        computeGradPhiAD(&elem, n_qp, grad_phi, fe);
       else
         for (unsigned qp = 0; qp < n_qp; ++qp)
           for (decltype(num_shapes) i = 0; i < num_shapes; ++i)
@@ -2187,7 +2215,7 @@ Assembly::computeADFace(const Elem * elem, unsigned int side)
       const auto & regular_grad_phi = _vector_fe_shape_data_face[fe_type]->_grad_phi;
 
       if (_displaced)
-        computeGradPhiAD(elem, n_qp, grad_phi, fe);
+        computeGradPhiAD(&elem, n_qp, grad_phi, fe);
       else
         for (unsigned qp = 0; qp < n_qp; ++qp)
           for (decltype(num_shapes) i = 0; i < num_shapes; ++i)
@@ -2267,16 +2295,31 @@ Assembly::reinitNeighborFaceRef(const Elem * neighbor,
 }
 
 void
+Assembly::reinitDual(const Elem * elem,
+                     const std::vector<Point> & pts,
+                     const std::vector<Real> & JxW)
+{
+  const unsigned int elem_dim = elem->dim();
+  mooseAssert(elem_dim == _mesh_dimension - 1,
+              "Dual shape functions should only be computed on lower dimensional face elements");
+
+  for (const auto & it : _fe_lower[elem_dim])
+  {
+    FEBase * const fe_lower = it.second;
+    // We use customized quadrature rule for integration along the mortar segment elements
+    fe_lower->set_calculate_default_dual_coeff(false);
+    fe_lower->reinit_dual_shape_coeffs(elem, pts, JxW);
+  }
+}
+
+void
 Assembly::reinitLowerDElem(const Elem * elem,
                            const std::vector<Point> * const pts,
                            const std::vector<Real> * const weights)
 {
-  mooseAssert(elem->dim() == _mesh_dimension - 1,
-              "You should be calling reinitLowerDElemRef on a lower dimensional element");
-
   _current_lower_d_elem = elem;
 
-  unsigned int elem_dim = elem->dim();
+  const unsigned int elem_dim = elem->dim();
   mooseAssert(elem_dim < _mesh_dimension,
               "The lower dimensional element should truly be a lower dimensional element");
 
@@ -2326,26 +2369,57 @@ Assembly::reinitLowerDElem(const Elem * elem,
     }
   }
 
-  mooseAssert(elem_dim == 1,
-              "Lower-D Volume calculations are only accurate in 1D because we are not doing "
-              "anything with the coordinate transformation. We currently only support 2D mortar, "
-              "so if you hit this assertion there is a problem");
-  _current_lower_d_elem_volume = _current_lower_d_elem->volume();
+  if (!_need_lower_d_elem_volume)
+    return;
+
+  if (pts && !weights)
+  {
+    // We only have dummy weights so the JxWs computed during our FE reinits are meaningless and we
+    // cannot use them
+
+    if (_subproblem.getCoordSystem(elem->subdomain_id()) == Moose::CoordinateSystemType::COORD_XYZ)
+      // We are in a Cartesian coordinate system and we can just use the element volume method which
+      // has fast computation for certain element types
+      _current_lower_d_elem_volume = elem->volume();
+    else
+      // We manually compute the volume taking the curvilinear coordinate transformations into
+      // account
+      _current_lower_d_elem_volume = elementVolume(elem);
+  }
+  else
+  {
+    // During that last loop the helper objects will have been reinitialized as well
+    auto * helper_fe = *_holder_fe_lower_helper[elem_dim];
+    const auto & physical_q_points = helper_fe->get_xyz();
+    const auto & JxW = helper_fe->get_JxW();
+    MooseArray<Real> coord;
+    setCoordinateTransformation(
+        _current_qrule_lower, physical_q_points, coord, elem->subdomain_id());
+    _current_lower_d_elem_volume = 0;
+    for (const auto qp : make_range(_current_qrule_lower->n_points()))
+      _current_lower_d_elem_volume += JxW[qp] * coord[qp];
+  }
 }
 
 void
 Assembly::reinitNeighborLowerDElem(const Elem * elem)
 {
-  mooseAssert(elem->dim() == _mesh_dimension - 1,
+  mooseAssert(elem->dim() < _mesh_dimension,
               "You should be calling reinitNeighborLowerDElem on a lower dimensional element");
 
   _current_neighbor_lower_d_elem = elem;
 
-  mooseAssert(elem->dim() == 1,
-              "Lower-D Volume calculations are only accurate in 1D because we are not doing "
-              "anything with the coordinate transformation. We currently only support 2D mortar, "
-              "so if you hit this assertion there is a problem");
-  _current_neighbor_lower_d_elem_volume = _current_neighbor_lower_d_elem->volume();
+  if (!_need_neighbor_lower_d_elem_volume)
+    return;
+
+  if (_subproblem.getCoordSystem(elem->subdomain_id()) == Moose::CoordinateSystemType::COORD_XYZ)
+    // We are in a Cartesian coordinate system and we can just use the element volume method which
+    // has fast computation for certain element types
+    _current_neighbor_lower_d_elem_volume = elem->volume();
+  else
+    // We manually compute the volume taking the curvilinear coordinate transformations into
+    // account
+    _current_neighbor_lower_d_elem_volume = elementVolume(elem);
 }
 
 void
@@ -2366,8 +2440,7 @@ Assembly::reinitNeighborAtPhysical(const Elem * neighbor,
                                    unsigned int neighbor_side,
                                    const std::vector<Point> & physical_points)
 {
-  delete _current_neighbor_side_elem;
-  _current_neighbor_side_elem = neighbor->build_side_ptr(neighbor_side).release();
+  _current_neighbor_side_elem = &_current_neighbor_side_elem_builder(*neighbor, neighbor_side);
 
   std::vector<Point> reference_points;
 
@@ -3360,6 +3433,27 @@ Assembly::cacheResidual(dof_id_type dof, Real value, const std::set<TagID> & tag
     cacheResidual(dof, value, tag);
 }
 
+// swapped argument order from above methods to be consistent with argument order for
+// Assembly::processDerivatives
+void
+Assembly::processResidual(Real value, const dof_id_type dof, const std::set<TagID> & tags)
+{
+  const Real scalar =
+#ifdef MOOSE_GLOBAL_AD_INDEXING
+      _scaling_vector ? (*_scaling_vector)(dof) :
+#endif
+                      1.;
+  value *= scalar;
+
+  for (const auto tag_id : tags)
+  {
+    const VectorTag & tag = _subproblem.getVectorTag(tag_id);
+
+    _cached_residual_values[tag._type_id].push_back(value);
+    _cached_residual_rows[tag._type_id].push_back(dof);
+  }
+}
+
 void
 Assembly::cacheResidualContribution(dof_id_type dof, Real value, TagID tag_id)
 {
@@ -3881,85 +3975,6 @@ Assembly::addJacobianNeighbor()
 }
 
 void
-Assembly::addJacobianMortar()
-{
-  for (const auto & it : _cm_ff_entry)
-  {
-    auto ivar = it.first;
-    auto jvar = it.second;
-    auto i = ivar->number();
-    auto j = jvar->number();
-    for (MooseIndex(_jacobian_block_lower_used) tag = 0; tag < _jacobian_block_lower_used.size();
-         tag++)
-      if (jacobianBlockLowerUsed(tag, i, j) && _sys.hasMatrix(tag))
-      {
-        addJacobianBlock(_sys.getMatrix(tag),
-                         jacobianBlockMortar(Moose::LowerLower, i, j, tag),
-                         *ivar,
-                         *jvar,
-                         ivar->dofIndicesLower(),
-                         jvar->dofIndicesLower());
-
-        addJacobianBlock(_sys.getMatrix(tag),
-                         jacobianBlockMortar(Moose::LowerSecondary, i, j, tag),
-                         *ivar,
-                         *jvar,
-                         ivar->dofIndicesLower(),
-                         jvar->dofIndices());
-
-        addJacobianBlock(_sys.getMatrix(tag),
-                         jacobianBlockMortar(Moose::LowerPrimary, i, j, tag),
-                         *ivar,
-                         *jvar,
-                         ivar->dofIndicesLower(),
-                         jvar->dofIndicesNeighbor());
-
-        addJacobianBlock(_sys.getMatrix(tag),
-                         jacobianBlockMortar(Moose::SecondaryLower, i, j, tag),
-                         *ivar,
-                         *jvar,
-                         ivar->dofIndices(),
-                         jvar->dofIndicesLower());
-
-        addJacobianBlock(_sys.getMatrix(tag),
-                         jacobianBlockMortar(Moose::SecondarySecondary, i, j, tag),
-                         *ivar,
-                         *jvar,
-                         ivar->dofIndices(),
-                         jvar->dofIndices());
-
-        addJacobianBlock(_sys.getMatrix(tag),
-                         jacobianBlockMortar(Moose::SecondaryPrimary, i, j, tag),
-                         *ivar,
-                         *jvar,
-                         ivar->dofIndices(),
-                         jvar->dofIndicesNeighbor());
-
-        addJacobianBlock(_sys.getMatrix(tag),
-                         jacobianBlockMortar(Moose::PrimaryLower, i, j, tag),
-                         *ivar,
-                         *jvar,
-                         ivar->dofIndicesNeighbor(),
-                         jvar->dofIndicesLower());
-
-        addJacobianBlock(_sys.getMatrix(tag),
-                         jacobianBlockMortar(Moose::PrimarySecondary, i, j, tag),
-                         *ivar,
-                         *jvar,
-                         ivar->dofIndicesNeighbor(),
-                         jvar->dofIndices());
-
-        addJacobianBlock(_sys.getMatrix(tag),
-                         jacobianBlockMortar(Moose::PrimaryPrimary, i, j, tag),
-                         *ivar,
-                         *jvar,
-                         ivar->dofIndicesNeighbor(),
-                         jvar->dofIndicesNeighbor());
-      }
-  }
-}
-
-void
 Assembly::addJacobianNeighborLowerD()
 {
   for (const auto & it : _cm_ff_entry)
@@ -4206,25 +4221,11 @@ Assembly::cacheJacobianMortar()
                            jvar->dofIndices(),
                            tag);
 
-        cacheJacobianBlock(jacobianBlockMortar(Moose::SecondaryPrimary, i, j, tag),
-                           *ivar,
-                           *jvar,
-                           ivar->dofIndices(),
-                           jvar->dofIndicesNeighbor(),
-                           tag);
-
         cacheJacobianBlock(jacobianBlockMortar(Moose::PrimaryLower, i, j, tag),
                            *ivar,
                            *jvar,
                            ivar->dofIndicesNeighbor(),
                            jvar->dofIndicesLower(),
-                           tag);
-
-        cacheJacobianBlock(jacobianBlockMortar(Moose::PrimarySecondary, i, j, tag),
-                           *ivar,
-                           *jvar,
-                           ivar->dofIndicesNeighbor(),
-                           jvar->dofIndices(),
                            tag);
 
         cacheJacobianBlock(jacobianBlockMortar(Moose::PrimaryPrimary, i, j, tag),
@@ -4608,6 +4609,31 @@ Assembly::modifyArbitraryWeights(const std::vector<Real> & weights)
     _current_JxW[i] = weights[i];
 }
 
+#ifdef MOOSE_GLOBAL_AD_INDEXING
+void
+Assembly::processUnconstrainedDerivatives(const std::vector<ADReal> & residuals,
+                                          const std::vector<dof_id_type> & row_indices,
+                                          const std::set<TagID> & matrix_tags)
+{
+  mooseAssert(residuals.size() == row_indices.size(),
+              "The number of residuals should match the number of dof indices");
+  mooseAssert(residuals.size() >= 1, "Why you calling me with no residuals?");
+
+  for (const auto i : index_range(row_indices))
+  {
+    const auto row_index = row_indices[i];
+    const Real scalar = _scaling_vector ? (*_scaling_vector)(row_index) : 1.;
+
+    const auto & sparse_derivatives = residuals[i].derivatives();
+    const auto & column_indices = sparse_derivatives.nude_indices();
+    const auto & raw_derivatives = sparse_derivatives.nude_data();
+
+    for (std::size_t j = 0; j < column_indices.size(); ++j)
+      cacheJacobian(row_index, column_indices[j], raw_derivatives[j] * scalar, matrix_tags);
+  }
+}
+#endif
+
 template <>
 const typename OutputTools<VectorValue<Real>>::VariablePhiValue &
 Assembly::fePhi<VectorValue<Real>>(FEType type) const
@@ -4786,3 +4812,27 @@ template void coordTransformFactor<ADPoint, ADReal>(const SubProblem & s,
                                                     const ADPoint & point,
                                                     ADReal & factor,
                                                     SubdomainID neighbor_sub_id);
+template void coordTransformFactor<Point, Real>(const MooseMesh & mesh,
+                                                SubdomainID sub_id,
+                                                const Point & point,
+                                                Real & factor,
+                                                SubdomainID neighbor_sub_id);
+template void coordTransformFactor<ADPoint, ADReal>(const MooseMesh & mesh,
+                                                    SubdomainID sub_id,
+                                                    const ADPoint & point,
+                                                    ADReal & factor,
+                                                    SubdomainID neighbor_sub_id);
+
+template <>
+const MooseArray<MooseADWrapper<Point, false>> &
+Assembly::genericQPoints<false>() const
+{
+  return qPoints();
+}
+
+template <>
+const MooseArray<MooseADWrapper<Point, true>> &
+Assembly::genericQPoints<true>() const
+{
+  return adQPoints();
+}

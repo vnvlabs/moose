@@ -8,7 +8,7 @@ to be a cylinder that is concentric to the enclosing cylinder. Geometry informat
 is provided by boundary_radius and cylinder_radius parameters. The mesh is not queried for
 geometric information.
 
-!listing radiative_bc_cyl.i block=BCs/radiative_bc
+!listing radiative_bcs/radiative_bc_cyl.i block=BCs/radiative_bc
 
 
 !syntax parameters /BCs/InfiniteCylinderRadiativeBC

@@ -250,6 +250,7 @@ class TestHarness:
         checks = {}
         checks['platform'] = util.getPlatforms()
         checks['submodules'] = util.getInitializedSubmodules(self.run_tests_dir)
+        checks['installed'] = util.checkInstalled(self.run_tests_dir)
         checks['exe_objects'] = None # This gets calculated on demand
         checks['registered_apps'] = None # This gets extracted on demand
 
@@ -260,6 +261,7 @@ class TestHarness:
             checks['petsc_version'] = 'N/A'
             checks['petsc_version_release'] = 'N/A'
             checks['slepc_version'] = 'N/A'
+            checks['exodus_version'] = 'N/A'
             checks['library_mode'] = set(['ALL'])
             checks['mesh_mode'] = set(['ALL'])
             checks['ad_mode'] = set(['ALL'])
@@ -291,6 +293,7 @@ class TestHarness:
             checks['petsc_version'] = util.getPetscVersion(self.libmesh_dir)
             checks['petsc_version_release'] = util.getLibMeshConfigOption(self.libmesh_dir, 'petsc_version_release')
             checks['slepc_version'] = util.getSlepcVersion(self.libmesh_dir)
+            checks['exodus_version'] = util.getExodusVersion(self.libmesh_dir)
             checks['library_mode'] = util.getSharedOption(self.libmesh_dir)
             checks['mesh_mode'] = util.getLibMeshConfigOption(self.libmesh_dir, 'mesh_mode')
             checks['ad_mode'] = util.getMooseConfigOption(self.moose_dir, 'ad_mode')
@@ -411,7 +414,7 @@ class TestHarness:
                             # Get the testers for this test
                             testers = self.createTesters(dirpath, file, find_only, testroot_params)
 
-                            # Schedule the testers for immediate execution
+                            # Schedule the testers (non blocking)
                             self.scheduler.schedule(testers)
 
                             # record these launched test to prevent this test from launching again
@@ -421,7 +424,7 @@ class TestHarness:
                             os.chdir(saved_cwd)
                             sys.path.pop()
 
-            # Wait for all the tests to complete
+            # Wait for all the tests to complete (blocking)
             self.scheduler.waitFinish()
 
             # TODO: this DOES NOT WORK WITH MAX FAILES (max failes is considered a scheduler error at the moment)
@@ -976,6 +979,7 @@ class TestHarness:
         parser.add_argument('--check-input', action='store_true', dest='check_input', help='Run check_input (syntax) tests only')
         parser.add_argument('--no-check-input', action='store_true', dest='no_check_input', help='Do not run check_input (syntax) tests')
         parser.add_argument('--spec-file', action='store', type=str, dest='spec_file', help='Supply a path to the tests spec file to run the tests found therein. Or supply a path to a directory in which the TestHarness will search for tests. You can further alter which tests spec files are found through the use of -i and --re')
+        parser.add_argument('-C', '--test-root', nargs=1, metavar='dir', type=str, dest='spec_file', help='Tell the TestHarness to search for test spec files at this location.')
         parser.add_argument('-d', '--pedantic-checks', action='store_true', dest='pedantic_checks', help="Run pedantic checks of the Testers' file writes looking for race conditions.")
 
         # Options that pass straight through to the executable

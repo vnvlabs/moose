@@ -14,11 +14,6 @@
 #include "libmesh/enum_order.h"
 #include "libmesh/enum_quadrature_type.h"
 
-class SetupQuadratureAction;
-
-template <>
-InputParameters validParams<SetupQuadratureAction>();
-
 /**
  * Sets the quadrature
  */
@@ -38,5 +33,5 @@ protected:
   Order _side_order;
   const std::vector<SubdomainID> & _custom_blocks;
   const std::vector<std::string> & _custom_orders;
+  const bool _allow_negative_qweights;
 };
-

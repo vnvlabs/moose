@@ -85,8 +85,6 @@ addAdvancedOutputParams(InputParameters & params)
 }
 }
 
-defineLegacyParams(AdvancedOutput);
-
 InputParameters
 AdvancedOutput::validParams()
 {
@@ -420,7 +418,7 @@ AdvancedOutput::initAvailableLists()
       for (unsigned int i = 0; i < var.count(); ++i)
       {
         VariableName vname = var_name;
-        if (var.count() > 1)
+        if (var.isArray())
           vname = SubProblem::arrayVariableComponent(var_name, i);
 
         if (type.order == CONSTANT && type.family != MONOMIAL_VEC)
@@ -428,20 +426,22 @@ AdvancedOutput::initAvailableLists()
         else if (type.family == NEDELEC_ONE || type.family == LAGRANGE_VEC ||
                  type.family == MONOMIAL_VEC)
         {
+          const auto geom_type =
+              ((type.family == MONOMIAL_VEC) && (type.order == CONSTANT)) ? "elemental" : "nodal";
           switch (_es_ptr->get_mesh().spatial_dimension())
           {
             case 0:
             case 1:
-              _execute_data["nodal"].available.insert(vname);
+              _execute_data[geom_type].available.insert(vname);
               break;
             case 2:
-              _execute_data["nodal"].available.insert(vname + "_x");
-              _execute_data["nodal"].available.insert(vname + "_y");
+              _execute_data[geom_type].available.insert(vname + "_x");
+              _execute_data[geom_type].available.insert(vname + "_y");
               break;
             case 3:
-              _execute_data["nodal"].available.insert(vname + "_x");
-              _execute_data["nodal"].available.insert(vname + "_y");
-              _execute_data["nodal"].available.insert(vname + "_z");
+              _execute_data[geom_type].available.insert(vname + "_x");
+              _execute_data[geom_type].available.insert(vname + "_y");
+              _execute_data[geom_type].available.insert(vname + "_z");
               break;
           }
         }
@@ -505,7 +505,7 @@ AdvancedOutput::initShowHideLists(const std::vector<VariableName> & show,
       for (unsigned int i = 0; i < var.count(); ++i)
       {
         VariableName vname = var_name;
-        if (var.count() > 1)
+        if (var.isArray())
           vname = SubProblem::arrayVariableComponent(var_name, i);
 
         if (type.order == CONSTANT)
@@ -513,20 +513,22 @@ AdvancedOutput::initShowHideLists(const std::vector<VariableName> & show,
         else if (type.family == NEDELEC_ONE || type.family == LAGRANGE_VEC ||
                  type.family == MONOMIAL_VEC)
         {
+          const auto geom_type =
+              ((type.family == MONOMIAL_VEC) && (type.order == CONSTANT)) ? "elemental" : "nodal";
           switch (_es_ptr->get_mesh().spatial_dimension())
           {
             case 0:
             case 1:
-              _execute_data["nodal"].show.insert(vname);
+              _execute_data[geom_type].show.insert(vname);
               break;
             case 2:
-              _execute_data["nodal"].show.insert(vname + "_x");
-              _execute_data["nodal"].show.insert(vname + "_y");
+              _execute_data[geom_type].show.insert(vname + "_x");
+              _execute_data[geom_type].show.insert(vname + "_y");
               break;
             case 3:
-              _execute_data["nodal"].show.insert(vname + "_x");
-              _execute_data["nodal"].show.insert(vname + "_y");
-              _execute_data["nodal"].show.insert(vname + "_z");
+              _execute_data[geom_type].show.insert(vname + "_x");
+              _execute_data[geom_type].show.insert(vname + "_y");
+              _execute_data[geom_type].show.insert(vname + "_z");
               break;
           }
         }
@@ -558,7 +560,7 @@ AdvancedOutput::initShowHideLists(const std::vector<VariableName> & show,
       for (unsigned int i = 0; i < var.count(); ++i)
       {
         VariableName vname = var_name;
-        if (var.count() > 1)
+        if (var.isArray())
           vname = SubProblem::arrayVariableComponent(var_name, i);
 
         if (type.order == CONSTANT)
@@ -689,7 +691,7 @@ AdvancedOutput::addValidParams(InputParameters & params, const MultiMooseEnum & 
                           "Flag indicating if material properties should be output");
     params.addParam<std::vector<std::string>>(
         "show_material_properties",
-        "List of materialproperties that should be written to the output");
+        "List of material properties that should be written to the output");
     params.addParamNamesToGroup("output_material_properties show_material_properties", "Materials");
   }
 

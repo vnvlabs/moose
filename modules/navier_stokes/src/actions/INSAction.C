@@ -137,6 +137,9 @@ INSAction::validParams()
   params.addParam<RealVectorValue>("initial_velocity",
                                    RealVectorValue(1e-15, 1e-15, 1e-15),
                                    "The initial velocity, assumed constant everywhere");
+  params.addParam<std::string>("pressure_variable_name",
+                               "A name for the pressure variable. If this is not provided, a "
+                               "sensible default will be used.");
 
   params.addParamNamesToGroup(
       "equation_type block gravity dynamic_viscosity_name density_name boussinesq_approximation "
@@ -174,7 +177,10 @@ INSAction::INSAction(InputParameters parameters)
     _fe_type(Utility::string_to_enum<Order>(getParam<MooseEnum>("order")),
              Utility::string_to_enum<FEFamily>(getParam<MooseEnum>("family"))),
     _use_ad(getParam<bool>("use_ad")),
-    _temperature_variable_name(getParam<VariableName>("temperature_variable"))
+    _temperature_variable_name(getParam<VariableName>("temperature_variable")),
+    _pressure_variable_name(isParamValid("pressure_variable_name")
+                                ? getParam<std::string>("pressure_variable_name")
+                                : "p")
 {
   if (_pressure_function.size() != _pressure_boundary.size())
     paramError("pressure_function",
@@ -268,7 +274,7 @@ INSAction::act()
 
     // FIXME: need to check boundaries are non-overlapping and enclose the blocks
 
-    auto var_type = AddVariableAction::determineType(_fe_type, 1);
+    auto var_type = AddVariableAction::variableType(_fe_type);
     auto base_params = _factory.getValidParams(var_type);
     if (_block_ids.size() != 0)
       for (const SubdomainID & id : _block_ids)
@@ -286,7 +292,7 @@ INSAction::act()
       if (_fe_type.family != LAGRANGE)
         mooseError("AD has to use LAGRANGE variable family");
       FEType fetype(_fe_type.order.get_order(), LAGRANGE_VEC);
-      auto vec_var_type = AddVariableAction::determineType(fetype, 1);
+      auto vec_var_type = AddVariableAction::variableType(fetype);
       auto adparams = _factory.getValidParams(vec_var_type);
       if (_block_ids.size() != 0)
         for (const SubdomainID & id : _block_ids)
@@ -338,7 +344,7 @@ INSAction::act()
       order -= 1;
     params.set<MooseEnum>("order") = order;
     params.set<std::vector<Real>>("scaling") = {getParam<Real>("pressure_scaling")};
-    _problem->addVariable(var_type, NS::pressure, params);
+    _problem->addVariable(var_type, _pressure_variable_name, params);
   }
 
   if (_current_task == "add_navier_stokes_ics")
@@ -397,7 +403,7 @@ INSAction::act()
     if (pvalue != 0)
     {
       InputParameters params = _factory.getValidParams("ConstantIC");
-      params.set<VariableName>("variable") = NS::pressure;
+      params.set<VariableName>("variable") = _pressure_variable_name;
       params.set<Real>("value") = pvalue;
       _problem->addInitialCondition("ConstantIC", "pressure_ic", params);
     }
@@ -442,17 +448,19 @@ INSAction::act()
 
   if (_current_task == "add_material" && _use_ad)
   {
-    auto set_common_parameters = [&](InputParameters & params) {
+    auto set_common_parameters = [&](InputParameters & params)
+    {
       if (_blocks.size() > 0)
         params.set<std::vector<SubdomainName>>("block") = _blocks;
       params.set<CoupledName>("velocity") = {NS::velocity};
-      params.set<CoupledName>("pressure") = {NS::pressure};
+      params.set<CoupledName>(NS::pressure) = {_pressure_variable_name};
       params.set<MaterialPropertyName>("mu_name") =
           getParam<MaterialPropertyName>("dynamic_viscosity_name");
       params.set<MaterialPropertyName>("rho_name") = getParam<MaterialPropertyName>("density_name");
     };
 
-    auto set_common_3eqn_parameters = [&](InputParameters & params) {
+    auto set_common_3eqn_parameters = [&](InputParameters & params)
+    {
       set_common_parameters(params);
       params.set<CoupledName>("temperature") = {_temperature_variable_name};
       params.set<MaterialPropertyName>("cp_name") =
@@ -556,7 +564,7 @@ INSAction::addINSMass()
     {
       const std::string kernel_type = "INSADMass";
       InputParameters params = _factory.getValidParams(kernel_type);
-      params.set<NonlinearVariableName>("variable") = NS::pressure;
+      params.set<NonlinearVariableName>("variable") = _pressure_variable_name;
       if (_blocks.size() > 0)
         params.set<std::vector<SubdomainName>>("block") = _blocks;
       _problem->addKernel(kernel_type, "ins_mass", params);
@@ -566,7 +574,7 @@ INSAction::addINSMass()
     {
       const std::string kernel_type = "INSADMassPSPG";
       InputParameters params = _factory.getValidParams(kernel_type);
-      params.set<NonlinearVariableName>("variable") = NS::pressure;
+      params.set<NonlinearVariableName>("variable") = _pressure_variable_name;
       params.set<MaterialPropertyName>("rho_name") = getParam<MaterialPropertyName>("density_name");
       if (_blocks.size() > 0)
         params.set<std::vector<SubdomainName>>("block") = _blocks;
@@ -577,7 +585,7 @@ INSAction::addINSMass()
   {
     const std::string kernel_type = "INSMass";
     InputParameters params = _factory.getValidParams(kernel_type);
-    params.set<NonlinearVariableName>("variable") = NS::pressure;
+    params.set<NonlinearVariableName>("variable") = _pressure_variable_name;
     setKernelCommonParams(params);
     params.set<bool>("pspg") = getParam<bool>("pspg");
     _problem->addKernel(kernel_type, "ins_mass", params);
@@ -630,7 +638,7 @@ INSAction::addINSMomentum()
       if (_blocks.size() > 0)
         params.set<std::vector<SubdomainName>>("block") = _blocks;
       params.set<bool>("integrate_p_by_parts") = getParam<bool>("integrate_p_by_parts");
-      params.set<CoupledName>("p") = {NS::pressure};
+      params.set<CoupledName>(NS::pressure) = {_pressure_variable_name};
       _problem->addKernel(kernel_type, "ins_momentum_pressure", params);
     }
 
@@ -962,7 +970,7 @@ INSAction::addINSPressureBC()
     {
       InputParameters params = _factory.getValidParams("FunctionDirichletBC");
       params.set<FunctionName>("function") = func;
-      params.set<NonlinearVariableName>("variable") = NS::pressure;
+      params.set<NonlinearVariableName>("variable") = _pressure_variable_name;
       params.set<std::vector<BoundaryName>>("boundary") = {_pressure_boundary[i]};
       _problem->addBoundaryCondition(
           "FunctionDirichletBC", NS::pressure + _pressure_boundary[i], params);
@@ -971,7 +979,7 @@ INSAction::addINSPressureBC()
     {
       InputParameters params = _factory.getValidParams("DirichletBC");
       params.set<Real>("value") = val;
-      params.set<NonlinearVariableName>("variable") = NS::pressure;
+      params.set<NonlinearVariableName>("variable") = _pressure_variable_name;
       params.set<std::vector<BoundaryName>>("boundary") = {_pressure_boundary[i]};
       _problem->addBoundaryCondition("DirichletBC", NS::pressure + _pressure_boundary[i], params);
     }
@@ -983,7 +991,7 @@ INSAction::addINSPinnedPressureBC()
 {
   InputParameters params = _factory.getValidParams("DirichletBC");
   params.set<Real>("value") = 0;
-  params.set<NonlinearVariableName>("variable") = NS::pressure;
+  params.set<NonlinearVariableName>("variable") = _pressure_variable_name;
   params.set<std::vector<BoundaryName>>("boundary") = {_pinned_node};
   _problem->addBoundaryCondition("DirichletBC", "pressure_pin", params);
 }
@@ -999,7 +1007,7 @@ INSAction::addINSNoBCBC()
     if (_blocks.size() > 0)
       params.set<std::vector<SubdomainName>>("block") = _blocks;
     params.set<bool>("integrate_p_by_parts") = getParam<bool>("integrate_p_by_parts");
-    params.set<CoupledName>("p") = {NS::pressure};
+    params.set<CoupledName>(NS::pressure) = {_pressure_variable_name};
     params.set<MooseEnum>("viscous_form") = (getParam<bool>("laplace") ? "laplace" : "traction");
     _problem->addBoundaryCondition(kernel_type, "ins_momentum_nobc_bc", params);
   }
@@ -1034,7 +1042,7 @@ INSAction::setKernelCommonParams(InputParameters & params)
     params.set<CoupledName>("v") = {NS::velocity_y};
   if (_dim >= 3)
     params.set<CoupledName>("w") = {NS::velocity_z};
-  params.set<CoupledName>("p") = {NS::pressure};
+  params.set<CoupledName>(NS::pressure) = {_pressure_variable_name};
   params.set<RealVectorValue>("gravity") = getParam<RealVectorValue>("gravity");
   params.set<MaterialPropertyName>("mu_name") =
       getParam<MaterialPropertyName>("dynamic_viscosity_name");
@@ -1056,7 +1064,7 @@ INSAction::setNoBCCommonParams(InputParameters & params)
     params.set<CoupledName>("v") = {NS::velocity_y};
   if (_dim >= 3)
     params.set<CoupledName>("w") = {NS::velocity_z};
-  params.set<CoupledName>("p") = {NS::pressure};
+  params.set<CoupledName>(NS::pressure) = {_pressure_variable_name};
   params.set<RealVectorValue>("gravity") = getParam<RealVectorValue>("gravity");
   params.set<MaterialPropertyName>("mu_name") =
       getParam<MaterialPropertyName>("dynamic_viscosity_name");

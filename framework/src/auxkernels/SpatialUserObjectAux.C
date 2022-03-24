@@ -12,8 +12,6 @@
 
 registerMooseObject("MooseApp", SpatialUserObjectAux);
 
-defineLegacyParams(SpatialUserObjectAux);
-
 InputParameters
 SpatialUserObjectAux::validParams()
 {
@@ -38,5 +36,5 @@ SpatialUserObjectAux::computeValue()
   if (isNodal())
     return _user_object.spatialValue(*_current_node);
   else
-    return _user_object.spatialValue(_current_elem->centroid());
+    return _user_object.spatialValue(_current_elem->vertex_average());
 }

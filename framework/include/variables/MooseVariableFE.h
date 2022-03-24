@@ -30,13 +30,6 @@ typedef MooseVariableFE<Real> MooseVariable;
 typedef MooseVariableFE<RealVectorValue> VectorMooseVariable;
 typedef MooseVariableFE<RealEigenVector> ArrayMooseVariable;
 
-template <>
-InputParameters validParams<MooseVariable>();
-template <>
-InputParameters validParams<VectorMooseVariable>();
-template <>
-InputParameters validParams<ArrayMooseVariable>();
-
 /**
  * Class for stuff related to variables
  *
@@ -87,7 +80,15 @@ public:
   using OutputData = typename MooseVariableField<OutputType>::OutputData;
   using DoFValue = typename MooseVariableField<OutputType>::DoFValue;
 
+  using FunctorArg = typename Moose::ADType<OutputType>::type;
+  using typename Moose::FunctorBase<FunctorArg>::FunctorReturnType;
+  using typename Moose::FunctorBase<FunctorArg>::ValueType;
+  using typename Moose::FunctorBase<FunctorArg>::GradientType;
+  using typename Moose::FunctorBase<FunctorArg>::DotType;
+
   MooseVariableFE(const InputParameters & parameters);
+
+  static InputParameters validParams();
 
   void clearDofIndices() override;
 
@@ -149,6 +150,7 @@ public:
 
   bool isNodal() const override { return _element_data->isNodal(); }
   Moose::VarFieldType fieldType() const override;
+  bool isArray() const override;
   bool isVector() const override;
   const Node * const & node() const { return _element_data->node(); }
   const dof_id_type & nodalDofIndex() const override { return _element_data->nodalDofIndex(); }
@@ -262,7 +264,7 @@ public:
   // damping
   const FieldVariableValue & increment() const { return _element_data->increment(); }
 
-  const FieldVariableValue & vectorTagValue(TagID tag) const
+  const FieldVariableValue & vectorTagValue(TagID tag) const override
   {
     return _element_data->vectorTagValue(tag);
   }
@@ -342,6 +344,14 @@ public:
   {
     return _element_data->adUDot();
   }
+  const ADTemplateVariableValue<OutputType> & adUDotDot() const override
+  {
+    return _element_data->adUDotDot();
+  }
+  const ADTemplateVariableGradient<OutputType> & adGradSlnDot() const override
+  {
+    return _element_data->adGradSlnDot();
+  }
 
   /// neighbor AD
   const ADTemplateVariableValue<OutputType> & adSlnNeighbor() const override
@@ -359,6 +369,14 @@ public:
   const ADTemplateVariableValue<OutputType> & adUDotNeighbor() const override
   {
     return _neighbor_data->adUDot();
+  }
+  const ADTemplateVariableValue<OutputType> & adUDotDotNeighbor() const override
+  {
+    return _neighbor_data->adUDotDot();
+  }
+  const ADTemplateVariableGradient<OutputType> & adGradSlnNeighborDot() const override
+  {
+    return _neighbor_data->adGradSlnDot();
   }
 
   /// element dots
@@ -641,7 +659,7 @@ public:
     return _element_data->nodalValueArray(Moose::Older);
   }
 
-  const DoFValue & nodalVectorTagValue(TagID tag) const;
+  const DoFValue & nodalVectorTagValue(TagID tag) const override;
   const DoFValue & nodalMatrixTagValue(TagID tag) const;
 
   const typename Moose::ADType<OutputType>::type & adNodalValue() const;
@@ -662,6 +680,33 @@ protected:
 
   /// Holder for all the data associated with the lower dimeensional element
   std::unique_ptr<MooseVariableData<OutputType>> _lower_data;
+
+private:
+  using MooseVariableField<OutputType>::evaluate;
+  using ElemArg = Moose::ElemArg;
+  using ElemFromFaceArg = Moose::ElemFromFaceArg;
+  using ElemQpArg = Moose::ElemQpArg;
+  using ElemSideQpArg = Moose::ElemSideQpArg;
+  using FaceArg = Moose::FaceArg;
+  using SingleSidedFaceArg = Moose::SingleSidedFaceArg;
+
+  ValueType evaluate(const ElemArg &, unsigned int) const override final
+  {
+    mooseError("Elem functor overload not yet implemented for finite element variables");
+  }
+  ValueType evaluate(const ElemFromFaceArg &, unsigned int) const override final
+  {
+    mooseError(
+        "Elem-and-face-info functor overload not yet implemented for finite element variables");
+  }
+  ValueType evaluate(const FaceArg &, unsigned int) const override final
+  {
+    mooseError("Face info functor overload not yet implemented for finite element variables");
+  }
+  ValueType evaluate(const SingleSidedFaceArg &, unsigned int) const override final
+  {
+    mooseError("Face info functor overload not yet implemented for finite element variables");
+  }
 };
 
 template <typename OutputType>

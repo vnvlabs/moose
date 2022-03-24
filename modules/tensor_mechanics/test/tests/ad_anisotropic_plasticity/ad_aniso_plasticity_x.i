@@ -49,6 +49,18 @@
     order = CONSTANT
     family = MONOMIAL
   []
+  [plastic_strain_zz]
+    order = CONSTANT
+    family = MONOMIAL
+  []
+  [stress_yy]
+    order = CONSTANT
+    family = MONOMIAL
+  []
+  [elastic_strain_yy]
+    order = CONSTANT
+    family = MONOMIAL
+  []
 []
 
 [AuxKernels]
@@ -79,10 +91,31 @@
     index_i = 1
     index_j = 1
   []
+  [plasticity_strain_zz]
+    type = ADRankTwoAux
+    rank_two_tensor = trial_plasticity_plastic_strain
+    variable = plastic_strain_zz
+    index_i = 2
+    index_j = 2
+  []
   [sigma_xx]
     type = ADRankTwoAux
     rank_two_tensor = stress
     variable = stress_xx
+    index_i = 1
+    index_j = 1
+  []
+  [elastic_strain_yy]
+    type = ADRankTwoAux
+    rank_two_tensor = elastic_strain
+    variable = elastic_strain_yy
+    index_i = 1
+    index_j = 1
+  []
+  [sigma_yy]
+    type = ADRankTwoAux
+    rank_two_tensor = stress
+    variable = stress_yy
     index_i = 1
     index_j = 1
   []
@@ -120,13 +153,17 @@
     absolute_tolerance = 1e-16
   []
 
+  [hill_tensor]
+    type = HillConstants
+    # F G H L M N
+    hill_constants = "0.5829856 0.364424 0.6342174 2.0691375 2.3492325 1.814589"
+    base_name = trial_plasticity
+  []
+
   [trial_plasticity]
     type = ADHillPlasticityStressUpdate
     hardening_constant = 2000.0
     yield_stress = 0.001 # was 200 for verification
-
-    # F G H L M N
-    hill_constants = "0.5829856 0.364424 0.6342174 2.0691375 2.3492325 1.814589"
     absolute_tolerance = 1e-14
     relative_tolerance = 1e-12
     base_name = trial_plasticity
@@ -220,6 +257,24 @@
     type = NumNonlinearIterations
     outputs = console
   []
+  [plasticity_strain_yy]
+    type = ElementalVariableValue
+    variable = plastic_strain_yy
+    execute_on = 'TIMESTEP_END'
+    elementid = 39
+  []
+  [elastic_strain_yy]
+    type = ElementalVariableValue
+    variable = elastic_strain_yy
+    execute_on = 'TIMESTEP_END'
+    elementid = 39
+  []
+  [sigma_yy]
+    type = ElementalVariableValue
+    variable = stress_yy
+    execute_on = 'TIMESTEP_END'
+    elementid = 39
+  []
   [plasticity_strain_xx]
     type = ElementalVariableValue
     variable = plastic_strain_xx
@@ -235,6 +290,12 @@
   [sigma_xx]
     type = ElementalVariableValue
     variable = stress_xx
+    execute_on = 'TIMESTEP_END'
+    elementid = 39
+  []
+  [plasticity_strain_zz]
+    type = ElementalVariableValue
+    variable = plastic_strain_zz
     execute_on = 'TIMESTEP_END'
     elementid = 39
   []

@@ -11,14 +11,12 @@
 
 registerMooseObject("MooseApp", LayeredSideIntegral);
 
-defineLegacyParams(LayeredSideIntegral);
-
 InputParameters
 LayeredSideIntegral::validParams()
 {
   InputParameters params = SideIntegralVariableUserObject::validParams();
   params += LayeredBase::validParams();
-  params.addClassDescription("Computes volume integral of a variable storing partial sums for the "
+  params.addClassDescription("Computes surface integral of a variable storing partial sums for the "
                              "specified number of intervals in a direction (x,y,z).");
   return params;
 }
@@ -44,7 +42,7 @@ LayeredSideIntegral::execute()
 {
   Real integral_value = computeIntegral();
 
-  unsigned int layer = getLayer(_current_elem->centroid());
+  unsigned int layer = getLayer(_current_elem->vertex_average());
 
   setLayerValue(layer, getLayerValue(layer) + integral_value);
 }
@@ -60,4 +58,19 @@ LayeredSideIntegral::threadJoin(const UserObject & y)
 {
   SideIntegralVariableUserObject::threadJoin(y);
   LayeredBase::threadJoin(y);
+}
+
+const std::vector<Point>
+LayeredSideIntegral::spatialPoints() const
+{
+  std::vector<Point> points;
+
+  for (const auto & l : _layer_centers)
+  {
+    Point pt(0.0, 0.0, 0.0);
+    pt(_direction) = l;
+    points.push_back(pt);
+  }
+
+  return points;
 }

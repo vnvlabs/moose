@@ -108,7 +108,7 @@ TabulatedFluidProperties::initialSetup()
   std::ifstream file(_file_name.c_str());
   if (file.good())
   {
-    _console << name() + ": Reading tabulated properties from " << _file_name << "\n";
+    _console << name() + ": Reading tabulated properties from " << _file_name << std::endl;
     _csv_reader.read();
 
     const std::vector<std::string> & column_names = _csv_reader.getNames();
@@ -233,6 +233,8 @@ TabulatedFluidProperties::initialSetup()
     if (_save_file)
       _console << name() + ": Writing tabulated data to " << _file_name << "\n";
 
+    _console << std::flush;
+
     generateTabulatedData();
 
     // Write tabulated data to file
@@ -295,7 +297,7 @@ TabulatedFluidProperties::initialSetup()
   {
     reshapeData2D(_num_p, _num_T, _properties[i], data_matrix);
     _property_ipol[i] =
-        libmesh_make_unique<BicubicInterpolation>(_pressure, _temperature, data_matrix);
+        std::make_unique<BicubicInterpolation>(_pressure, _temperature, data_matrix);
   }
 }
 
@@ -536,6 +538,9 @@ TabulatedFluidProperties::writeTabulatedData(std::string file_name)
           file_out << ", " << _properties[i][p * _num_T + t];
         file_out << "\n";
       }
+
+    file_out << std::flush;
+    file_out.close();
   }
 }
 

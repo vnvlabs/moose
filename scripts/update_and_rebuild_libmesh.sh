@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+#* This file is part of the MOOSE framework
+#* https://www.mooseframework.org
+#*
+#* All rights reserved, see COPYRIGHT for full restrictions
+#* https://github.com/idaholab/moose/blob/master/COPYRIGHT
+#*
+#* Licensed under LGPL 2.1, please see LICENSE for details
+#* https://www.gnu.org/licenses/lgpl-2.1.html
 
 DIAGNOSTIC_LOG="libmesh_diagnostic.log"
 
@@ -68,7 +76,7 @@ else
 fi
 
 # If the user set METHOD, but not METHODS, we'll let METHOD override
-# METHODS in this script.
+# METHODS in this script. Otherwise, METHODS has a default in configure_libmesh.sh
 if [[ -n "$METHOD" && -z "$METHODS" ]]; then
   export METHODS="$METHOD"
 fi
@@ -78,9 +86,6 @@ VTK_OPTIONS=""
 if [[ -n "$VTKLIB_DIR" && -n "$VTKINCLUDE_DIR" ]]; then
   export VTK_OPTIONS="--with-vtk-lib=$VTKLIB_DIR --with-vtk-include=$VTKINCLUDE_DIR"
 fi
-
-# Finally, if METHODS is still not set, set a default value.
-export METHODS=${METHODS:="opt oprof dbg"}
 
 cd $SCRIPT_DIR/..
 
@@ -137,11 +142,13 @@ if [ -z "$go_fast" ]; then
   mkdir -p $LIBMESH_BUILD_DIR
   cd $LIBMESH_BUILD_DIR
 
-  if [[ -n "$INSTALL_BINARY" ]]; then
-    echo "INFO: INSTALL_BINARY set"
-  else
-    export INSTALL_BINARY="${SCRIPT_DIR}/../libmesh/build-aux/install-sh -C"
-  fi
+  # The definition of INSTALL_BINARY, previously located here, is now located within the `configure_libmesh.sh`
+  # script used below. This change was made to fixup a netCDF configure error related to supposed changes
+  # in the environment from a previous run (even if the configure was the first performed). That was somehow
+  # resolved by placing the INSTALL configure argument at the end of the configure line within the script. It
+  # was determined that the INSTALL_BINARY definition should be placed within the function, to lessen confusion,
+  # and that an explanation for longtime users be placed here for future reference. See #19230 for an example of
+  # the error.
 
   # This is a temprorary fix, see #15120
   if [[ -n "$CPPFLAGS" ]]; then
@@ -152,6 +159,7 @@ if [ -z "$go_fast" ]; then
     export CXXFLAGS=${CXXFLAGS//-O2/}
   fi
 
+<<<<<<< HEAD
   $SCRIPT_DIR/../libmesh/configure INSTALL="${INSTALL_BINARY}" \
                                    --with-methods="${METHODS}" \
                                    --prefix=$LIBMESH_DIR \
@@ -166,6 +174,12 @@ if [ -z "$go_fast" ]; then
                                    --enable-petsc-hypre-required \
                                    --enable-metaphysicl-required \
                                    $DISABLE_TIMESTAMPS $VTK_OPTIONS $* | tee -a "$SCRIPT_DIR/$DIAGNOSTIC_LOG" || exit 1
+=======
+  source $SCRIPT_DIR/configure_libmesh.sh
+  SRC_DIR=${SCRIPT_DIR}/../libmesh configure_libmesh $DISABLE_TIMESTAMPS \
+                                                     $VTK_OPTIONS \
+                                                     $* | tee -a "$SCRIPT_DIR/$DIAGNOSTIC_LOG" || exit 1
+>>>>>>> 71e154c564a08e6b29f64374f094721c700d8141
 else
   # The build directory must already exist: you can't do --fast for
   # an initial build.

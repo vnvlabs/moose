@@ -10,7 +10,6 @@ import os
 import datetime
 import mooseutils
 import MooseDocs
-import urllib.parse
 from ..base import components
 from ..common import exceptions
 from ..tree import tokens, html
@@ -43,12 +42,12 @@ class CommitCommand(command.CommandComponent):
         settings = command.CommandComponent.defaultSettings()
         return settings
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         content = info['inline'] if 'inline' in info else info['block']
         if content:
             raise exceptions.MooseDocsException("Content is not supported for the 'git commit' command.")
 
-        if not mooseutils.is_git_repo():
+        if not mooseutils.git_is_repo():
             raise exceptions.MooseDocsException("The current working directory is not a git repository.")
 
         core.Word(parent, content=mooseutils.git_commit())
@@ -64,20 +63,20 @@ class SubmoduleHashCommand(command.CommandComponent):
         settings['url'] = (None, "If provided, prefix the hash with the url to create a link.")
         return settings
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         inline = 'inline' in info
         if not inline:
             raise exceptions.MooseDocsException("The '!git submodule-hash' command is an inline level command, use '[!git!submodule-hash](name)' instead.")
 
-        name =  info['inline']
+        name = info['inline']
         status = mooseutils.git_submodule_info(MooseDocs.ROOT_DIR, '--recursive')
         for repo, ginfo in status.items():
             if repo.endswith(name):
-                url = self.settings['url']
+                url = settings['url']
                 if url is None:
                     core.Word(parent, content=ginfo[1])
                 else:
-                    core.Link(parent, url=urllib.parse.urljoin(url, ginfo[1]), string=ginfo[1])
+                    core.Link(parent, url=f"{url.rstrip('/')}/{ginfo[1]}", string=ginfo[1])
                 return parent
 
         msg = "The submodule '{}' was not located, the available submodules are: {}"

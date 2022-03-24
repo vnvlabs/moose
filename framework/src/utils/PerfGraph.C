@@ -12,142 +12,200 @@
 // MOOSE Includes
 #include "PerfGuard.h"
 #include "MooseError.h"
+#include "PerfGraphLivePrint.h"
+#include "MooseApp.h"
 
 // Note: do everything we can to make sure this only gets #included
 // in the .C file... this is a heavily templated header that we
 // don't want to expose to EVERY file in MOOSE...
 #include "VariadicTable.h"
 
-// libMesh Includes
-#include "libmesh/auto_ptr.h"
-
 // System Includes
 #include <chrono>
+#include <memory>
 
-const std::string PerfGraph::ROOT_NAME = "Root";
-
-PerfGraph::PerfGraph(const std::string & root_name)
-  : _root_name(root_name), _current_position(0), _active(true)
+PerfGraph::PerfGraph(const std::string & root_name,
+                     MooseApp & app,
+                     const bool live_all,
+                     const bool perf_graph_live)
+  : ConsoleStreamInterface(app),
+    _moose_app(app),
+    _live_print_all(live_all),
+    _disable_live_print(!perf_graph_live),
+    _perf_graph_registry(moose::internal::getPerfGraphRegistry()),
+    _pid(app.comm().rank()),
+    _root_name(root_name),
+    _root_node_id(_perf_graph_registry.registerSection(root_name, 0)),
+    _root_node(std::make_unique<PerfNode>(_root_node_id)),
+    _current_position(-1),
+    _stack(),
+    _execution_list_begin(0),
+    _execution_list_end(0),
+    _active(true),
+    _live_print_active(true),
+    _destructing(false),
+    _live_print_time_limit(5.0),
+    _live_print_mem_limit(100),
+    _live_print(std::make_unique<PerfGraphLivePrint>(*this, app))
 {
-  // Not done in the initialization list on purpose because this object needs to be complete first
-  _root_node = libmesh_make_unique<PerfNode>(registerSection(ROOT_NAME, 0));
-
-  // Set the initial time
-  _root_node->setStartTime(std::chrono::steady_clock::now());
-
-  // Add a call
-  _root_node->incrementNumCalls();
-
-  _stack[0] = _root_node.get();
-}
-
-unsigned int
-PerfGraph::registerSection(const std::string & section_name, unsigned int level)
-{
-  auto it = _section_name_to_id.lower_bound(section_name);
-
-  // Is it already registered?
-  if (it != _section_name_to_id.end() && it->first == section_name)
-    return it->second;
-
-  // It's not...
-  auto id = _section_name_to_id.size();
-  _section_name_to_id.emplace_hint(it, section_name, id);
-  _id_to_section_name[id] = section_name;
-  _id_to_level[id] = level;
-
-  return id;
-}
-
-const std::string &
-PerfGraph::sectionName(const PerfID id) const
-{
-  auto find_it = _id_to_section_name.find(id);
-
-  if (find_it == _id_to_section_name.end())
-    mooseError("PerfGraph cannot find a section name associated with id: ", id);
-
-  return find_it->second;
-}
-
-unsigned long int
-PerfGraph::getNumCalls(const std::string & section_name)
-{
-  updateTiming();
-
-  auto section_it = _section_time.find(section_name);
-
-  if (section_it == _section_time.end())
+  if (_pid == 0 && !_disable_live_print)
   {
-    // The section exists but has not ran yet, in which case we can return zero
-    if (_section_name_to_id.count(section_name))
-      return 0;
-
-    mooseError(
-        "Unknown section_name: ",
-        section_name,
-        " in PerfGraph::getNumCalls()\nIf you are attempting to retrieve the root use \"Root\".");
+    // Start the printing thread
+    _print_thread = std::thread([this] { this->_live_print->start(); });
   }
 
-  return section_it->second._num_calls;
+  push(_root_node_id);
+}
+
+PerfGraph::~PerfGraph() { disableLivePrint(); }
+
+void
+PerfGraph::disableLivePrint()
+{
+  if (_pid == 0 && !_disable_live_print)
+  {
+    {
+      // Unlike using atomics for execution_thread_end
+      // here we actually lock to ensure that either the print thread
+      // immediately sees that we are destructing or is immediately
+      // notified with the below notification.  Without doing this
+      // it would be possible (but unlikely) for the print thread to
+      // hang for 1 second at the end of execution (which would not be
+      // good anytime you are running lots of fast calculations back-to-back
+      // like during testing or stochastic sampling).
+      std::lock_guard<std::mutex> lock(_destructing_mutex);
+      _destructing = true;
+    }
+
+    _finished_section.notify_one();
+
+    _print_thread.join();
+
+    _disable_live_print = true;
+  }
 }
 
 Real
-PerfGraph::getTime(const TimeType type, const std::string & section_name)
+PerfGraph::sectionData(const DataType type,
+                       const std::string & section_name,
+                       const bool must_exist /* = true */)
 {
-  updateTiming();
+  update();
 
-  auto section_it = _section_time.find(section_name);
+  const auto section_it =
+      _cumulative_section_info.find(section_name == "Root" ? _root_name : section_name);
 
-  if (section_it == _section_time.end())
+  if (section_it == _cumulative_section_info.end())
   {
-    // The section exists but has not ran yet, in which case we can return zero
-    if (_section_name_to_id.count(section_name))
+    if (!must_exist ||                                   // isn't required to exist
+        _perf_graph_registry.sectionExists(section_name) // or, is required to exist and it does
+    )
       return 0;
 
-    mooseError(
-        "Unknown section_name: ",
-        section_name,
-        " in PerfGraph::getTime()\nIf you are attempting to retrieve the root use \"Root\".");
+    mooseError("Unknown PerfGraph section name \"",
+               section_name,
+               "\" in PerfGraph::sectionData().\nIf you are attempting to retrieve the root use "
+               "\"Root\".");
   }
 
-  auto app_time = _section_time_ptrs[0]->_total;
+  const CumulativeSectionInfo & section_info = section_it->second;
+
+  if (type == CALLS)
+    return section_info._num_calls;
+
+  const auto app_time = _cumulative_section_info_ptrs[_root_node_id]->_total;
 
   switch (type)
   {
     case SELF:
-      return section_it->second._self;
+      return section_info._self;
     case CHILDREN:
-      return section_it->second._children;
+      return section_info._children;
     case TOTAL:
-      return section_it->second._total;
+      return section_info._total;
     case SELF_AVG:
-      return section_it->second._self / static_cast<Real>(section_it->second._num_calls);
+      return section_info._self / static_cast<Real>(section_info._num_calls);
     case CHILDREN_AVG:
-      return section_it->second._children / static_cast<Real>(section_it->second._num_calls);
+      return section_info._children / static_cast<Real>(section_info._num_calls);
     case TOTAL_AVG:
-      return section_it->second._total / static_cast<Real>(section_it->second._num_calls);
+      return section_info._total / static_cast<Real>(section_info._num_calls);
     case SELF_PERCENT:
-      return 100. * (section_it->second._self / app_time);
+      return 100. * (section_info._self / app_time);
     case CHILDREN_PERCENT:
-      return 100. * (section_it->second._children / app_time);
+      return 100. * (section_info._children / app_time);
     case TOTAL_PERCENT:
-      return 100. * (section_it->second._total / app_time);
+      return 100. * (section_info._total / app_time);
+    case SELF_MEMORY:
+      return section_info._self_memory;
+    case CHILDREN_MEMORY:
+      return section_info._children_memory;
+    case TOTAL_MEMORY:
+      return section_info._total_memory;
     default:
-      ::mooseError("Unknown TimeType");
+      ::mooseError("Unknown DataType");
   }
+}
+
+void
+PerfGraph::addToExecutionList(const PerfID id,
+                              const IncrementState state,
+                              const std::chrono::time_point<std::chrono::steady_clock> time,
+                              const long int memory)
+{
+  auto & section_increment = _execution_list[_execution_list_end];
+
+  section_increment._id = id;
+  section_increment._state = state;
+  section_increment._time = time;
+  section_increment._memory = memory;
+  section_increment._beginning_num_printed = _console.numPrinted();
+
+  // A note about this next section of code:
+  // It is only EVER run on the main thread - and therefore there can be
+  // no race conditions.  All that is important here is that the print
+  // thread always sees a consistent value for _execution_list_end
+  auto next_execution_list_end = _execution_list_end + 1;
+
+  // Are we at the end of our circular buffer?
+  if (next_execution_list_end >= MAX_EXECUTION_LIST_SIZE)
+    next_execution_list_end = 0;
+
+  // This "release" will synchronize the above memory changes with the
+  // "acquire" in the printing thread
+  // All of the above memory operations will be seen by the
+  // printing thread before the printing thread sees this new value
+  _execution_list_end.store(next_execution_list_end, std::memory_order_release);
 }
 
 void
 PerfGraph::push(const PerfID id)
 {
-  if (!_active)
+  if (!_active && !_live_print_active)
     return;
 
-  auto new_node = _stack[_current_position]->getChild(id);
+  PerfNode * new_node = nullptr;
+
+  if (id == _root_node_id)
+    new_node = _root_node.get();
+  else
+    new_node = _stack[_current_position]->getChild(id);
+
+  MemoryUtils::Stats stats;
+  auto memory_success = MemoryUtils::getMemoryStats(stats);
+
+  long int start_memory = 0;
+
+  if (memory_success)
+    start_memory =
+        MemoryUtils::convertBytes(stats._physical_memory, MemoryUtils::MemUnits::Megabytes);
+  else if (_current_position !=
+           -1) // If we weren't able to get the memory stats, let's just use the parent's
+    start_memory = _stack[_current_position]->startMemory();
 
   // Set the start time
-  new_node->setStartTime(std::chrono::steady_clock::now());
+  auto current_time = std::chrono::steady_clock::now();
+
+  new_node->setStartTimeAndMemory(current_time, start_memory);
 
   // Increment the number of calls
   new_node->incrementNumCalls();
@@ -158,33 +216,77 @@ PerfGraph::push(const PerfID id)
     mooseError("PerfGraph is out of stack space!");
 
   _stack[_current_position] = new_node;
+
+  // Add this to the execution list unless the message is empty - but pre-emted by live_print_all
+  if ((_live_print_active || _live_print_all) && (_pid == 0 && !_disable_live_print) &&
+      (!_perf_graph_registry.readSectionInfo(id)._live_message.empty() || _live_print_all))
+    addToExecutionList(id, IncrementState::STARTED, current_time, start_memory);
 }
 
 void
 PerfGraph::pop()
 {
-  if (!_active)
+  if (!_active && !_live_print_active)
     return;
 
-  _stack[_current_position]->addTime(std::chrono::steady_clock::now());
+  auto current_time = std::chrono::steady_clock::now();
+
+  auto & current_node = _stack[_current_position];
+
+  MemoryUtils::Stats stats;
+  auto memory_success = MemoryUtils::getMemoryStats(stats);
+
+  long int current_memory = 0;
+
+  if (memory_success)
+    current_memory =
+        MemoryUtils::convertBytes(stats._physical_memory, MemoryUtils::MemUnits::Megabytes);
+  else if (_current_position !=
+           -1) // If we weren't able to get the memory stats, let's just use the start memory
+    current_memory = _stack[_current_position]->startMemory();
+
+  current_node->addTimeAndMemory(current_time, current_memory);
 
   _current_position--;
+
+  // Add this to the exection list
+  if ((_live_print_active || _live_print_all) && (_pid == 0 && !_disable_live_print) &&
+      (!_perf_graph_registry.readSectionInfo(current_node->id())._live_message.empty() ||
+       _live_print_all))
+  {
+    addToExecutionList(current_node->id(), IncrementState::FINISHED, current_time, current_memory);
+
+    // Tell the printing thread that a section has finished
+    //
+    // Note: no mutex is needed here because we're using an atomic
+    // in the predicate of the condition_variable in the thread
+    // This is technically correct - but there is a chance of missing a signal
+    // For us - that chance is low and doesn't matter (the timeout will just be hit
+    // instead). So - I would rather not have an extra lock here in the main thread.
+    _finished_section.notify_one();
+  }
 }
 
 void
-PerfGraph::updateTiming()
+PerfGraph::update()
 {
   // First update all of the currently running nodes
   auto now = std::chrono::steady_clock::now();
-  for (unsigned int i = 0; i <= _current_position; i++)
+
+  MemoryUtils::Stats stats;
+  MemoryUtils::getMemoryStats(stats);
+  auto now_memory =
+      MemoryUtils::convertBytes(stats._physical_memory, MemoryUtils::MemUnits::Megabytes);
+
+  for (int i = 0; i <= _current_position; i++)
   {
     auto node = _stack[i];
-    node->addTime(now);
-    node->setStartTime(now);
+    node->addTimeAndMemory(now, now_memory);
+    node->setStartTimeAndMemory(now, now_memory);
   }
 
   // Zero out the entries
-  for (auto & section_time_it : _section_time)
+  for (auto & section_time_it : _cumulative_section_info)
   {
     auto & section_time = section_time_it.second;
 
@@ -192,246 +294,138 @@ PerfGraph::updateTiming()
     section_time._self = 0.;
     section_time._children = 0.;
     section_time._total = 0.;
+    section_time._self_memory = 0;
+    section_time._children_memory = 0;
+    section_time._total_memory = 0.;
   }
 
-  recursivelyFillTime(_root_node.get());
+  recursivelyUpdate(*_root_node);
 
   // Update vector pointing to section times
   // Note: we are doing this _after_ recursively filling
   // because new entries may have been created
-  _section_time_ptrs.resize(_id_to_section_name.size());
+  _cumulative_section_info_ptrs.resize(_perf_graph_registry.numSections());
 
-  for (auto & section_time_it : _section_time)
+  for (auto & section_time_it : _cumulative_section_info)
   {
-    auto id = _section_name_to_id[section_time_it.first];
+    auto id = _perf_graph_registry.sectionID(section_time_it.first);
 
-    _section_time_ptrs[id] = &section_time_it.second;
+    _cumulative_section_info_ptrs[id] = &section_time_it.second;
   }
 }
 
 void
-PerfGraph::recursivelyFillTime(PerfNode * current_node)
+PerfGraph::recursivelyUpdate(const PerfNode & current_node)
 {
-  auto id = current_node->id();
-
-  auto self = std::chrono::duration<double>(current_node->selfTime()).count();
-  auto children = std::chrono::duration<double>(current_node->childrenTime()).count();
-  auto total = std::chrono::duration<double>(current_node->totalTime()).count();
-  auto num_calls = current_node->numCalls();
+  const auto & section_name = _perf_graph_registry.readSectionInfo(current_node.id())._name;
 
   // RHS insertion on purpose
-  auto & section_time = _section_time[_id_to_section_name[id]];
+  auto & section_time = _cumulative_section_info[section_name];
 
-  section_time._self += self;
-  section_time._children += children;
-  section_time._total += total;
-  section_time._num_calls += num_calls;
+  section_time._self += current_node.selfTimeSec();
+  section_time._children += current_node.childrenTimeSec();
+  section_time._total += current_node.totalTimeSec();
+  section_time._num_calls += current_node.numCalls();
 
-  for (auto & child_it : current_node->children())
-    recursivelyFillTime(child_it.second.get());
+  section_time._self_memory += current_node.selfMemory();
+  section_time._children_memory += current_node.childrenMemory();
+  section_time._total_memory += current_node.totalMemory();
+
+  for (auto & child_it : current_node.children())
+    recursivelyUpdate(*child_it.second);
 }
 
-void
-PerfGraph::recursivelyPrintGraph(PerfNode * current_node,
-                                 FullTable & vtable,
-                                 unsigned int level,
-                                 unsigned int current_depth)
+PerfGraph::FullTable
+PerfGraph::treeTable(const unsigned int level, const bool heaviest /* = false */)
 {
-  mooseAssert(_id_to_section_name.find(current_node->id()) != _id_to_section_name.end(),
-              "Unable to find section name!");
+  update();
 
-  auto & name = current_node->id() == 0 ? _root_name : _id_to_section_name[current_node->id()];
+  FullTable vtable({"Section",
+                    "Calls",
+                    "Self(s)",
+                    "Avg(s)",
+                    "%",
+                    "Mem(MB)",
+                    "Total(s)",
+                    "Avg(s)",
+                    "%",
+                    "Mem(MB)"},
+                   10);
 
-  mooseAssert(_id_to_level.find(current_node->id()) != _id_to_level.end(), "Unable to find level!");
-  auto & node_level = _id_to_level[current_node->id()];
+  vtable.setColumnFormat({
+      VariadicTableColumnFormat::AUTO,    // Section Name
+      VariadicTableColumnFormat::AUTO,    // Calls
+      VariadicTableColumnFormat::FIXED,   // Self
+      VariadicTableColumnFormat::FIXED,   // Avg.
+      VariadicTableColumnFormat::PERCENT, // %
+      VariadicTableColumnFormat::AUTO,    // Memory
+      VariadicTableColumnFormat::FIXED,   // Total
+      VariadicTableColumnFormat::FIXED,   // Avg.
+      VariadicTableColumnFormat::PERCENT, // %
+      VariadicTableColumnFormat::AUTO,    // Memory
+  });
 
-  if (node_level <= level)
+  vtable.setColumnPrecision({
+      1, // Section Name
+      0, // Calls
+      3, // Self
+      3, // Avg.
+      2, // %
+      0, // Memory
+      3, // Total
+      3, // Avg.
+      2, // %
+      0, // Memory
+  });
+
+  auto act = [this, &vtable](const PerfNode & node,
+                             const PerfGraphSectionInfo & section_info,
+                             const unsigned int depth)
   {
-    mooseAssert(!_section_time_ptrs.empty(),
-                "updateTiming() must be run before recursivelyPrintGraph!");
+    vtable.addRow(std::string(depth * 2, ' ') + section_info._name,        // Section Name
+                  node.numCalls(),                                         // Calls
+                  node.selfTimeSec(),                                      // Self
+                  node.selfTimeAvg(),                                      // Avg.
+                  100. * node.selfTimeSec() / _root_node->totalTimeSec(),  // %
+                  node.selfMemory(),                                       // Memory
+                  node.totalTimeSec(),                                     // Total
+                  node.totalTimeAvg(),                                     // Avg.
+                  100. * node.totalTimeSec() / _root_node->totalTimeSec(), // %
+                  node.totalMemory());                                     // Memory
+  };
+  treeRecurse(act, level, heaviest);
 
-    auto section = std::string(current_depth * 2, ' ') + name;
-
-    // The total time of the root node
-    auto total_root_time = _section_time_ptrs[0]->_total;
-
-    auto num_calls = current_node->numCalls();
-    auto self = std::chrono::duration<double>(current_node->selfTime()).count();
-    auto self_avg = self / static_cast<Real>(num_calls);
-    auto self_percent = 100. * self / total_root_time;
-
-    auto children = std::chrono::duration<double>(current_node->childrenTime()).count();
-    auto children_avg = children / static_cast<Real>(num_calls);
-    auto children_percent = 100. * children / total_root_time;
-
-    auto total = std::chrono::duration<double>(current_node->totalTime()).count();
-    auto total_avg = total / static_cast<Real>(num_calls);
-    auto total_percent = 100. * total / total_root_time;
-
-    vtable.addRow(section,
-                  num_calls,
-                  self,
-                  self_avg,
-                  self_percent,
-                  children,
-                  children_avg,
-                  children_percent,
-                  total,
-                  total_avg,
-                  total_percent);
-
-    current_depth++;
-  }
-
-  for (auto & child_it : current_node->children())
-    recursivelyPrintGraph(child_it.second.get(), vtable, level, current_depth);
-}
-
-void
-PerfGraph::recursivelyPrintHeaviestGraph(PerfNode * current_node,
-                                         FullTable & vtable,
-                                         unsigned int current_depth)
-{
-  mooseAssert(!_section_time_ptrs.empty(),
-              "updateTiming() must be run before recursivelyPrintGraph!");
-
-  auto & name = current_node->id() == 0 ? _root_name : _id_to_section_name[current_node->id()];
-
-  auto section = std::string(current_depth * 2, ' ') + name;
-
-  // The total time of the root node
-  auto total_root_time = _section_time_ptrs[0]->_total;
-
-  auto num_calls = current_node->numCalls();
-  auto self = std::chrono::duration<double>(current_node->selfTime()).count();
-  auto self_avg = self / static_cast<Real>(num_calls);
-  auto self_percent = 100. * self / total_root_time;
-
-  auto children = std::chrono::duration<double>(current_node->childrenTime()).count();
-  auto children_avg = children / static_cast<Real>(num_calls);
-  auto children_percent = 100. * children / total_root_time;
-
-  auto total = std::chrono::duration<double>(current_node->totalTime()).count();
-  auto total_avg = total / static_cast<Real>(num_calls);
-  auto total_percent = 100. * total / total_root_time;
-
-  vtable.addRow(section,
-                num_calls,
-                self,
-                self_avg,
-                self_percent,
-                children,
-                children_avg,
-                children_percent,
-                total,
-                total_avg,
-                total_percent);
-
-  current_depth++;
-
-  if (!current_node->children().empty())
-  {
-    PerfNode * heaviest_child = nullptr;
-
-    for (auto & child_it : current_node->children())
-    {
-      auto current_child = child_it.second.get();
-
-      if (!heaviest_child || (current_child->totalTime() > heaviest_child->totalTime()))
-        heaviest_child = current_child;
-    }
-
-    recursivelyPrintHeaviestGraph(heaviest_child, vtable, current_depth);
-  }
+  return vtable;
 }
 
 void
 PerfGraph::print(const ConsoleStream & console, unsigned int level)
 {
-  updateTiming();
-
   console << "\nPerformance Graph:\n";
-  FullTable vtable({"Section",
-                    "Calls",
-                    "Self(s)",
-                    "Avg(s)",
-                    "%",
-                    "Children(s)",
-                    "Avg(s)",
-                    "%",
-                    "Total(s)",
-                    "Avg(s)",
-                    "%"},
-                   10);
-
-  vtable.setColumnFormat({VariadicTableColumnFormat::AUTO,      // Section Name
-                          VariadicTableColumnFormat::AUTO,      // Calls
-                          VariadicTableColumnFormat::FIXED,     // Self
-                          VariadicTableColumnFormat::FIXED,     // Avg.
-                          VariadicTableColumnFormat::PERCENT,   // %
-                          VariadicTableColumnFormat::FIXED,     // Children
-                          VariadicTableColumnFormat::FIXED,     // Avg.
-                          VariadicTableColumnFormat::PERCENT,   // %
-                          VariadicTableColumnFormat::FIXED,     // Total
-                          VariadicTableColumnFormat::FIXED,     // Avg.
-                          VariadicTableColumnFormat::PERCENT}); // %
-
-  vtable.setColumnPrecision({1, 0, 3, 3, 2, 3, 3, 2, 3, 3, 2});
-
-  recursivelyPrintGraph(_root_node.get(), vtable, level);
-  vtable.print(console);
+  treeTable(level).print(console);
 }
 
 void
 PerfGraph::printHeaviestBranch(const ConsoleStream & console)
 {
-  updateTiming();
-
   console << "\nHeaviest Branch:\n";
-  FullTable vtable({"Section",
-                    "Calls",
-                    "Self(s)",
-                    "Avg(s)",
-                    "%",
-                    "Children(s)",
-                    "Avg(s)",
-                    "%",
-                    "Total(s)",
-                    "Avg(s)",
-                    "%"},
-                   10);
-
-  vtable.setColumnFormat({VariadicTableColumnFormat::AUTO,      // Section Name
-                          VariadicTableColumnFormat::AUTO,      // Calls
-                          VariadicTableColumnFormat::FIXED,     // Self
-                          VariadicTableColumnFormat::FIXED,     // Avg.
-                          VariadicTableColumnFormat::PERCENT,   // %
-                          VariadicTableColumnFormat::FIXED,     // Children
-                          VariadicTableColumnFormat::FIXED,     // Avg.
-                          VariadicTableColumnFormat::PERCENT,   // %
-                          VariadicTableColumnFormat::FIXED,     // Total
-                          VariadicTableColumnFormat::FIXED,     // Avg.
-                          VariadicTableColumnFormat::PERCENT}); // %
-
-  vtable.setColumnPrecision({1, 0, 3, 3, 2, 3, 3, 2, 3, 3, 2});
-
-  recursivelyPrintHeaviestGraph(_root_node.get(), vtable);
-  vtable.print(console);
+  treeTable(MAX_STACK_SIZE, /* heaviest = */ true).print(console);
 }
 
 void
 PerfGraph::printHeaviestSections(const ConsoleStream & console, const unsigned int num_sections)
 {
-  updateTiming();
+  update();
 
   console << "\nHeaviest Sections:\n";
 
   // Indirect Sort The Self Time
   std::vector<size_t> sorted;
-  Moose::indirectSort(_section_time_ptrs.begin(),
-                      _section_time_ptrs.end(),
+  Moose::indirectSort(_cumulative_section_info_ptrs.begin(),
+                      _cumulative_section_info_ptrs.end(),
                       sorted,
-                      [](SectionTime * lhs, SectionTime * rhs) {
+                      [](CumulativeSectionInfo * lhs, CumulativeSectionInfo * rhs)
+                      {
                         if (lhs && rhs)
                           return lhs->_self > rhs->_self;
 
@@ -443,34 +437,85 @@ PerfGraph::printHeaviestSections(const ConsoleStream & console, const unsigned i
                         return false;
                       });
 
-  HeaviestTable vtable({"Section", "Calls", "Self(s)", "Avg.", "%"}, 10);
+  HeaviestTable vtable({"Section", "Calls", "Self(s)", "Avg.", "%", "Mem(MB)"}, 10);
 
-  vtable.setColumnFormat({VariadicTableColumnFormat::AUTO, // Doesn't matter
-                          VariadicTableColumnFormat::AUTO,
-                          VariadicTableColumnFormat::FIXED,
-                          VariadicTableColumnFormat::FIXED,
-                          VariadicTableColumnFormat::PERCENT});
+  vtable.setColumnFormat({VariadicTableColumnFormat::AUTO,    // Section; doesn't matter
+                          VariadicTableColumnFormat::AUTO,    // Calls
+                          VariadicTableColumnFormat::FIXED,   // Time
+                          VariadicTableColumnFormat::FIXED,   // Avg.
+                          VariadicTableColumnFormat::PERCENT, // Percent
+                          VariadicTableColumnFormat::AUTO}    // Memory
+  );
 
-  vtable.setColumnPrecision({1, 1, 3, 3, 2});
+  vtable.setColumnPrecision({
+      1, // Section
+      1, // Calls
+      3, // Time
+      3, // Avg.
+      2, // Percent
+      1  // Memory
+  });
 
-  mooseAssert(!_section_time_ptrs.empty(),
-              "updateTiming() must be run before printHeaviestSections()!");
+  mooseAssert(!_cumulative_section_info_ptrs.empty(),
+              "update() must be run before printHeaviestSections()!");
 
   // The total time of the root node
-  auto total_root_time = _section_time_ptrs[0]->_total;
+  auto total_root_time = _cumulative_section_info_ptrs[_root_node_id]->_total;
 
   // Now print out the largest ones
   for (unsigned int i = 0; i < num_sections; i++)
   {
     auto id = sorted[i];
 
-    vtable.addRow(id == 0 ? _root_name : _id_to_section_name[id],
-                  _section_time_ptrs[id]->_num_calls,
-                  _section_time_ptrs[id]->_self,
-                  _section_time_ptrs[id]->_self /
-                      static_cast<Real>(_section_time_ptrs[id]->_num_calls),
-                  100 * _section_time_ptrs[id]->_self / total_root_time);
+    if (!_cumulative_section_info_ptrs[id])
+      continue;
+
+    const auto & entry = *_cumulative_section_info_ptrs[id];
+    vtable.addRow(_perf_graph_registry.sectionInfo(id)._name,        // Section
+                  entry._num_calls,                                  // Calls
+                  entry._self,                                       // Time
+                  entry._self / static_cast<Real>(entry._num_calls), // Avg.
+                  100. * entry._self / total_root_time,              // Percent
+                  entry._self_memory);                               // Memory
   }
 
   vtable.print(console);
+}
+
+void
+dataStore(std::ostream & stream, PerfGraph & perf_graph, void *)
+{
+  // We need to store the registry id -> section info map so that we can add
+  // registered sections that may not be added yet during recover
+  dataStore(stream, perf_graph._perf_graph_registry._id_to_section_info, nullptr);
+
+  // Update before serializing the nodes so that the time/memory/calls are correct
+  perf_graph.update();
+
+  // Recursively serialize all of the nodes
+  dataStore(stream, perf_graph._root_node, nullptr);
+}
+
+void
+dataLoad(std::istream & stream, PerfGraph & perf_graph, void *)
+{
+  // Load in all of the recovered sections and register those that do not exist yet
+  std::vector<moose::internal::PerfGraphSectionInfo> recovered_section_info;
+  dataLoad(stream, recovered_section_info, nullptr);
+  for (const auto & info : recovered_section_info)
+  {
+    if (info._live_message.size())
+      perf_graph._perf_graph_registry.registerSection(
+          info._name, info._level, info._live_message, info._print_dots);
+    else
+      perf_graph._perf_graph_registry.registerSection(info._name, info._level);
+  }
+
+  // Update the current node time/memory/calls before loading the nodes as the load
+  // will append information to current nodes that exist
+  perf_graph.update();
+
+  // Recursively load all of the nodes; this will append information to matching nodes
+  // and will create new nodes for section paths that do not exist
+  dataLoad(stream, perf_graph._root_node, &perf_graph);
 }

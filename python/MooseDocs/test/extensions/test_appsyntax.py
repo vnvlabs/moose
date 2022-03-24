@@ -94,7 +94,8 @@ class TestParameters(AppSyntaxTestCase):
         self.assertEqual(res(3)['data-details-open'], 'open')
         self.assertEqual(res(3).text(), 'Optional Parameters')
 
-        self.assertHTMLTag(res(4), 'ul', size=2)
+        # This size should match the number of optional parameters for Kernel
+        self.assertHTMLTag(res(4), 'ul', size=3)
 
         self.assertHTMLTag(res(5), 'h3')
         self.assertEqual(res(5)['data-details-open'], 'close')
@@ -127,14 +128,15 @@ class TestParameters(AppSyntaxTestCase):
 
         self.assertHTMLTag(res(2,0,1), 'div', size=3, class_='collapsible-body')
         self.assertHTMLTag(res(2,0,1,0), 'p', size=2, class_='moose-parameter-description-cpptype')
-        self.assertHTMLTag(res(2,0,1,1), 'p', size=2, class_='moose-parameter-description-options')
+        self.assertHTMLTag(res(2,0,1,1), 'p', size=2, class_='moose-parameter-description-controllable')
         self.assertHTMLTag(res(2,0,1,2), 'p', size=2, class_='moose-parameter-description')
 
         self.assertHTMLTag(res(3), 'h3')
         self.assertEqual(res(3)['data-details-open'], 'open')
         self.assertEqual(res(3).text(), 'Optional Parameters')
 
-        self.assertHTMLTag(res(4), 'ul', size=2, class_='collapsible')
+        # This size should match the number of optional parameters for Kernel
+        self.assertHTMLTag(res(4), 'ul', size=3, class_='collapsible')
 
         self.assertHTMLTag(res(5), 'h3')
         self.assertEqual(res(5)['data-details-open'], 'close')
@@ -150,7 +152,10 @@ class TestParameters(AppSyntaxTestCase):
 
     def testLatex(self):
         _, res = self.execute(self.TEXT, renderer=base.LatexRenderer())
-        self.assertSize(res, 15)
+        # This size should correspond to the total number of parameters for
+        # Diffusion (Required + Optional + Advanced + Tagging) + 1
+        # (corresponding to 'type')
+        self.assertSize(res, 16)
         self.assertLatexCommand(res(0), 'chapter', size=4)
         self.assertLatexCommand(res(0,0), 'label', string=u'input-parameters')
         self.assertLatexString(res(0,1), content=u'Input')
@@ -181,6 +186,7 @@ class TestParam(AppSyntaxTestCase):
         self.assertEqual(param[u'group_name'], u'')
         self.assertEqual(param[u'options'], u'')
         self.assertEqual(param[u'required'], True)
+        self.assertEqual(param[u'controllable'], False)
 
     def testHTML(self):
         _, res = self.execute(self.TEXT, renderer=base.HTMLRenderer())
@@ -190,7 +196,6 @@ class TestParam(AppSyntaxTestCase):
 
     def testMaterialize(self):
         _, res = self.execute(self.TEXT, renderer=base.MaterializeRenderer())
-        print(res)
         self.assertHTMLTag(res, 'div', size=2)
         self.assertHTMLTag(res(0), 'p', size=1)
         self.assertHTMLTag(res(0,0), 'a', string=u'"variable"', class_='moose-modal-link modal-trigger')
@@ -200,7 +205,8 @@ class TestParam(AppSyntaxTestCase):
         self.assertHTMLTag(res(1, 0, 0), 'h4', size=1, string=u'variable')
         self.assertHTMLTag(res(1, 0, 1), 'p', size=2, class_='moose-parameter-description-cpptype')
         self.assertEqual(u"NonlinearVariableName", res(1, 0, 1, 1)['content'])
-        self.assertHTMLTag(res(1, 0, 2), 'p', size=2, class_='moose-parameter-description-options')
+        self.assertHTMLTag(res(1, 0, 2), 'p', size=2, class_='moose-parameter-description-controllable')
+        self.assertHTMLString(res(1, 0, 2, 1), 'No')
         self.assertHTMLTag(res(1, 0, 3), 'p', size=2, class_='moose-parameter-description')
         self.assertIn(u"The name of the variable", res(1, 0, 3, 1)['content'])
 
@@ -209,6 +215,13 @@ class TestParam(AppSyntaxTestCase):
         self.assertSize(res, 2)
         self.assertLatexCommand(res(0), 'par')
         self.assertLatexString(res(1), content=u'"variable"')
+
+    def testMissing(self):
+        ast = self.tokenize('[!param](/Kernels/Diffusion/foobar)')
+        self.assertToken(ast(0,0), "ErrorToken")
+        message = ast(0,0)['message']
+        self.assertIn("Unable to locate the parameter '/Kernels/Diffusion/foobar', did you mean:", message)
+        self.assertIn('    /Kernels/Diffusion/', message)
 
 class TestChildren(AppSyntaxTestCase):
     TEXT = "!syntax children /Kernels/Diffusion"

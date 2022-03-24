@@ -9,6 +9,7 @@
 
 #include "InternalEnergyAux.h"
 #include "SinglePhaseFluidProperties.h"
+#include "NS.h"
 
 registerMooseObject("NavierStokesApp", InternalEnergyAux);
 
@@ -17,15 +18,17 @@ InternalEnergyAux::validParams()
 {
   InputParameters params = AuxKernel::validParams();
   params.addRequiredCoupledVar("density", "Density (conserved form)");
-  params.addRequiredCoupledVar("pressure", "Pressure");
+  params.addRequiredCoupledVar(NS::pressure, "Pressure");
   params.addRequiredParam<UserObjectName>("fp", "The name of the equation of state user object");
+  params.addClassDescription("This AuxKernel computes the internal energy based on the equation "
+                             "of state / fluid properties and the local pressure and density.");
 
   return params;
 }
 
 InternalEnergyAux::InternalEnergyAux(const InputParameters & parameters)
   : AuxKernel(parameters),
-    _pressure(coupledValue("pressure")),
+    _pressure(coupledValue(NS::pressure)),
     _rho(coupledValue("density")),
     _fp(getUserObject<SinglePhaseFluidProperties>("fp"))
 {

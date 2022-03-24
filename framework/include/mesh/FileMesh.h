@@ -11,12 +11,6 @@
 
 #include "MooseMesh.h"
 
-// forward declaration
-class FileMesh;
-
-template <>
-InputParameters validParams<FileMesh>();
-
 class FileMesh : public MooseMesh
 {
 public:
@@ -46,7 +40,4 @@ protected:
   /// The requested dimension of the mesh. For some file meshes, this is not required may be implied
   /// from the element type(s).
   const unsigned int _dim;
-
-  /// Timers
-  const PerfID _read_mesh_timer;
 };

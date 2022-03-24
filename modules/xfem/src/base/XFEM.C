@@ -226,6 +226,9 @@ XFEM::updateHeal()
   mesh_changed = healMesh();
 
   if (mesh_changed)
+    buildEFAMesh();
+
+  if (mesh_changed)
   {
     _mesh->update_parallel_id_counts();
     MeshCommunication().make_elems_parallel_consistent(*_mesh);
@@ -986,7 +989,8 @@ XFEM::healMesh()
             {
               Node * e1node_displaced = elem1_displaced->node_ptr(in);
               Node * e2node_displaced = elem2_displaced->node_ptr(in);
-              if (!xfce->isPointPhysical(*elem1->node_ptr(in)))
+              if (!xfce->isPointPhysical(*elem1->node_ptr(in)) &&
+                  e1node_displaced != e2node_displaced)
               {
                 elem1_displaced->set_node(in) = e2node_displaced;
                 nodes_to_delete_displaced.insert(e1node_displaced);
@@ -999,7 +1003,7 @@ XFEM::healMesh()
             mooseError("Could not find XFEMCutElem for element to be kept in healing");
 
           elem2_displaced->nullify_neighbors();
-          _displaced_mesh->boundary_info->remove(elem2_displaced);
+          _displaced_mesh->get_boundary_info().remove(elem2_displaced);
           _displaced_mesh->delete_elem(elem2_displaced);
         }
 
@@ -1009,14 +1013,14 @@ XFEM::healMesh()
 
         cutelems_to_delete.insert(elem2->unique_id());
         elem2->nullify_neighbors();
-        _mesh->boundary_info->remove(elem2);
+        _mesh->get_boundary_info().remove(elem2);
         unsigned int deleted_elem_id = elem2->id();
         _mesh->delete_elem(elem2);
         if (_debug_output_level > 1)
         {
           if (deleted_elem_count == 0)
             _console << "\n";
-          _console << "XFEM healing deleted element: " << deleted_elem_id << "\n";
+          _console << "XFEM healing deleted element: " << deleted_elem_id << std::endl;
         }
         ++deleted_elem_count;
         mesh_changed = true;
@@ -1028,10 +1032,10 @@ XFEM::healMesh()
   {
     Node * node_to_delete = sit;
     dof_id_type deleted_node_id = node_to_delete->id();
-    _mesh->boundary_info->remove(node_to_delete);
+    _mesh->get_boundary_info().remove(node_to_delete);
     _mesh->delete_node(node_to_delete);
     if (_debug_output_level > 1)
-      _console << "XFEM healing deleted node: " << deleted_node_id << "\n";
+      _console << "XFEM healing deleted node: " << deleted_node_id << std::endl;
   }
 
   if (_displaced_mesh)
@@ -1039,7 +1043,7 @@ XFEM::healMesh()
     for (auto & sit : nodes_to_delete_displaced)
     {
       Node * node_to_delete_displaced = sit;
-      _displaced_mesh->boundary_info->remove(node_to_delete_displaced);
+      _displaced_mesh->get_boundary_info().remove(node_to_delete_displaced);
       _displaced_mesh->delete_node(node_to_delete_displaced);
     }
   }
@@ -1155,7 +1159,7 @@ XFEM::cutMeshWithEFA(NonlinearSystemBase & nl, AuxiliarySystem & aux)
     new_node->set_n_systems(parent_node->n_systems());
     efa_id_to_new_node.insert(std::make_pair(new_node_id, new_node));
     if (_debug_output_level > 1)
-      _console << "XFEM added new node: " << new_node->id() << "\n";
+      _console << "XFEM added new node: " << new_node->id() << std::endl;
     if (_displaced_mesh)
     {
       const Node * parent_node2 = _displaced_mesh->node_ptr(parent_id);
@@ -1258,8 +1262,8 @@ XFEM::cutMeshWithEFA(NonlinearSystemBase & nl, AuxiliarySystem & aux)
       }
 
       Node * parent_node = parent_elem->node_ptr(j);
-      _mesh->boundary_info->boundary_ids(parent_node, parent_boundary_ids);
-      _mesh->boundary_info->add_node(libmesh_node, parent_boundary_ids);
+      _mesh->get_boundary_info().boundary_ids(parent_node, parent_boundary_ids);
+      _mesh->get_boundary_info().add_node(libmesh_node, parent_boundary_ids);
 
       if (_displaced_mesh)
       {
@@ -1275,8 +1279,8 @@ XFEM::cutMeshWithEFA(NonlinearSystemBase & nl, AuxiliarySystem & aux)
         libmesh_elem2->set_node(j) = libmesh_node;
 
         parent_node = parent_elem2->node_ptr(j);
-        _displaced_mesh->boundary_info->boundary_ids(parent_node, parent_boundary_ids);
-        _displaced_mesh->boundary_info->add_node(libmesh_node, parent_boundary_ids);
+        _displaced_mesh->get_boundary_info().boundary_ids(parent_node, parent_boundary_ids);
+        _displaced_mesh->get_boundary_info().add_node(libmesh_node, parent_boundary_ids);
       }
     }
 
@@ -1299,7 +1303,7 @@ XFEM::cutMeshWithEFA(NonlinearSystemBase & nl, AuxiliarySystem & aux)
     }
 
     if (_debug_output_level > 1)
-      _console << "XFEM added new element: " << libmesh_elem->id() << "\n";
+      _console << "XFEM added new element: " << libmesh_elem->id() << std::endl;
 
     XFEMCutElem * xfce = NULL;
     if (_mesh->mesh_dimension() == 2)
@@ -1338,32 +1342,33 @@ XFEM::cutMeshWithEFA(NonlinearSystemBase & nl, AuxiliarySystem & aux)
     unsigned int n_sides = parent_elem->n_sides();
     for (unsigned int side = 0; side < n_sides; ++side)
     {
-      _mesh->boundary_info->boundary_ids(parent_elem, side, parent_boundary_ids);
-      _mesh->boundary_info->add_side(libmesh_elem, side, parent_boundary_ids);
+      _mesh->get_boundary_info().boundary_ids(parent_elem, side, parent_boundary_ids);
+      _mesh->get_boundary_info().add_side(libmesh_elem, side, parent_boundary_ids);
     }
     if (_displaced_mesh)
     {
       n_sides = parent_elem2->n_sides();
       for (unsigned int side = 0; side < n_sides; ++side)
       {
-        _displaced_mesh->boundary_info->boundary_ids(parent_elem2, side, parent_boundary_ids);
-        _displaced_mesh->boundary_info->add_side(libmesh_elem2, side, parent_boundary_ids);
+        _displaced_mesh->get_boundary_info().boundary_ids(parent_elem2, side, parent_boundary_ids);
+        _displaced_mesh->get_boundary_info().add_side(libmesh_elem2, side, parent_boundary_ids);
       }
     }
 
     unsigned int n_edges = parent_elem->n_edges();
     for (unsigned int edge = 0; edge < n_edges; ++edge)
     {
-      _mesh->boundary_info->edge_boundary_ids(parent_elem, edge, parent_boundary_ids);
-      _mesh->boundary_info->add_edge(libmesh_elem, edge, parent_boundary_ids);
+      _mesh->get_boundary_info().edge_boundary_ids(parent_elem, edge, parent_boundary_ids);
+      _mesh->get_boundary_info().add_edge(libmesh_elem, edge, parent_boundary_ids);
     }
     if (_displaced_mesh)
     {
       n_edges = parent_elem2->n_edges();
       for (unsigned int edge = 0; edge < n_edges; ++edge)
       {
-        _displaced_mesh->boundary_info->edge_boundary_ids(parent_elem2, edge, parent_boundary_ids);
-        _displaced_mesh->boundary_info->add_edge(libmesh_elem2, edge, parent_boundary_ids);
+        _displaced_mesh->get_boundary_info().edge_boundary_ids(
+            parent_elem2, edge, parent_boundary_ids);
+        _displaced_mesh->get_boundary_info().add_edge(libmesh_elem2, edge, parent_boundary_ids);
       }
     }
 
@@ -1373,7 +1378,7 @@ XFEM::cutMeshWithEFA(NonlinearSystemBase & nl, AuxiliarySystem & aux)
       (*_material_data)[0]->copy(*libmesh_elem, *parent_elem, 0);
       for (unsigned int side = 0; side < parent_elem->n_sides(); ++side)
       {
-        _mesh->boundary_info->boundary_ids(parent_elem, side, parent_boundary_ids);
+        _mesh->get_boundary_info().boundary_ids(parent_elem, side, parent_boundary_ids);
         std::vector<boundary_id_type>::iterator it_bd = parent_boundary_ids.begin();
         for (; it_bd != parent_boundary_ids.end(); ++it_bd)
         {
@@ -1442,17 +1447,17 @@ XFEM::cutMeshWithEFA(NonlinearSystemBase & nl, AuxiliarySystem & aux)
     (*_bnd_material_data)[0]->eraseProperty(elem_to_delete);
 
     elem_to_delete->nullify_neighbors();
-    _mesh->boundary_info->remove(elem_to_delete);
+    _mesh->get_boundary_info().remove(elem_to_delete);
     unsigned int deleted_elem_id = elem_to_delete->id();
     _mesh->delete_elem(elem_to_delete);
     if (_debug_output_level > 1)
-      _console << "XFEM deleted element: " << deleted_elem_id << "\n";
+      _console << "XFEM deleted element: " << deleted_elem_id << std::endl;
 
     if (_displaced_mesh)
     {
       Elem * elem_to_delete2 = _displaced_mesh->elem_ptr(delete_elements[i]->id());
       elem_to_delete2->nullify_neighbors();
-      _displaced_mesh->boundary_info->remove(elem_to_delete2);
+      _displaced_mesh->get_boundary_info().remove(elem_to_delete2);
       _displaced_mesh->delete_elem(elem_to_delete2);
     }
   }
@@ -1518,13 +1523,46 @@ XFEM::cutMeshWithEFA(NonlinearSystemBase & nl, AuxiliarySystem & aux)
           for (auto const & mie : _geom_marker_id_elems[_geometric_cuts[i]->getInterfaceID()])
             if ((*sit)->getParent() != nullptr)
             {
-              if ((*sit)->getParent()->id() == mie)
-                _crack_tip_elems_to_be_healed.insert(crack_tip_elem);
+              if (_mesh->mesh_dimension() == 2)
+              {
+                EFAElement2D * efa_elem2d = dynamic_cast<EFAElement2D *>((*sit)->getParent());
+                if (!efa_elem2d)
+                  mooseError("EFAelem is not of EFAelement2D type");
+
+                for (unsigned int edge_id = 0; edge_id < efa_elem2d->numEdges(); ++edge_id)
+                {
+                  for (unsigned int en_iter = 0; en_iter < efa_elem2d->numEdgeNeighbors(edge_id);
+                       ++en_iter)
+                  {
+                    EFAElement2D * edge_neighbor = efa_elem2d->getEdgeNeighbor(edge_id, en_iter);
+                    if (edge_neighbor != nullptr && edge_neighbor->id() == mie)
+                      _crack_tip_elems_to_be_healed.insert(crack_tip_elem);
+                  }
+                }
+              }
+              else if (_mesh->mesh_dimension() == 3)
+              {
+                EFAElement3D * efa_elem3d = dynamic_cast<EFAElement3D *>((*sit)->getParent());
+                if (!efa_elem3d)
+                  mooseError("EFAelem is not of EFAelement3D type");
+
+                for (unsigned int face_id = 0; face_id < efa_elem3d->numFaces(); ++face_id)
+                {
+                  for (unsigned int fn_iter = 0; fn_iter < efa_elem3d->numFaceNeighbors(face_id);
+                       ++fn_iter)
+                  {
+                    EFAElement3D * face_neighbor = efa_elem3d->getFaceNeighbor(face_id, fn_iter);
+                    if (face_neighbor != nullptr && face_neighbor->id() == mie)
+                      _crack_tip_elems_to_be_healed.insert(crack_tip_elem);
+                  }
+                }
+              }
             }
         }
       }
     }
   }
+
   if (_debug_output_level > 0)
   {
     _console << "\nXFEM mesh cutting with element fragment algorithm complete\n";
@@ -2158,7 +2196,7 @@ XFEM::storeMaterialPropertiesForElement(const Elem * parent_elem, const Elem * c
   for (unsigned int side = 0; side < child_elem->n_sides(); ++side)
   {
     std::vector<boundary_id_type> elem_boundary_ids;
-    _mesh->boundary_info->boundary_ids(child_elem, side, elem_boundary_ids);
+    _mesh->get_boundary_info().boundary_ids(child_elem, side, elem_boundary_ids);
     for (auto bdid : elem_boundary_ids)
       if (_fe_problem->needBoundaryMaterialOnSide(bdid, 0))
         need_boundary_materials = true;
@@ -2220,7 +2258,7 @@ XFEM::loadMaterialPropertiesForElement(
   for (unsigned int side = 0; side < elem->n_sides(); ++side)
   {
     std::vector<boundary_id_type> elem_boundary_ids;
-    _mesh->boundary_info->boundary_ids(elem, side, elem_boundary_ids);
+    _mesh->get_boundary_info().boundary_ids(elem, side, elem_boundary_ids);
     for (auto bdid : elem_boundary_ids)
       if (_fe_problem->needBoundaryMaterialOnSide(bdid, 0))
         need_boundary_materials = true;

@@ -8,17 +8,16 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "RankMap.h"
-
 #include "PerfGraphInterface.h"
+
+#include "MooseApp.h"
 
 #include "libmesh/parallel.h"
 
 RankMap::RankMap(const Parallel::Communicator & comm, PerfGraph & perf_graph)
-  : ParallelObject(comm),
-    PerfGraphInterface(perf_graph, "RankMap"),
-    _construct_timer(registerTimedSection("construct", 2))
+  : ParallelObject(comm), PerfGraphInterface(perf_graph, "RankMap")
 {
-  TIME_SECTION(_construct_timer);
+  TIME_SECTION("construct", 2, "Constructing RankMap");
 
   auto num_procs = n_processors();
   _rank_to_hardware_id.resize(num_procs);

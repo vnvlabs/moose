@@ -21,11 +21,8 @@
 #include "MooseUtils.h"
 #include "MooseApp.h"
 #include "Console.h"
-#include "TimedPrint.h"
 
 #include "libmesh/equation_systems.h"
-
-defineLegacyParams(Output);
 
 InputParameters
 Output::validParams()
@@ -119,8 +116,7 @@ Output::Output(const InputParameters & parameters)
     _sync_only(getParam<bool>("sync_only")),
     _allow_output(true),
     _is_advanced(false),
-    _advanced_execute_on(_execute_on, parameters),
-    _output_step_timer(registerTimedSection("outputStep", 2))
+    _advanced_execute_on(_execute_on, parameters)
 {
   if (_use_displaced)
   {
@@ -162,8 +158,6 @@ Output::solveSetup()
 void
 Output::outputStep(const ExecFlagType & type)
 {
-  CONSOLE_TIMED_PRINT("Outputting ", name());
-
   // Output is not allowed
   if (!_allow_output && type != EXEC_FORCED)
     return;
@@ -179,7 +173,7 @@ Output::outputStep(const ExecFlagType & type)
   // Call the output method
   if (shouldOutput(type))
   {
-    TIME_SECTION(_output_step_timer);
+    TIME_SECTION("outputStep", 2, "Outputting Step");
     output(type);
   }
 }

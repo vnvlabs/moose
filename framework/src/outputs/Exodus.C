@@ -22,8 +22,6 @@
 
 registerMooseObject("MooseApp", Exodus);
 
-defineLegacyParams(Exodus);
-
 InputParameters
 Exodus::validParams()
 {
@@ -86,7 +84,8 @@ Exodus::Exodus(const InputParameters & parameters)
     _recovering(_app.isRecovering()),
     _exodus_mesh_changed(declareRestartableData<bool>("exodus_mesh_changed", true)),
     _sequence(isParamValid("sequence") ? getParam<bool>("sequence")
-                                       : _use_displaced ? true : false),
+              : _use_displaced         ? true
+                                       : false),
     _overwrite(getParam<bool>("overwrite")),
     _output_dimension(getParam<MooseEnum>("output_dimension").getEnum<OutputDimension>()),
     _discontinuous(getParam<bool>("discontinuous"))
@@ -173,8 +172,18 @@ Exodus::outputSetup()
       return;
   }
 
-  // Exodus is serial output so that we have to gather everything to "zero".
-  _problem_ptr->mesh().getMesh().gather_to_zero();
+  auto serialize = [this](auto & moose_mesh)
+  {
+    auto & lm_mesh = moose_mesh.getMesh();
+    // Exodus is serial output so that we have to gather everything to "zero".
+    lm_mesh.gather_to_zero();
+    // This makes the face information out-of-date on process 0 for distributed meshes, e.g.
+    // elements will have neighbors that they didn't previously have
+    if ((this->processor_id() == 0) && !lm_mesh.is_replicated())
+      moose_mesh.faceInfoDirty();
+  };
+  serialize(_problem_ptr->mesh());
+
   // We need to do the same thing for displaced mesh to make them consistent.
   // In general, it is a good idea to make the reference mesh and the displaced mesh
   // consistent since some operations or calculations are already based on this assumption.
@@ -185,12 +194,10 @@ Exodus::outputSetup()
   // Here we assume that the displaced mesh and the reference mesh are identical except
   // coordinations.
   if (_problem_ptr->getDisplacedProblem())
-  {
-    _problem_ptr->getDisplacedProblem()->mesh().getMesh().gather_to_zero();
-  }
+    serialize(_problem_ptr->getDisplacedProblem()->mesh());
 
   // Create the ExodusII_IO object
-  _exodus_io_ptr = libmesh_make_unique<ExodusII_IO>(_es_ptr->get_mesh());
+  _exodus_io_ptr = std::make_unique<ExodusII_IO>(_es_ptr->get_mesh());
   _exodus_initialized = false;
 
   // Increment file number and set appending status, append if all the following conditions are met:

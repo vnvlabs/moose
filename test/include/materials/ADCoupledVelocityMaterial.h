@@ -9,9 +9,9 @@
 
 #pragma once
 
-#include "Material.h"
+#include "FunctorMaterial.h"
 
-class ADCoupledVelocityMaterial : public Material
+class ADCoupledVelocityMaterial : public FunctorMaterial
 {
 public:
   static InputParameters validParams();
@@ -19,15 +19,8 @@ public:
   ADCoupledVelocityMaterial(const InputParameters & parameters);
 
 protected:
-  virtual void computeQpProperties() override;
-
-  ADMaterialProperty<RealVectorValue> & _velocity;
-  ADMaterialProperty<Real> & _rho_u;
-  ADMaterialProperty<Real> & _rho_v;
-  ADMaterialProperty<Real> & _rho_w;
-
-  const ADVariableValue & _vel_x;
-  const ADVariableValue * const _vel_y;
-  const ADVariableValue * const _vel_z;
-  const ADVariableValue & _rho;
+  const Moose::Functor<ADReal> & _vel_x;
+  const Moose::Functor<ADReal> * const _vel_y;
+  const Moose::Functor<ADReal> * const _vel_z;
+  const Moose::Functor<ADReal> & _rho;
 };

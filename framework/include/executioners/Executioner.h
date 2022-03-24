@@ -15,6 +15,7 @@
 #include "Restartable.h"
 #include "PerfGraphInterface.h"
 #include "FEProblemSolve.h"
+#include "FixedPointSolve.h"
 #include "PicardSolve.h"
 #include "Reporter.h"
 #include "ReporterInterface.h"
@@ -23,11 +24,6 @@
 #include <string>
 
 class Problem;
-class Executioner;
-
-template <>
-InputParameters validParams<Executioner>();
-
 /**
  * Executioners are objects that do the actual work of solving your problem.
  */
@@ -47,9 +43,18 @@ public:
    */
   Executioner(const InputParameters & parameters);
 
+  /// executor-style constructor that skips the fixed point solve object
+  /// allocation.
+  Executioner(const InputParameters & parameters, bool);
+
   virtual ~Executioner() {}
 
   static InputParameters validParams();
+
+  /**
+   * Perform initializations during executing actions right before init_problem task
+   */
+  virtual void preProblemInit() {}
 
   /**
    * Initialize the executioner
@@ -110,14 +115,25 @@ public:
    */
   virtual bool lastSolveConverged() const = 0;
 
-  /// Return the underlining FEProblemSolve object.
-  FEProblemSolve & feProblemSolve() { return _feproblem_solve; }
+  /// Return underlying PicardSolve object.
+  PicardSolve & picardSolve()
+  {
+    mooseDeprecated("picardSolve() is deprecated. Use FixedPointSolve() instead.");
+    if (_iteration_method == "picard")
+      return *(dynamic_cast<PicardSolve *>(_fixed_point_solve.get()));
+    else
+      mooseError("Cannot return a PicardSolve if the iteration method is not Picard.");
+  }
 
-  /// Return underlining PicardSolve object.
-  PicardSolve & picardSolve() { return _picard_solve; }
+  FixedPointSolve & fixedPointSolve() { return *_fixed_point_solve; }
 
-  /// Augmented Picard convergence check that to be called by PicardSolve and can be overridden by derived executioners
-  virtual bool augmentedPicardConvergenceCheck() const { return false; }
+  /// Augmented Picard convergence check to be called by PicardSolve and can be overridden by derived executioners
+  virtual bool augmentedPicardConvergenceCheck() const
+  {
+    mooseDeprecated(
+        "augmentedPicardConvergenceCheck() is deprecated. Use augmentedCouplingConvergenceCheck.");
+    return false;
+  }
 
   /**
    * Get the verbose output flag
@@ -126,9 +142,10 @@ public:
   const bool & verbose() const { return _verbose; }
 
   /**
-   * Get the number of grid sequencing steps
+   * Return supported iteration methods that can work with MultiApps on timestep_begin and
+   * timestep_end
    */
-  unsigned int numGridSteps() const { return _num_grid_steps; }
+  static MooseEnum iterationMethods() { return MooseEnum("picard secant steffensen", "picard"); }
 
 protected:
   /**
@@ -142,20 +159,12 @@ protected:
 
   FEProblemBase & _fe_problem;
 
-  FEProblemSolve _feproblem_solve;
-  PicardSolve _picard_solve;
+  MooseEnum _iteration_method;
+  std::unique_ptr<FixedPointSolve> _fixed_point_solve;
 
   // Restart
   std::string _restart_file_base;
 
   /// True if printing out additional information
   const bool & _verbose;
-
-  /// The number of steps to perform in a grid sequencing algorithm. This is one
-  /// less than the number of grids requested by the user in their input,
-  /// e.g. if they requested num_grids = 1, then there won't be any steps
-  /// because we only need to perform one solve per time-step. Storing this
-  /// member in this way allows for easy boolean operations, e.g. if (_num_grid_steps)
-  /// as opposed to if (_num_grids)
-  const unsigned int _num_grid_steps;
 };

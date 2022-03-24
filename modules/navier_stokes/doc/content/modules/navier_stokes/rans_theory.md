@@ -258,12 +258,13 @@ This model is useful for analysis of simple geometries, but it is inconvenient
 to apply for general meshes where the walls may take an arbitrary shape.  This
 is because there is no clear way to define directions parallel and perpendicular
 to the wall in the general case (e.g. consider a mesh cell with walls on two
-sides).  Consequently, a different model is adopted here which uses a normalized
-isotropic velocity gradient,
+sides).  Consequently, we use Smagorinsky's velocity scale:
 \begin{equation}
-  \epsilon_m = -l_m^2 \sqrt{ \nabla v_x \cdot \nabla v_x
-  + \nabla v_y \cdot \nabla v_y + \nabla v_z \cdot \nabla v_z}
+  \epsilon_m = -l_m^2 |2 S_{ij}:S_{ij}|
 \end{equation}
+
+where $S_{ij} = 0.5 \cdot \left( \frac{\partial u_i}{\partial x_j} +
+  \frac{\partial u_j}{\partial x_i} \right)$
 
 This momentum diffusivity model is implemented in the [INSFVMixingLengthReynoldsStress](source/fvkernels/INSFVMixingLengthReynoldsStress.md)
 kernel. The corresponding model for diffusivity of passive scalars (like energy)
@@ -276,8 +277,23 @@ assume the mixing length is proportional to the distance from the nearest wall,
   l_m = k d
 \end{equation}
 where $d$ is the wall-distance and $k$ is known as the von Kármán constant.  A
-von Kármán of $k = 0.42$ is often used for the near-wall region
+von Kármán of $k = 0.41$ is often used for the near-wall region
 [!citep](todreas2011_ch10).
+
+A modification to this model was done by [!citep](escudier1966), who claims
+that the mixing length grows linearly in the boundary layer region and then it
+takes a constant value. This prevents an excessive growth of Prandtl's original
+mixing length model. The equations for the mixing length are then
+
+\begin{equation}
+  l_m = \kappa y_d \quad if \: \kappa y_d < \kappa_0 \delta \\
+  l_m = \kappa_0 \delta \quad if \: \kappa y_d \geq \kappa_0 \delta
+\end{equation}
+
+where $\kappa = 0.41$ is the Von Karman constant, $\kappa_0 = 0.09$ as in
+Escudier's model and $\delta$ has length units and represents the thickness of
+the velocity boundary layer. Note that for large values of $\delta$, the mixing
+length in Prandtl's original model is obtained.
 
 This mixing length is implemented in the [WallDistanceMixingLengthAux](source/auxkernels/WallDistanceMixingLengthAux.md)
 auxiliary kernel. Note that the wall-distance calculation can be expensive for
@@ -304,5 +320,63 @@ pipe are assigned to different mesh blocks, then a `WallDistanceMixingLengthAux`
 can be combined with a `ConstantAux` to model a mixing length that is
 proportional to the wall-distance in the near-wall region and constant
 elsewhere.
+
+## Wall Function Boundary Condition for Velocity
+
+In wall-bounded flows, the velocity gradients present in the near wall region
+are quite steep. Therefore, the mesh resolution needed to capture these
+gradients can become expensive. To economize computer time and storage, wall
+functions have been proposed, which are equations empirically derived to satisfy
+the physics in the near wall region under certain assumptions.
+
+Experimental and dimensional analysis shows that for high $y^+$ values
+($y^+>30$) the wall shear stress $\tau_w$ is related to the mean velocity
+parallel to the wall through the so-called logarithmic law of the wall:
+[!citep](moukalled2016_ch17) [!citep](launder1983numerical)
+
+\begin{equation}
+v^{+}_t = \frac{1}{\kappa} ln(Ey^+)
+\end{equation}
+
+where:
+
+- $v_t ^+ = \frac{|v_t|}{v_{\tau}}$ is the dimensionless wall-tangential velocity component.
+- $v_t$ is the wall-tangential velocity component at the centroid of the adjacent cell to the wall.
+- $v_{\tau} = \sqrt{\frac{|\tau_w|}{\rho}}$ is the friction velocity.
+- $y^+ = \frac{y_d v_{\tau}}{\nu}$ is the dimensionless wall distance
+- $\kappa$ is the von Karman constant
+- $E$ is the log law offset
+
+The log law offset is set for smooth walls to a value of 9.0
+[!citep](launder1983numerical).Theoretically, in the viscous sublayer for
+low $y^+$ values ($y^+<5$), the functional form of the velocity is linear
+ $v^{+}_t=y^+$. The log law offset is obtained by matching the viscous sublayer
+ profile with the logarithmic law of the wall at $y^+=11.25$.
+ [!citep](launder1983numerical). Rough walls are not currently supported.
+  Nonetheless, this could be done through a modification of the log law offset.
+
+The logarithmic law of the wall provides an implicit equation for the magnitude
+of the wall shear stress. The orientation of the wall shear stress is dictated
+by the orientation of the tangential velocity, which is parallel to the wall.
+Its sense is opposite to the velocity's sense. Its implementation is present in
+[INSFVWallFunctionBC](source/fvbcs/INSFVWallFunctionBC.md).
+
+This shear stress is used in solving the momentum equation by invoking its
+value as a flux source term. The second condition needed is the
+non-penetrability of the velocity through the wall, such that the mass flux
+through that face is zero [!citep](segal1993isnas).
+
+The location of the first cell centroid must be such that $y^+>11.25$. Auxiliary
+Kernel [WallFunctionYPlusAux](source/auxkernels/WallFunctionYPlusAux.md) can
+be used to obtain the $y^+$ value. Another Auxiliary Kernel allows to obtain the
+wall shear stress, [WallFunctionWallShearStressAux](source/auxkernels/WallFunctionWallShearStressAux.md).
+
+This standard wall function was originally calibrated for fully developed
+turbulent flows in steady state, in absence of an external force and an adverse
+pressure gradient. It may not provide accurate results under separation,
+recirculation or low Reynolds number flows.
+
+
+
 
 !bibtex bibliography

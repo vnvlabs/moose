@@ -101,31 +101,28 @@
   []
 []
 
-[VectorPostprocessors]
-  [stats]
-    type = PolynomialChaosStatistics
-    pc_name = 'temp_center_inner  temp_center_outer  temp_end_inner  temp_end_outer
-               dispx_center_inner dispx_center_outer dispx_end_inner dispx_end_outer
-               dispz_inner dispz_outer'
-    compute = 'mean stddev'
-  []
-  [sobol]
-    type = PolynomialChaosSobolStatistics
-    pc_name = 'temp_center_inner  temp_center_outer  temp_end_inner  temp_end_outer
-               dispx_center_inner dispx_center_outer dispx_end_inner dispx_end_outer
-               dispz_inner dispz_outer'
-    sensitivity_order = 'first second total'
-  []
+[Reporters]
   [storage]
     type = EvaluateSurrogate
     sampler = sample
     model = 'temp_center_inner  temp_center_outer  temp_end_inner  temp_end_outer
              dispx_center_inner dispx_center_outer dispx_end_inner dispx_end_outer
              dispz_inner dispz_outer'
+    parallel_type = ROOT
+  []
+  [stats]
+    type = PolynomialChaosReporter
+    pc_name = 'temp_center_inner  temp_center_outer  temp_end_inner  temp_end_outer
+               dispx_center_inner dispx_center_outer dispx_end_inner dispx_end_outer
+               dispz_inner dispz_outer'
+    statistics = 'mean stddev'
+    include_sobol = true
   []
 []
 
 [Outputs]
-  csv = true
+  [out]
+    type = JSON
+  []
   execute_on = TIMESTEP_END
 []

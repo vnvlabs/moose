@@ -88,6 +88,7 @@ temp_print_trace.*
 *.json
 *.json.*
 *.bak
+*.data
 *.processor.*
 .clang_complete
 .failed_tests
@@ -247,3 +248,7 @@ conf_vars.mk
 # GPerf performance
 *.prof
 *.heap
+
+# MetaData files in Reactor Module tests
+modules/reactor/test/tests/functions/multi_control_drum_function/positions_meta.data
+modules/reactor/test/tests/meshgenerators/patterned_hex_mesh_generator/positions_meta.data

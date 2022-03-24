@@ -12,7 +12,6 @@
 #include "Moose.h"
 #include "Adaptivity.h"
 #include "MooseApp.h"
-#include "TimedPrint.h"
 
 registerMooseAction("MooseApp", SetupMeshCompleteAction, "prepare_mesh");
 
@@ -24,8 +23,6 @@ registerMooseAction("MooseApp", SetupMeshCompleteAction, "uniform_refine_mesh");
 
 registerMooseAction("MooseApp", SetupMeshCompleteAction, "setup_mesh_complete");
 
-defineLegacyParams(SetupMeshCompleteAction);
-
 InputParameters
 SetupMeshCompleteAction::validParams()
 {
@@ -34,10 +31,7 @@ SetupMeshCompleteAction::validParams()
   return params;
 }
 
-SetupMeshCompleteAction::SetupMeshCompleteAction(InputParameters params)
-  : Action(params), _uniform_refine_timer(registerTimedSection("uniformRefine", 2))
-{
-}
+SetupMeshCompleteAction::SetupMeshCompleteAction(InputParameters params) : Action(params) {}
 
 void
 SetupMeshCompleteAction::act()
@@ -49,7 +43,13 @@ SetupMeshCompleteAction::act()
   {
     // we don't need to run mesh modifiers *again* after they ran already during the mesh
     // splitting process
-    if (_app.isUseSplit())
+    // A uniform refinement is helpful for some instances when using a pre-split mesh.
+    // For example, a 'coarse' mesh might completely resolve geometry (also is large)
+    // but does not have enough resolution for the interior. For this scenario,
+    // we pre-split the coarse mesh, and load the pre-split mesh in parallel,
+    // and then do a few levels of uniform refinements to have a fine mesh that
+    // potentially resolves physics features.
+    if (_app.isUseSplit() && _mesh->skipRefineWhenUseSplit())
       return;
 
     // uniform refinement has been done on master, so skip
@@ -64,10 +64,7 @@ SetupMeshCompleteAction::act()
      */
     if (_app.getExodusFileRestart() == false && _app.isRecovering() == false)
     {
-      TIME_SECTION(_uniform_refine_timer);
-
-      auto & _communicator = *_app.getCommunicator();
-      CONSOLE_TIMED_PRINT("Uniformly refining mesh");
+      TIME_SECTION("uniformRefine", 2, "Uniformly Refining");
 
       if (_mesh->uniformRefineLevel())
       {
@@ -92,6 +89,8 @@ SetupMeshCompleteAction::act()
   }
   else if (_current_task == "delete_remote_elements_after_late_geometric_ghosting")
   {
+    TIME_SECTION("deleteRemoteElems", 2, "Deleting Remote Elements");
+
     if (_displaced_mesh &&
         (_mesh->needsRemoteElemDeletion() != _displaced_mesh->needsRemoteElemDeletion()))
       mooseError("Our reference and displaced meshes are not in sync with respect to whether we "
@@ -109,9 +108,15 @@ SetupMeshCompleteAction::act()
   else
   {
     // Prepare the mesh (may occur multiple times)
-    _mesh->prepare();
+    {
+      TIME_SECTION("completeSetupUndisplaced", 2, "Setting Up Undisplaced Mesh");
+      _mesh->prepare();
+    }
 
     if (_displaced_mesh)
+    {
+      TIME_SECTION("completeSetupDisplaced", 2, "Setting Up Displaced Mesh");
       _displaced_mesh->prepare();
+    }
   }
 }

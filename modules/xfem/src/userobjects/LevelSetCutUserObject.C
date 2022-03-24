@@ -57,7 +57,7 @@ LevelSetCutUserObject::cutElementByGeometry(const Elem * elem,
 
   for (unsigned int i = 0; i < n_sides; ++i)
   {
-    UniquePtr<const Elem> curr_side = elem->side_ptr(i);
+    std::unique_ptr<const Elem> curr_side = elem->side_ptr(i);
 
     if (curr_side->type() != EDGE2)
       mooseError("In LevelSetCutUserObject element side must be EDGE2, but type is: ",
@@ -168,6 +168,12 @@ const std::vector<Point>
 LevelSetCutUserObject::getCrackFrontPoints(unsigned int /*num_crack_front_points*/) const
 {
   mooseError("getCrackFrontPoints() is not implemented for this object.");
+}
+
+const std::vector<RealVectorValue>
+LevelSetCutUserObject::getCrackPlaneNormals(unsigned int /*num_crack_front_points*/) const
+{
+  mooseError("getCrackPlaneNormals() is not implemented for this object.");
 }
 
 CutSubdomainID

@@ -34,7 +34,8 @@ MooseVariableDataFV<OutputType>::MooseVariableDataFV(const MooseVariableFV<Outpu
                                                      Moose::ElementType element_type,
                                                      const Elem * const & elem)
 
-  : _var(var),
+  : MeshChangedInterface(var.parameters()),
+    _var(var),
     _fe_type(_var.feType()),
     _var_num(_var.number()),
     _var_name(_var.name()),
@@ -75,7 +76,9 @@ MooseVariableDataFV<OutputType>::MooseVariableDataFV(const MooseVariableFV<Outpu
     _need_ad(true),
     _need_ad_u(true),
     _need_ad_u_dot(false),
+    _need_ad_u_dotdot(false),
     _need_ad_grad_u(false),
+    _need_ad_grad_u_dot(false),
     _need_ad_second_u(false),
     _need_dof_values(false),
     _need_dof_values_old(false),
@@ -566,8 +569,8 @@ MooseVariableDataFV<OutputType>::computeGhostValuesFace(
     _ad_u_dot.resize(nqp);
   if (_need_ad_second_u)
     _ad_second_u.resize(nqp);
-  if (_need_ad_u_dot)
-    _ad_u_dot.resize(nqp);
+  if (_need_ad_u_dotdot)
+    _ad_u_dotdot.resize(nqp);
 
   mooseAssert(
       _need_ad_u_dot && !other_face._need_ad_u_dot
@@ -577,10 +580,18 @@ MooseVariableDataFV<OutputType>::computeGhostValuesFace(
       "I only really understand having a time derivative for this and not having a time "
       "derivative for the other if this is elemental data and the other is not elemental data.");
 
+  mooseAssert(
+      _need_ad_u_dotdot && !other_face._need_ad_u_dotdot
+          ? _element_type == Moose::ElementType::Element &&
+                other_face._element_type != Moose::ElementType::Element
+          : true,
+      "I only really understand having a second time derivative for this and not having a second "
+      "time derivative for the other if this is elemental data and the other is not elemental "
+      "data.");
+
 #ifdef MOOSE_GLOBAL_AD_INDEXING
-  const ADReal u_other = _subproblem.currentlyComputingJacobian()
-                             ? other_face.adSln()[0]
-                             : other_face.sln(Moose::Current)[0];
+  const ADReal u_other =
+      ADReal::do_derivatives ? other_face.adSln()[0] : other_face.sln(Moose::Current)[0];
   const auto & u_face = _var.getBoundaryFaceValue(fi);
   const auto u_ghost = 2 * u_face - u_other;
 
@@ -593,6 +604,10 @@ MooseVariableDataFV<OutputType>::computeGhostValuesFace(
   // debugging modes by tossing some NaNs in
   if (_need_ad_u_dot && other_face._need_ad_u_dot)
     assignForAllQps(std::numeric_limits<typename ADReal::value_type>::quiet_NaN(), _ad_u_dot, nqp);
+  // Let's do the same when second time derivatives are requested on faces
+  if (_need_ad_u_dotdot && other_face._need_ad_u_dotdot)
+    assignForAllQps(
+        std::numeric_limits<typename ADReal::value_type>::quiet_NaN(), _ad_u_dotdot, nqp);
 
 #else
   if (_has_dirichlet_bc)
@@ -609,7 +624,7 @@ MooseVariableDataFV<OutputType>::computeGhostValuesFace(
     // hack has been implemented by initializing _need_ad_u and friends to 'true'
     // by default.  Consider perhaps a better solution to this problem.
     DualReal u_other;
-    if (_subproblem.currentlyComputingJacobian())
+    if (ADReal::do_derivatives)
       u_other = other_face.adSln()[0];
     else
       u_other = other_face.sln(Moose::Current)[0];
@@ -624,6 +639,11 @@ MooseVariableDataFV<OutputType>::computeGhostValuesFace(
       // The partial derivative with respect to time is the same as for u_other except with a
       // negative sign. (See the u_ghost formula above)
       assignForAllQps(-other_face.adUDot()[0], _ad_u_dot, nqp);
+
+    if (_need_ad_u_dotdot && other_face._need_ad_u_dotdot)
+      // The partial second derivative with respect to time is the same as for u_other except with a
+      // negative sign. (See the u_ghost formula above)
+      assignForAllQps(-other_face.adUDotDot()[0], _ad_u_dotdot, nqp);
   }
   else
   {
@@ -634,7 +654,7 @@ MooseVariableDataFV<OutputType>::computeGhostValuesFace(
     // TODO: make sure DirichletBC and FluxBC are _not_ defined on
     // the same sideset
     DualReal u_other;
-    if (_subproblem.currentlyComputingJacobian())
+    if (ADReal::do_derivatives)
       u_other = other_face.adSln()[0];
     else
       u_other = other_face.sln(Moose::Current)[0];
@@ -646,6 +666,11 @@ MooseVariableDataFV<OutputType>::computeGhostValuesFace(
     if (_need_ad_u_dot && other_face._need_ad_u_dot)
       // Since we are simply tracking the other face's value, the time derivative is also the same
       assignForAllQps(other_face.adUDot()[0], _ad_u_dot, nqp);
+
+    if (_need_ad_u_dotdot && other_face._need_ad_u_dotdot)
+      // Since we are simply tracking the other face's value, the second time derivative is also the
+      // same
+      assignForAllQps(other_face.adUDotDot()[0], _ad_u_dotdot, nqp);
   }
 #endif
 
@@ -839,6 +864,12 @@ MooseVariableDataFV<OutputType>::computeAD(const unsigned int num_dofs, const un
     _ad_u_dot.resize(nqp);
   }
 
+  if (_need_ad_u_dotdot)
+  {
+    _ad_dofs_dotdot.resize(num_dofs);
+    _ad_u_dotdot.resize(nqp);
+  }
+
 #ifndef MOOSE_GLOBAL_AD_INDEXING
   auto ad_offset = Moose::adOffset(
       _var_num, _sys.getMaxVarNDofsPerElem(), _element_type, _sys.system().n_vars());
@@ -862,6 +893,9 @@ MooseVariableDataFV<OutputType>::computeAD(const unsigned int num_dofs, const un
   if (_need_ad_u_dot)
     assignForAllQps(_ad_zero, _ad_u_dot, nqp);
 
+  if (_need_ad_u_dotdot)
+    assignForAllQps(_ad_zero, _ad_u_dotdot, nqp);
+
   for (unsigned int i = 0; i < num_dofs; i++)
   {
     _ad_dof_values[i] = (*_sys.currentSolution())(_dof_indices[i]);
@@ -874,10 +908,13 @@ MooseVariableDataFV<OutputType>::computeAD(const unsigned int num_dofs, const un
       Moose::derivInsert(_ad_dof_values[i].derivatives(), ad_offset + i, 1.);
 #endif
 
-    if (_need_ad_u_dot && _time_integrator && _time_integrator->dt())
+    if (_need_ad_u_dot && safeToComputeADUDot() && _time_integrator->dt())
     {
       _ad_dofs_dot[i] = _ad_dof_values[i];
-      _time_integrator->computeADTimeDerivatives(_ad_dofs_dot[i], _dof_indices[i]);
+      _time_integrator->computeADTimeDerivatives(_ad_dofs_dot[i],
+                                                 _dof_indices[i],
+                                                 _need_ad_u_dotdot ? _ad_dofs_dotdot[i]
+                                                                   : _ad_real_dummy);
     }
   }
 
@@ -894,18 +931,37 @@ MooseVariableDataFV<OutputType>::computeAD(const unsigned int num_dofs, const un
         _ad_grad_u,
         nqp);
 
-  if (_need_ad_u_dot && _time_integrator)
-    assignForAllQps(_ad_dofs_dot[0], _ad_u_dot, nqp);
-
-  if (_need_ad_u_dot && !_time_integrator)
-    assignForAllQps(_u_dot[0], _ad_u_dot, nqp);
+  if (_need_ad_u_dot)
+  {
+    if (safeToComputeADUDot())
+    {
+      assignForAllQps(_ad_dofs_dot[0], _ad_u_dot, nqp);
+      if (_need_ad_u_dotdot)
+        assignForAllQps(_ad_dofs_dotdot[0], _ad_u_dotdot, nqp);
+    }
+    else
+    {
+      assignForAllQps(_u_dot[0], _ad_u_dot, nqp);
+      if (_need_ad_u_dotdot)
+        assignForAllQps(_u_dotdot[0], _ad_u_dotdot, nqp);
+    }
+  }
 }
 
 template <typename OutputType>
 void
 MooseVariableDataFV<OutputType>::setDofValue(const OutputData & value, unsigned int index)
 {
+  mooseAssert(index == 0, "We only ever have one dof value locally");
   _dof_values[index] = value;
+
+  // Update the qp values as well
+  for (const auto qp : make_range(_u.size()))
+    _u[qp] = value;
+
+  if (_need_ad_u)
+    for (const auto qp : make_range(_ad_u.size()))
+      _ad_u[qp] = value;
 }
 
 template <typename OutputType>
@@ -954,7 +1010,13 @@ void
 MooseVariableDataFV<OutputType>::insert(NumericVector<Number> & residual)
 {
   initDofIndices();
-  residual.insert(&_dof_values[0], _dof_indices);
+  if (_dof_indices.size())
+  {
+    mooseAssert(
+        _dof_indices.size() == 1,
+        "Finite volume variables should be constant monomial and have only one dof per element.");
+    residual.insert(&_dof_values[0], _dof_indices);
+  }
 }
 
 template <typename OutputType>
@@ -1226,6 +1288,13 @@ MooseVariableDataFV<OutputType>::prepareIC()
   mooseAssert(_qrule, "We should have a non-null qrule");
   const auto nqp = _qrule->n_points();
   _u.resize(nqp);
+}
+
+template <typename OutputType>
+void
+MooseVariableDataFV<OutputType>::meshChanged()
+{
+  _prev_elem = nullptr;
 }
 
 template class MooseVariableDataFV<Real>;

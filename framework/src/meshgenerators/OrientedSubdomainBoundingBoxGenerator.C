@@ -14,8 +14,6 @@
 
 registerMooseObject("MooseApp", OrientedSubdomainBoundingBoxGenerator);
 
-defineLegacyParams(OrientedSubdomainBoundingBoxGenerator);
-
 InputParameters
 OrientedSubdomainBoundingBoxGenerator::validParams()
 {
@@ -53,7 +51,7 @@ OrientedSubdomainBoundingBoxGenerator::generate()
   // Loop over the elements
   for (const auto & elem : mesh->active_element_ptr_range())
   {
-    bool contains = containsPoint(elem->centroid());
+    bool contains = containsPoint(elem->vertex_average());
     if (contains && _location == "INSIDE")
       elem->subdomain_id() = _block_id;
     else if (!contains && _location == "OUTSIDE")

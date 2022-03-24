@@ -42,7 +42,7 @@ AllLocalDofIndicesThread::AllLocalDofIndicesThread(FEProblemBase & problem,
     else
       _sys = &var.sys().system();
 
-    if (var.count() > 1) // array variable
+    if (var.isArray())
     {
       const auto & array_var = _problem.getArrayVariable(0, vars[i]);
       for (unsigned int p = 0; p < var.count(); ++p)
@@ -70,6 +70,7 @@ AllLocalDofIndicesThread::operator()(const ConstElemRange & range)
   ParallelUniqueId puid;
   _tid = puid.id;
 
+  mooseAssert(_sys, "We should have a system, did you forget to specify any variable in vars?");
   auto & dof_map = _sys->get_dof_map();
 
   for (const auto & elem : range)

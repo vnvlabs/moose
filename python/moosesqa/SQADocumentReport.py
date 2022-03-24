@@ -16,16 +16,17 @@ from .SQAReport import SQAReport
 from .get_documents import get_documents, INL_DOCUMENTS
 from .check_documents import check_documents
 
-@mooseutils.addProperty('working_dirs', ptype=list)
-@mooseutils.addProperty('required_documents', ptype=list)
 class SQADocumentReport(SQAReport):
     """
     Report for existence of required SQA documents and links.
     """
     def __init__(self, **kwargs):
-        self._documents = dict()
         kwargs.setdefault('required_documents', INL_DOCUMENTS)
-        for name in kwargs.get('required_documents'):
+        self.working_dirs = kwargs.pop('working_dirs', None)
+        self.required_documents = kwargs.pop('required_documents', None)
+
+        self._documents = dict()
+        for name in self.required_documents:
             doc = kwargs.pop(name, None)
             if doc is not None:
                 doc = mooseutils.eval_path(doc)
@@ -40,13 +41,6 @@ class SQADocumentReport(SQAReport):
 
     def execute(self, **kwargs):
         """Determine the status"""
-        file_list = list()
-        for working_dir in self.working_dirs:
-            path = mooseutils.eval_path(working_dir)
-            if mooseutils.is_git_repo(path):
-                file_list += mooseutils.git_ls_files(path)
-            else:
-                file_list += glob.glob(os.path.join(path,'**', '*.*'), recursive=True)
-
+        file_list = SQAReport._getFiles(self.working_dirs)
         logger = check_documents(self.documents, file_list, **kwargs)
         return logger

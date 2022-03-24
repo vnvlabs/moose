@@ -73,8 +73,11 @@ CommandLine::initForMultiApp(const std::string & subapp_full_name)
 
   // "remove" CLI args for other sub-applications; remove_if just moves items to the end, so
   // an erase is needed to actually remove the items
-  auto new_end =
-      std::remove_if(_argv.begin(), _argv.end(), [&sub_name, sub_num](const std::string & arg) {
+  auto new_end = std::remove_if(
+      _argv.begin(),
+      _argv.end(),
+      [&sub_name, sub_num](const std::string & arg)
+      {
         // Determine if the current command line argument ('arg') and extract the sub-application
         // name and number. If 'arg' is not command line argument for sub-application then the regex
         // match fails and the argument is retained.
@@ -132,46 +135,47 @@ CommandLine::populateInputParams(InputParameters & params)
 
     if (search(orig_name))
     {
+      auto * string_type = dynamic_cast<InputParameters::Parameter<std::string> *>(it.second);
+      if (string_type)
       {
-        InputParameters::Parameter<std::string> * string_type =
-            dynamic_cast<InputParameters::Parameter<std::string> *>(it.second);
-        if (string_type)
-        {
-          search(orig_name, params.set<std::string>(orig_name));
-          continue;
-        }
+        search(orig_name, params.set<std::string>(orig_name));
+        continue;
+      }
 
-        InputParameters::Parameter<Real> * real_type =
-            dynamic_cast<InputParameters::Parameter<Real> *>(it.second);
-        if (real_type)
-        {
-          search(orig_name, params.set<Real>(orig_name));
-          continue;
-        }
+      auto * string_vector_type =
+          dynamic_cast<InputParameters::Parameter<std::vector<std::string>> *>(it.second);
+      if (string_vector_type)
+      {
+        search(orig_name, params.set<std::vector<std::string>>(orig_name));
+        continue;
+      }
 
-        InputParameters::Parameter<unsigned int> * uint_type =
-            dynamic_cast<InputParameters::Parameter<unsigned int> *>(it.second);
-        if (uint_type)
-        {
-          search(orig_name, params.set<unsigned int>(orig_name));
-          continue;
-        }
+      auto * real_type = dynamic_cast<InputParameters::Parameter<Real> *>(it.second);
+      if (real_type)
+      {
+        search(orig_name, params.set<Real>(orig_name));
+        continue;
+      }
 
-        InputParameters::Parameter<int> * int_type =
-            dynamic_cast<InputParameters::Parameter<int> *>(it.second);
-        if (int_type)
-        {
-          search(orig_name, params.set<int>(orig_name));
-          continue;
-        }
+      auto * uint_type = dynamic_cast<InputParameters::Parameter<unsigned int> *>(it.second);
+      if (uint_type)
+      {
+        search(orig_name, params.set<unsigned int>(orig_name));
+        continue;
+      }
 
-        InputParameters::Parameter<bool> * bool_type =
-            dynamic_cast<InputParameters::Parameter<bool> *>(it.second);
-        if (bool_type)
-        {
-          search(orig_name, params.set<bool>(orig_name));
-          continue;
-        }
+      auto * int_type = dynamic_cast<InputParameters::Parameter<int> *>(it.second);
+      if (int_type)
+      {
+        search(orig_name, params.set<int>(orig_name));
+        continue;
+      }
+
+      auto * bool_type = dynamic_cast<InputParameters::Parameter<bool> *>(it.second);
+      if (bool_type)
+      {
+        search(orig_name, params.set<bool>(orig_name));
+        continue;
       }
     }
     else if (params.isParamRequired(orig_name))
@@ -191,10 +195,41 @@ CommandLine::addOption(const std::string & name, Option cli_opt)
   _cli_options[name] = cli_opt;
 }
 
+std::vector<std::string>::const_iterator
+CommandLine::find(const std::string & option_name) const
+{
+  auto pos = _cli_options.find(option_name);
+  auto it = _args.end();
+
+  if (pos != _cli_options.end())
+  {
+    for (const auto & search_string : pos->second.cli_switch)
+    {
+      auto it = std::find(_args.begin(), _args.end(), search_string);
+      if (it != _args.end())
+        return it;
+    }
+  }
+
+  return it;
+}
+
+std::vector<std::string>::const_iterator
+CommandLine::begin() const
+{
+  return _args.begin();
+}
+
+std::vector<std::string>::const_iterator
+CommandLine::end() const
+{
+  return _args.end();
+}
+
 bool
 CommandLine::search(const std::string & option_name)
 {
-  std::map<std::string, Option>::iterator pos = _cli_options.find(option_name);
+  auto pos = _cli_options.find(option_name);
   if (pos != _cli_options.end())
   {
     for (const auto & search_string : pos->second.cli_switch)
@@ -239,7 +274,7 @@ CommandLine::printUsage() const
   }
 
   Moose::out << "\nSolver Options:\n"
-             << "  See solver manual for details (Petsc or Trilinos)\n";
+             << "  See solver manual for details (Petsc or Trilinos)" << std::endl;
 }
 
 template <>

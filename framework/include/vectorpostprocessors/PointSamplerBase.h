@@ -15,12 +15,6 @@
 #include "MooseVariableInterface.h"
 #include "SamplerBase.h"
 
-// Forward Declarations
-class PointSamplerBase;
-
-template <>
-InputParameters validParams<PointSamplerBase>();
-
 class PointSamplerBase : public GeneralVectorPostprocessor,
                          public CoupleableMooseVariableDependencyIntermediateInterface,
                          public MooseVariableInterface<Real>,
@@ -72,5 +66,10 @@ protected:
 
   /// Postprocessor multiplying the variables
   const Real & _pp_value;
-};
 
+  /// Whether to return a warning if a discontinuous variable is sampled on a face
+  const bool _warn_discontinuous_face_values;
+
+  /// Whether discontinuous variable values are requested, which are ill-defined on faces for this object
+  bool _discontinuous_variables;
+};

@@ -9,30 +9,12 @@
 
 #pragma once
 
-// MOOSE
-#include "ResidualObject.h"
-#include "GeometricSearchInterface.h"
-#include "BlockRestrictable.h"
-#include "BoundaryRestrictable.h"
-#include "CoupleableMooseVariableDependencyIntermediateInterface.h"
-#include "MooseVariableInterface.h"
-
-// Forward declerations
-class NodalKernel;
-
-template <>
-InputParameters validParams<NodalKernel>();
+#include "NodalKernelBase.h"
 
 /**
- * Base class for creating new types of boundary conditions
- *
+ * Base class for creating nodal kernels with hand-coded Jacobians
  */
-class NodalKernel : public ResidualObject,
-                    public BlockRestrictable,
-                    public BoundaryRestrictable,
-                    public GeometricSearchInterface,
-                    public CoupleableMooseVariableDependencyIntermediateInterface,
-                    public MooseVariableInterface<Real>
+class NodalKernel : public NodalKernelBase
 {
 public:
   /**
@@ -42,12 +24,6 @@ public:
   static InputParameters validParams();
 
   NodalKernel(const InputParameters & parameters);
-
-  /**
-   * Gets the variable this is active on
-   * @return the variable
-   */
-  const MooseVariable & variable() const override { return _var; }
 
   /**
    * Compute the residual at the current node.
@@ -91,18 +67,6 @@ protected:
    * computing an off-diagonal jacobian component.
    */
   virtual Real computeQpOffDiagJacobian(unsigned int jvar);
-
-  /// Reference to FEProblemBase
-  FEProblemBase & _fe_problem;
-
-  /// variable this works on
-  MooseVariable & _var;
-
-  /// current node being processed
-  const Node * const & _current_node;
-
-  /// Quadrature point index
-  unsigned int _qp;
 
   /// Value of the unknown variable this is acting on
   const VariableValue & _u;

@@ -16,7 +16,8 @@ ParsedAux::validParams()
 {
   InputParameters params = AuxKernel::validParams();
   params += FunctionParserUtils<false>::validParams();
-  params.addClassDescription("Parsed function AuxKernel.");
+  params.addClassDescription(
+      "Sets a field variable value to the evaluation of a parsed expression.");
 
   params.addRequiredCustomTypeParam<std::string>(
       "function", "FunctionExpression", "function expression");
@@ -58,7 +59,7 @@ ParsedAux::ParsedAux(const InputParameters & parameters)
   // base function object
   _func_F = std::make_shared<SymFunction>();
 
-  // set FParser interneal feature flags
+  // set FParser internal feature flags
   setParserFeatureFlags(_func_F);
 
   // add the constant expressions
@@ -79,7 +80,7 @@ ParsedAux::ParsedAux(const InputParameters & parameters)
   if (_enable_jit)
     _func_F->JITCompile();
 
-  // reserve storage for parameter passing bufefr
+  // reserve storage for parameter passing buffer
   _func_params.resize(_nargs + (_use_xyzt ? 4 : 0));
 }
 

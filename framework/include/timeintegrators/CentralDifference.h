@@ -11,12 +11,6 @@
 
 #include "ActuallyExplicitEuler.h"
 
-// Forward declarations
-class CentralDifference;
-
-template <>
-InputParameters validParams<CentralDifference>();
-
 /**
  * Implements a truly explicit (no nonlinear solve) Central Difference time
  * integration scheme.
@@ -26,11 +20,15 @@ class CentralDifference : public ActuallyExplicitEuler
 public:
   CentralDifference(const InputParameters & parameters);
 
+  static InputParameters validParams();
+
   virtual void initialSetup() override;
 
   virtual int order() override { return 2; }
   virtual void computeTimeDerivatives() override;
-  void computeADTimeDerivatives(DualReal & ad_u_dot, const dof_id_type & dof) const override;
+  void computeADTimeDerivatives(DualReal & ad_u_dot,
+                                const dof_id_type & dof,
+                                DualReal & ad_u_dotdot) const override;
 
 protected:
   /// solution vector for \f$ {du^dotdot}\over{du} \f$

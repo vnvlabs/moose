@@ -8,10 +8,8 @@ such tests.
 The first step in the process is to be sure that the strong form of your equation is well understood.
 For this example, a diffusion equation is being considered.
 
-\begin{equation}
-\label{strong}
+!equation id=mms_strong
 \nabla \cdot \nabla u = 0.
-\end{equation}
 
 Next, assume a solution to this equation. It is important to pick an equation that has the necessary
 order to allow for all the derivatives to be computed, both spatially and temporally.
@@ -34,28 +32,23 @@ $u=t^3xy$.
 For the example problem a spatial convergence study is being performed initially, so the assumed
 exact solution is selected as
 
-\begin{equation}
-\label{exact}
+
+!equation id=mms_exact
 u = \sin({2\pi x})\sin({2\pi y}).
-\end{equation}
 
 Using the assumed solution a forcing function ($f$) can be computed from the strong form such that
 
-\begin{equation}
-\label{mms}
+!equation id=mms_pde
 \nabla \cdot \nabla u - f = 0.
-\end{equation}
 
-This is simply done by inserting the assumed solution ([exact]) into the left-hand side of the
-strong form of the equation ([strong]) and computing the result. The result of this calculation is
+This is simply done by inserting the assumed solution ([mms_exact]) into the left-hand side of the
+strong form of the equation ([mms_strong][) and computing the result. The result of this calculation is
 the forcing function $f$:
 
-\begin{equation}
-\label{force}
+!equation id=mms_force
 f = 8\pi^2\sin(2x\pi)\sin(2y\pi)
-\end{equation}
 
-[mms] is now a problem that can be solved and compared against the exact solution ([exact]).
+[mms_pde] is now a problem that can be solved and compared against the exact solution ([mms_exact]).
 
 ## Computing Forcing Function
 
@@ -98,12 +91,12 @@ The following table lists the additional arguments that may be passed to the "ev
 | Keyword | Type | Default | Description |
 | :- | :- | :- | :- |
 | `variable` | `str` | `u` | The primary variable to be solved for within the PDE |
-| `scalars` | `list` | | A list of constant +scalar+ variables included in the solution or PDE |
-| `vectors` | `list` | | A list of constant +vector+ variables included in the solution or PDE |
-| `functions` | `list` | | A list of arbitrary functions of 'x', 'y', 'z', and 't' in the solution or PDE |
-| `vectorfunctions` | `list` | | A list of arbitrary vector functions of 'x', 'y', 'z', and 't' in the solution or PDE |
+| `scalars` | `list` | A list of constant +scalar+ variables included in the solution or PDE |
+| `vectors` | `list` | A list of constant +vector+ variables included in the solution or PDE |
+| `functions` | `list` | A list of arbitrary functions of 'x', 'y', 'z', and 't' in the solution or PDE |
+| `vectorfunctions` | `list` | A list of arbitrary vector functions of 'x', 'y', 'z', and 't' in the solution or PDE |
 | `negative` | `bool` | `False` | Flag for returning the negative of the evaluated function, by default this is false thus the function returned is correct for placing in the [BodyForce](BodyForce.md) Kernel object. |
-| `**kwargs` | `dict` | | All additional key, value pairs supplied are evaluated as additional functions that may include the 'x', 'y', 'z', and 't' or any other variables defined in the previous arguments. If 'e_i', 'e_j', 'e_k' are supplied the supplied function components (e.g., '_x', '_y', and '_z') are automatically defined. |
+| `**kwargs` | `dict` | All additional key, value pairs supplied are evaluated as additional functions that may include the 'x', 'y', 'z', and 't' or any other variables defined in the previous arguments. If 'e_i', 'e_j', 'e_k' are supplied the supplied function components (e.g., '_x', '_y', and '_z') are automatically defined. |
 
 When arbitrary vectors are supplied, the output will include the components named using the
 vector name with "_x", "_y", or "_z". For example, the following example executed in
@@ -123,11 +116,9 @@ for the problem to ensure that the appropriate rate of convergence is achieved a
 is refined. The file in [mms_spatial] is the complete input file that performs the desired
 solve.
 
-!listing mms_spatial.i id=mms_spatial
-                       caption=Complete input file for the solving the diffusion equation for use
-                               with the method of manufactured solutions for a spatial convergende
-                               study.
-
+!listing mms/test/mms_spatial.i id=mms_spatial
+         caption=Complete input file for the solving the diffusion equation for use with the method
+                 of manufactured solutions for a spatial convergence study.
 
 It is important that the boundary conditions are satisfied exactly, often the easiest
 method to achieve this is to use a [FunctionDirichletBC.md] using the exact solution, which is
@@ -143,10 +134,8 @@ There are many ways to accomplish this, including using the automated tools incl
 python package. The code in [mms_spatial_script] demonstrates the use of the `run_spatial` function
 to perform 4 levels of refinement for both first and second order finite elements.
 
-
 !listing mms/test/mms_spatial.py end=TESTING id=mms_spatial_script
-                        caption=Python script for performing and plotting a spatial convergence
-                                study.
+         caption=Python script for performing and plotting a spatial convergence study.
 
 To determine if the convergence is correct the results from the above input file may be analyzed
 by plotting the data on a log-log plot. The 'mms' package includes a `ConvergencePlot` object
@@ -163,7 +152,7 @@ For more information regarding convergence rates refer to [!citet](fish2007first
 ## Temporal Convergence
 
 In similar fashion it is possible to perform a temporal convergence study. In this example the
-same strong form is considered, see [strong]. However, the assumed solution is modified
+same strong form is considered, see [mms_strong]. However, the assumed solution is modified
 such that the spatial solution can be exactly represented by first order finite elements. The
 assumed solution is given in [time_exact] and the resulting forcing function in [time_force].
 
@@ -199,7 +188,7 @@ file for the temporal problem is shown in [mms_temporal].
 []
 ```
 
-!listing mms_temporal.i id=mms_temporal
+!listing mms/test/mms_temporal.i id=mms_temporal
                        caption=Complete input file for the solving the diffusion equation for use
                                with the method of manufactured solutions for a temporal convergence
                                study.

@@ -16,8 +16,6 @@
 
 registerMooseObject("MooseApp", DumpObjectsProblem);
 
-defineLegacyParams(DumpObjectsProblem);
-
 InputParameters
 DumpObjectsProblem::validParams()
 {
@@ -148,6 +146,7 @@ DumpObjectsProblem::dumpGeneratedSyntax(const std::string path)
   for (const auto & system_pair : pathit->second)
     Moose::out << '[' << system_pair.first << "]\n" << system_pair.second << "[]\n\n";
   Moose::out << "**END DUMP DATA**\n";
+  Moose::out << std::flush;
 }
 
 std::map<std::string, std::string>
@@ -188,7 +187,7 @@ DumpObjectsProblem::stringifyParameters(const InputParameters & parameters)
         }
 
         // delete trailing space
-        if (param_value.back() == ' ')
+        if (!param_value.empty() && param_value.back() == ' ')
           param_value.pop_back();
 
         // add quotes if the parameter contains spaces or is empty

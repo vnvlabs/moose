@@ -22,8 +22,6 @@
 
 registerMooseObject("MooseApp", TopResidualDebugOutput);
 
-defineLegacyParams(TopResidualDebugOutput);
-
 InputParameters
 TopResidualDebugOutput::validParams()
 {
@@ -93,7 +91,7 @@ TopResidualDebugOutput::printTopResiduals(const NumericVector<Number> & residual
       {
         dof_id_type dof_idx = elem->dof_number(_sys.number(), var, 0);
         vec[j] = TopResidualDebugOutputTopResidualData(
-            var, {subdomain_id}, elem_id, elem->centroid(), residual(dof_idx), false, false);
+            var, {subdomain_id}, elem_id, elem->vertex_average(), residual(dof_idx), false, false);
         j++;
       }
   }
@@ -154,4 +152,6 @@ TopResidualDebugOutput::printTopResiduals(const NumericVector<Number> & residual
                  << vec[i]._id << ": " << vec[i]._point << '\n';
     }
   }
+
+  Moose::err << std::flush;
 }

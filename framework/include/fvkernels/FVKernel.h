@@ -15,8 +15,11 @@
 #include "BlockRestrictable.h"
 #include "FunctionInterface.h"
 #include "SetupInterface.h"
+#include "UserObjectInterface.h"
 #include "PostprocessorInterface.h"
 #include "Assembly.h"
+#include "Restartable.h"
+#include "FunctorInterface.h"
 
 class SubProblem;
 
@@ -37,11 +40,17 @@ class FVKernel : public MooseObject,
                  public TransientInterface,
                  public BlockRestrictable,
                  public FunctionInterface,
+                 public UserObjectInterface,
                  public PostprocessorInterface,
-                 public SetupInterface
+                 public SetupInterface,
+                 public Restartable,
+                 public FunctorInterface
 {
 public:
   static InputParameters validParams();
+  static void setRMParams(const InputParameters & obj_params,
+                          InputParameters & rm_params,
+                          unsigned short ghost_layers);
   FVKernel(const InputParameters & params);
 
   const SubProblem & subProblem() const { return _subproblem; }

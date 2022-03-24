@@ -68,9 +68,7 @@ class Token(NodeBase):
         """Retrieve the Information object from a parent node."""
         node = self
         # use _info to prevent infinite loop
-        while node._info is None:
-            if node.parent is None:
-                break
+        while node._info is None and not node.is_root:
             node = node.parent
         return node._info
 
@@ -88,11 +86,13 @@ class Token(NodeBase):
                 strings.append(node['content'])
         return sep.join(strings)
 
-    def copy(self, _parent=None):
+    def copy(self, _parent=None, info=False):
         """
-        Create a copy of this node. This returns an equivalent root node (parent==None).
+        Create a copy of this node. This returns an equivalent root node when '_parent=None'. If
+        'info=True', then the info property of the original token is preserved in the copy.
         """
         tok = Token(self.name, _parent, **self.attributes)
+        tok.info = self.info if info else None
         for child in self.children:
             child.copy(_parent=tok)
         return tok

@@ -15,13 +15,8 @@
 
 #include "libmesh/bounding_box.h"
 
-// Forward declarations
-class MultiAppTransfer;
 class MooseMesh;
 class MultiApp;
-
-template <>
-InputParameters validParams<MultiAppTransfer>();
 
 /**
  * Base class for all MultiAppTransfer objects.
@@ -111,7 +106,7 @@ protected:
    * Helper for checking a problem for a variable.
    *
    * @param fe_problem The problem that should contain the variable
-   * @parem var_name The name of the variable that should exist within the problem
+   * @param var_name The name of the variable that should exist within the problem
    * @param param_name (optional) The input file parameter name for throwing paramError, if not
    *                   provided a mooseError is thrown.
    */

@@ -37,29 +37,84 @@
   # Getting this information on INITIAL has no practical use, but
   # we want to make sure that we can obtain information about
   # a section that has not ran yet.
-  [calls]
-    type = PerfGraphData
-    section_name = FEProblem::computeResidualInternal
-    data_type = CALLS
-    execute_on = 'INITIAL TIMESTEP_END'
-  []
   [self]
     type = PerfGraphData
     section_name = FEProblem::computeResidualInternal
-    data_type = SELF
+    data_type = CALLS
+    must_exist = false
     execute_on = 'INITIAL TIMESTEP_END'
   []
   [children]
     type = PerfGraphData
     section_name = FEProblem::computeResidualInternal
     data_type = CHILDREN
-    execute_on = 'INITIAL TIMESTEP_END'
+    execute_on = 'TIMESTEP_END'
   []
   [total]
     type = PerfGraphData
     section_name = FEProblem::computeResidualInternal
-    data_type = TOTAL
-    execute_on = 'INITIAL TIMESTEP_END'
+    data_type = SELF
+    execute_on = 'TIMESTEP_END'
+  []
+  [self_avg]
+    type = PerfGraphData
+    section_name = FEProblem::computeResidualInternal
+    data_type = SELF_AVG
+    execute_on = 'TIMESTEP_END'
+  []
+  [children_avg]
+    type = PerfGraphData
+    section_name = FEProblem::computeResidualInternal
+    data_type = CHILDREN_AVG
+    execute_on = 'TIMESTEP_END'
+  []
+  [total_avg]
+    type = PerfGraphData
+    section_name = FEProblem::computeResidualInternal
+    data_type = TOTAL_AVG
+    execute_on = 'TIMESTEP_END'
+  []
+  [self_percent]
+    type = PerfGraphData
+    section_name = FEProblem::computeResidualInternal
+    data_type = SELF_PERCENT
+    execute_on = 'TIMESTEP_END'
+  []
+  [children_percent]
+    type = PerfGraphData
+    section_name = FEProblem::computeResidualInternal
+    data_type = CHILDREN_PERCENT
+    execute_on = 'TIMESTEP_END'
+  []
+  [total_percent]
+    type = PerfGraphData
+    section_name = FEProblem::computeResidualInternal
+    data_type = TOTAL_PERCENT
+    execute_on = 'TIMESTEP_END'
+  []
+  [self_memory]
+    type = PerfGraphData
+    section_name = FEProblem::computeResidualInternal
+    data_type = SELF_MEMORY
+    execute_on = 'TIMESTEP_END'
+  []
+  [children_memory]
+    type = PerfGraphData
+    section_name = FEProblem::computeResidualInternal
+    data_type = CHILDREN_MEMORY
+    execute_on = 'TIMESTEP_END'
+  []
+  [total_memory]
+    type = PerfGraphData
+    section_name = FEProblem::computeResidualInternal
+    data_type = TOTAL_MEMORY
+    execute_on = 'TIMESTEP_END'
+  []
+  [calls]
+    type = PerfGraphData
+    section_name = FEProblem::computeResidualInternal
+    data_type = CALLS
+    execute_on = 'TIMESTEP_END'
   []
 []
 
@@ -72,10 +127,4 @@
 
 [Outputs]
   csv = true
-  [pgraph]
-    type = PerfGraphOutput
-    level = 1
-    heaviest_branch = true
-    heaviest_sections = 10
-  []
 []

@@ -16,7 +16,6 @@
 #include "PetscSupport.h"
 #include "ComputeResidualFunctor.h"
 #include "ComputeFDResidualFunctor.h"
-#include "TimedPrint.h"
 #include "MooseVariableScalar.h"
 #include "MooseTypes.h"
 
@@ -104,7 +103,6 @@ NonlinearSystem::NonlinearSystem(FEProblemBase & fe_problem, const std::string &
   nonlinearSolver()->transpose_nullspace = Moose::compute_transpose_nullspace;
   nonlinearSolver()->nearnullspace = Moose::compute_nearnullspace;
 
-#ifdef LIBMESH_HAVE_PETSC
   PetscNonlinearSolver<Real> * petsc_solver =
       static_cast<PetscNonlinearSolver<Real> *>(_nl_implicit_sys.nonlinear_solver.get());
   if (petsc_solver)
@@ -113,7 +111,6 @@ NonlinearSystem::NonlinearSystem(FEProblemBase & fe_problem, const std::string &
     petsc_solver->set_jacobian_zero_out(false);
     petsc_solver->use_default_monitor(false);
   }
-#endif
 }
 
 NonlinearSystem::~NonlinearSystem() {}
@@ -141,7 +138,7 @@ NonlinearSystem::solve()
 
   if (_fe_problem.solverParams()._type != Moose::ST_LINEAR)
   {
-    CONSOLE_TIMED_PRINT("Computing initial residual")
+    TIME_SECTION("nlInitialResidual", 3, "Computing Initial Residual");
     // Calculate the initial residual for use in the convergence criterion.
     _computing_initial_residual = true;
     _fe_problem.computeResidualSys(_nl_implicit_sys, *_current_solution, *_nl_implicit_sys.rhs);
@@ -150,7 +147,7 @@ NonlinearSystem::solve()
     _initial_residual_before_preset_bcs = _nl_implicit_sys.rhs->l2_norm();
     if (_compute_initial_residual_before_preset_bcs)
       _console << "Initial residual before setting preset BCs: "
-               << _initial_residual_before_preset_bcs << '\n';
+               << _initial_residual_before_preset_bcs << std::endl;
   }
 
   // Clear the iteration counters
@@ -187,13 +184,11 @@ NonlinearSystem::solve()
     setupFiniteDifferencedPreconditioner();
   }
 
-#ifdef LIBMESH_HAVE_PETSC
   PetscNonlinearSolver<Real> & solver =
       static_cast<PetscNonlinearSolver<Real> &>(*_nl_implicit_sys.nonlinear_solver);
   solver.mffd_residual_object = &_fd_residual_functor;
 
   solver.set_snesmf_reuse_base(_fe_problem.useSNESMFReuseBase());
-#endif
 
   if (_time_integrator)
   {
@@ -206,35 +201,22 @@ NonlinearSystem::solve()
   {
     system().solve();
     _n_iters = _nl_implicit_sys.n_nonlinear_iterations();
-#ifdef LIBMESH_HAVE_PETSC
     _n_linear_iters = solver.get_total_linear_iterations();
-#endif
   }
 
   // store info about the solve
   _final_residual = _nl_implicit_sys.final_nonlinear_residual();
 
-#ifdef LIBMESH_HAVE_PETSC
   if (_use_coloring_finite_difference)
-#if PETSC_VERSION_LESS_THAN(3, 2, 0)
-    MatFDColoringDestroy(_fdcoloring);
-#else
     MatFDColoringDestroy(&_fdcoloring);
-#endif
-#endif
 }
 
 void
 NonlinearSystem::stopSolve()
 {
-#ifdef LIBMESH_HAVE_PETSC
-#if PETSC_VERSION_LESS_THAN(3, 0, 0)
-#else
   PetscNonlinearSolver<Real> & solver =
       static_cast<PetscNonlinearSolver<Real> &>(*sys().nonlinear_solver);
   SNESSetFunctionDomainError(solver.snes());
-#endif
-#endif
 
   // Insert a NaN into the residual vector.  As of PETSc-3.6, this
   // should make PETSc return DIVERGED_NANORINF the next time it does
@@ -282,7 +264,6 @@ NonlinearSystem::setupFiniteDifferencedPreconditioner()
 void
 NonlinearSystem::setupStandardFiniteDifferencedPreconditioner()
 {
-#if LIBMESH_HAVE_PETSC
   // Make sure that libMesh isn't going to override our preconditioner
   _nl_implicit_sys.nonlinear_solver->jacobian = nullptr;
 
@@ -295,19 +276,13 @@ NonlinearSystem::setupStandardFiniteDifferencedPreconditioner()
   SNESSetJacobian(petsc_nonlinear_solver->snes(),
                   petsc_mat->mat(),
                   petsc_mat->mat(),
-#if PETSC_VERSION_LESS_THAN(3, 4, 0)
-                  SNESDefaultComputeJacobian,
-#else
                   SNESComputeJacobianDefault,
-#endif
                   nullptr);
-#endif
 }
 
 void
 NonlinearSystem::setupColoringFiniteDifferencedPreconditioner()
 {
-#ifdef LIBMESH_HAVE_PETSC
   // Make sure that libMesh isn't going to override our preconditioner
   _nl_implicit_sys.nonlinear_solver->jacobian = nullptr;
 
@@ -317,12 +292,6 @@ NonlinearSystem::setupColoringFiniteDifferencedPreconditioner()
   // Pointer to underlying PetscMatrix type
   PetscMatrix<Number> * petsc_mat =
       dynamic_cast<PetscMatrix<Number> *>(&_nl_implicit_sys.get_system_matrix());
-
-#if PETSC_VERSION_LESS_THAN(3, 2, 0)
-  // This variable is only needed for PETSC < 3.2.0
-  PetscVector<Number> * petsc_vec =
-      dynamic_cast<PetscVector<Number> *>(_nl_implicit_sys.solution.get());
-#endif
 
   Moose::compute_jacobian(*_nl_implicit_sys.current_local_solution, *petsc_mat, _nl_implicit_sys);
 
@@ -334,15 +303,6 @@ NonlinearSystem::setupColoringFiniteDifferencedPreconditioner()
   PetscErrorCode ierr = 0;
   ISColoring iscoloring;
 
-#if PETSC_VERSION_LESS_THAN(3, 2, 0)
-  // PETSc 3.2.x
-  ierr = MatGetColoring(petsc_mat->mat(), MATCOLORING_LF, &iscoloring);
-  CHKERRABORT(libMesh::COMM_WORLD, ierr);
-#elif PETSC_VERSION_LESS_THAN(3, 5, 0)
-  // PETSc 3.3.x, 3.4.x
-  ierr = MatGetColoring(petsc_mat->mat(), MATCOLORINGLF, &iscoloring);
-  CHKERRABORT(_communicator.get(), ierr);
-#else
   // PETSc 3.5.x
   MatColoring matcoloring;
   ierr = MatColoringCreate(petsc_mat->mat(), &matcoloring);
@@ -355,7 +315,6 @@ NonlinearSystem::setupColoringFiniteDifferencedPreconditioner()
   CHKERRABORT(_communicator.get(), ierr);
   ierr = MatColoringDestroy(&matcoloring);
   CHKERRABORT(_communicator.get(), ierr);
-#endif
 
   MatFDColoringCreate(petsc_mat->mat(), iscoloring, &_fdcoloring);
   MatFDColoringSetFromOptions(_fdcoloring);
@@ -365,38 +324,14 @@ NonlinearSystem::setupColoringFiniteDifferencedPreconditioner()
                                libMesh::libmesh_petsc_snes_fd_residual,
                            &petsc_nonlinear_solver);
   // clang-format on
-#if !PETSC_RELEASE_LESS_THAN(3, 5, 0)
   MatFDColoringSetUp(petsc_mat->mat(), iscoloring, _fdcoloring);
-#endif
-#if PETSC_VERSION_LESS_THAN(3, 4, 0)
-  SNESSetJacobian(petsc_nonlinear_solver.snes(),
-                  petsc_mat->mat(),
-                  petsc_mat->mat(),
-                  SNESDefaultComputeJacobianColor,
-                  _fdcoloring);
-#else
   SNESSetJacobian(petsc_nonlinear_solver.snes(),
                   petsc_mat->mat(),
                   petsc_mat->mat(),
                   SNESComputeJacobianDefaultColor,
                   _fdcoloring);
-#endif
-#if PETSC_VERSION_LESS_THAN(3, 2, 0)
-  Mat my_mat = petsc_mat->mat();
-  MatStructure my_struct;
-
-  SNESComputeJacobian(
-      petsc_nonlinear_solver.snes(), petsc_vec->vec(), &my_mat, &my_mat, &my_struct);
-#endif
-
-#if PETSC_VERSION_LESS_THAN(3, 2, 0)
-  ISColoringDestroy(iscoloring);
-#else
-  // PETSc 3.3.0
+  // PETSc >=3.3.0
   ISColoringDestroy(&iscoloring);
-#endif
-
-#endif
 }
 
 bool
@@ -417,7 +352,7 @@ NonlinearSystem::attachPreconditioner(Preconditioner<Number> * preconditioner)
 void
 NonlinearSystem::computeScalingJacobian()
 {
-  _fe_problem.computeJacobianSys(_nl_implicit_sys, *_current_solution, _scaling_matrix);
+  _fe_problem.computeJacobianSys(_nl_implicit_sys, *_current_solution, *_scaling_matrix);
 }
 
 void

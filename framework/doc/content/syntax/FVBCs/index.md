@@ -21,7 +21,7 @@ FVM boundary conditions are added to simulation input files in the `FVBCs` as in
 !listing test/tests/fvkernels/fv_simple_diffusion/neumann.i
          block=FVBCs
          id=first_fv_bc_example
-         caption=Example of the FVBCs block in a [MOOSE] input file.
+         caption=Example of the FVBCs block in a MOOSE input file.
 
 In this example input, a diffusion equation with flux boundary conditions on the left and Dirichlet boundary conditions on the right is solved. To understand the differences between
 these two boundary conditions, let's start with the diffusion equation:
@@ -106,7 +106,7 @@ parameters and then returns it in `computeQpResidual()`.
 !listing framework/src/fvbcs/FVNeumannBC.C
          start=#include
          end=""
-         id=fv_dirichlet_code
+         id=fv_neumann_code
          caption=Example source code for `FVNeumannBC`.
 
 ## FVBCs source code: FVBurgersOutflowBC

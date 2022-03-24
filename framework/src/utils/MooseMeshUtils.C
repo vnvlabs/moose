@@ -15,6 +15,7 @@
 #include "libmesh/replicated_mesh.h"
 #include "libmesh/mesh_base.h"
 #include "libmesh/parallel.h"
+#include "libmesh/parallel_algebra.h"
 
 namespace MooseMeshUtils
 {
@@ -133,13 +134,7 @@ getSubdomainIDs(const libMesh::MeshBase & mesh, const std::vector<SubdomainName>
       break;
     }
 
-    subdomain_id_type id = Moose::INVALID_BLOCK_ID;
-    std::istringstream ss(subdomain_name[i]);
-
-    if (!(ss >> id) || !ss.eof())
-      id = mesh.get_id_by_name(subdomain_name[i]);
-
-    ids[i] = id;
+    ids[i] = MooseMeshUtils::getSubdomainID(subdomain_name[i], mesh);
   }
 
   return ids;
@@ -155,5 +150,38 @@ getBoundaryID(const BoundaryName & boundary_name, const MeshBase & mesh)
     id = mesh.get_boundary_info().get_id_by_name(boundary_name);
 
   return id;
+}
+
+SubdomainID
+getSubdomainID(const SubdomainName & subdomain_name, const MeshBase & mesh)
+{
+  if (subdomain_name == "ANY_BLOCK_ID")
+    mooseError("getSubdomainID() does not work with \"ANY_BLOCK_ID\"");
+
+  SubdomainID id = Moose::INVALID_BLOCK_ID;
+  std::istringstream ss(subdomain_name);
+
+  if (!(ss >> id) || !ss.eof())
+    id = mesh.get_id_by_name(subdomain_name);
+
+  return id;
+}
+
+Point
+meshCentroidCalculator(const MeshBase & mesh)
+{
+  Point centroid_pt = Point(0.0, 0.0, 0.0);
+  Real vol_tmp = 0.0;
+  for (const auto & elem :
+       as_range(mesh.active_local_elements_begin(), mesh.active_local_elements_end()))
+  {
+    Real elem_vol = elem->volume();
+    centroid_pt += (elem->true_centroid()) * elem_vol;
+    vol_tmp += elem_vol;
+  }
+  mesh.comm().sum(centroid_pt);
+  mesh.comm().sum(vol_tmp);
+  centroid_pt /= vol_tmp;
+  return centroid_pt;
 }
 }

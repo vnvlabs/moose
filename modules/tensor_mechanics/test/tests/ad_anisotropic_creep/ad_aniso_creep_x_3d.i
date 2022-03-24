@@ -119,14 +119,18 @@
     absolute_tolerance = 1e-16
   []
 
+  [hill_tensor]
+    type = HillConstants
+    # F G H L M N
+    hill_constants = "0.5 0.25 0.3866 1.6413 1.6413 1.2731"
+  []
+
   [trial_creep_two]
     type = ADHillCreepStressUpdate
     coefficient = 1e-16
     n_exponent = 9
     m_exponent = 0
     activation_energy = 0
-    # F G H L M N
-    hill_constants = "0.5 0.25 0.3866 1.6413 1.6413 1.2731"
     max_inelastic_increment = 0.00003
     absolute_tolerance = 1e-20
     relative_tolerance = 1e-20
@@ -170,8 +174,8 @@
   type = Transient
 
   solve_type = PJFNK
-  petsc_options_iname = '-pc_type -pc_factor_mat_solver_package'
-  petsc_options_value = 'lu     superlu_dist'
+  petsc_options_iname = '-pc_type -pc_factor_mat_solver_package -mat_mffd_err'
+  petsc_options_value = 'lu     superlu_dist                    1e-5'
 
   nl_rel_tol = 1.0e-14
   nl_abs_tol = 1.0e-14

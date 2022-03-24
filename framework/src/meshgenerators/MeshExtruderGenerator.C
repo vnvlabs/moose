@@ -17,8 +17,6 @@
 
 registerMooseObject("MooseApp", MeshExtruderGenerator);
 
-defineLegacyParams(MeshExtruderGenerator);
-
 InputParameters
 MeshExtruderGenerator::validParams()
 {
@@ -73,15 +71,14 @@ MeshExtruderGenerator::generate()
 {
   std::unique_ptr<MeshBase> source_mesh = std::move(_input);
 
-  std::unique_ptr<MeshBase> dest_mesh = source_mesh->clone();
-  dest_mesh->clear();
+  auto dest_mesh = buildMeshBaseObject();
 
   if (source_mesh->mesh_dimension() == 3)
     mooseError("You cannot extrude a 3D mesh !");
 
   std::unique_ptr<QueryElemSubdomainID> elem_subdomain_id;
   if (_existing_subdomains.size() > 0)
-    elem_subdomain_id = libmesh_make_unique<QueryElemSubdomainID>(
+    elem_subdomain_id = std::make_unique<QueryElemSubdomainID>(
         _existing_subdomains, _layers, _new_ids, _num_layers);
 
   MeshTools::Generation::build_extrusion(dynamic_cast<libMesh::UnstructuredMesh &>(*dest_mesh),

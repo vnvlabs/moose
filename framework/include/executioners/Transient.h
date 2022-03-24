@@ -15,13 +15,8 @@
 #include <string>
 #include <fstream>
 
-// Forward Declarations
-class Transient;
 class TimeStepper;
 class FEProblemBase;
-
-template <>
-InputParameters validParams<Transient>();
 
 /**
  * Transient executioners usually loop through a number of timesteps... calling solve()
@@ -180,6 +175,12 @@ public:
   Real & timestepTol() { return _timestep_tolerance; }
 
   /**
+   * Set the timestep tolerance
+   * @param tolerance timestep tolerance
+   */
+  virtual void setTimestepTolerance(const Real & tolerance) { _timestep_tolerance = tolerance; }
+
+  /**
    * Is the current step at a sync point (sync times, time interval, target time, etc)?
    * @return Bool indicataing whether we are at a sync point
    */
@@ -204,12 +205,24 @@ public:
    */
   virtual void forceNumSteps(const unsigned int num_steps) { _num_steps = num_steps; }
 
+  /// Return the solve object wrapped by time stepper
+  virtual SolveObject * timeStepSolveObject() { return _fixed_point_solve.get(); }
+
 protected:
   /// Here for backward compatibility
   FEProblemBase & _problem;
 
+  /// inner-most solve object to perform Newton solve with PETSc on every time step
+  FEProblemSolve _feproblem_solve;
+
   /// Reference to nonlinear system base for faster access
   NonlinearSystemBase & _nl;
+
+  /// Reference to auxiliary system base for faster access
+  AuxiliarySystem & _aux;
+
+  /// Whether to use the auxiliary system solution to determine steady-states
+  const bool _check_aux;
 
   Moose::TimeIntegratorType _time_scheme;
   std::shared_ptr<TimeStepper> _time_stepper;
@@ -271,5 +284,8 @@ protected:
 
   void setupTimeIntegrator();
 
-  PerfID _final_timer;
+  /// Whether to divide the solution difference norm by dt. If taking 'small' time steps this member
+  /// should probably be true. If taking very 'large' timesteps in an attempt to reach a
+  /// steady-state, this member should probably be be false.
+  const bool _normalize_solution_diff_norm_by_dt;
 };

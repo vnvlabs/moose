@@ -2,10 +2,9 @@ mu=.01
 rho=1
 
 [GlobalParams]
-  vel = 'velocity'
   velocity_interp_method = 'rc'
   advected_interp_method = 'average'
-  two_term_boundary_expansion = true
+  rhie_chow_user_object = 'rc'
 []
 
 [Mesh]
@@ -54,14 +53,19 @@ rho=1
   []
 []
 
+[UserObjects]
+  [rc]
+    type = INSFVRhieChowInterpolator
+    u = u
+    v = v
+    pressure = pressure
+  []
+[]
+
 [FVKernels]
   [mass]
     type = INSFVMassAdvection
     variable = pressure
-    pressure = pressure
-    u = u
-    v = v
-    mu = ${mu}
     rho = ${rho}
   []
   [mean_zero_pressure]
@@ -73,49 +77,43 @@ rho=1
   [u_advection]
     type = INSFVMomentumAdvection
     variable = u
-    advected_quantity = 'rhou'
-    pressure = pressure
-    u = u
-    v = v
-    mu = ${mu}
     rho = ${rho}
+    momentum_component = 'x'
   []
 
   [u_viscosity]
-    type = FVDiffusion
+    type = INSFVMomentumDiffusion
     variable = u
-    coeff = ${mu}
+    mu = 'mu'
+    momentum_component = 'x'
   []
 
   [u_pressure]
     type = INSFVMomentumPressure
     variable = u
     momentum_component = 'x'
-    p = pressure
+    pressure = pressure
   []
 
   [v_advection]
     type = INSFVMomentumAdvection
     variable = v
-    advected_quantity = 'rhov'
-    pressure = pressure
-    u = u
-    v = v
-    mu = ${mu}
     rho = ${rho}
+    momentum_component = 'y'
   []
 
   [v_viscosity]
-    type = FVDiffusion
+    type = INSFVMomentumDiffusion
     variable = v
-    coeff = ${mu}
+    mu = 'mu'
+    momentum_component = 'y'
   []
 
   [v_pressure]
     type = INSFVMomentumPressure
     variable = v
     momentum_component = 'y'
-    p = pressure
+    pressure = pressure
   []
 []
 
@@ -143,12 +141,10 @@ rho=1
 []
 
 [Materials]
-  [ins_fv]
-    type = INSFVMaterial
-    u = 'u'
-    v = 'v'
-    pressure = 'pressure'
-    rho = ${rho}
+  [mu]
+    type = ADGenericFunctorMaterial
+    prop_names = 'mu'
+    prop_values = '${mu}'
   []
 []
 

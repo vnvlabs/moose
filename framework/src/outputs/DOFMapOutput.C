@@ -25,8 +25,6 @@
 
 registerMooseObjectAliased("MooseApp", DOFMapOutput, "DOFMap");
 
-defineLegacyParams(DOFMapOutput);
-
 InputParameters
 DOFMapOutput::validParams()
 {
@@ -188,7 +186,7 @@ DOFMapOutput::output(const ExecFlagType & /*type*/)
       oss << "]}";
     }
   }
-  oss << "]}\n";
+  oss << "]}" << std::endl;
 
   // Write the message to file stream
   if (_write_file)

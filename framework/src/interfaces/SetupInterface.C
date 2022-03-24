@@ -11,8 +11,6 @@
 #include "Conversion.h"
 #include "FEProblem.h"
 
-defineLegacyParams(SetupInterface);
-
 InputParameters
 SetupInterface::validParams()
 {
@@ -77,7 +75,7 @@ SetupInterface::execFlags() const
   // TODO: ExecFlagType
   mooseDeprecated("The execFlags() method is being removed because MOOSE has been updated to use a "
                   "ExecFlagEnum for execute flags. The current flags should be retrieved from "
-                  "the \"exeucte_on\" parameters of your object or by using the \"_execute_enum\" "
+                  "the \"execute_on\" parameters of your object or by using the \"_execute_enum\" "
                   "reference to the parameter or the getExecuteOnEnum() method.");
 
   return _exec_flags;

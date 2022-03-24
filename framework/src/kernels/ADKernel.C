@@ -53,7 +53,6 @@ ADKernelTempl<T>::ADKernelTempl(const InputParameters & parameters)
     _phi(_assembly.phi(_var)),
     _grad_phi(_assembly.template adGradPhi<T>(_var)),
     _regular_grad_phi(_assembly.gradPhi(_var)),
-    _use_displaced_mesh(getParam<bool>("use_displaced_mesh")),
     _my_elem(nullptr)
 {
   _subproblem.haveADObjects(true);
@@ -218,21 +217,22 @@ ADKernelTempl<T>::computeADJacobian(
   computeResidualsForJacobian();
 
   auto local_functor =
-      [&](const std::vector<ADReal> &, const std::vector<dof_id_type> &, const std::set<TagID> &) {
-        for (const auto & it : coupling_entries)
-        {
-          const MooseVariableFEBase & ivariable = *(it.first);
-          const MooseVariableFEBase & jvariable = *(it.second);
+      [&](const std::vector<ADReal> &, const std::vector<dof_id_type> &, const std::set<TagID> &)
+  {
+    for (const auto & it : coupling_entries)
+    {
+      const MooseVariableFEBase & ivariable = *(it.first);
+      const MooseVariableFEBase & jvariable = *(it.second);
 
-          unsigned int ivar = ivariable.number();
+      unsigned int ivar = ivariable.number();
 
-          if (ivar != _var.number() || !jvariable.hasBlocks(_current_elem->subdomain_id()))
-            continue;
+      if (ivar != _var.number() || !jvariable.hasBlocks(_current_elem->subdomain_id()))
+        continue;
 
-          // Make sure to get the correct undisplaced/displaced variable
-          addJacobian(getVariable(jvariable.number()));
-        }
-      };
+      // Make sure to get the correct undisplaced/displaced variable
+      addJacobian(getVariable(jvariable.number()));
+    }
+  };
 
   _assembly.processDerivatives(_residuals, dofIndices(), _matrix_tags, local_functor);
 }

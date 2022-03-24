@@ -69,6 +69,13 @@ public:
   const Point & faceCentroid() const { return _face_centroid; }
 
   ///@{
+  /// Returns the coordinates of the approximate face centroid
+  /// (intersection of the face and the line between the cell centroids)
+  /// in case of skewed meshes.
+  const Point & rIntersection() const { return _r_intersection; }
+  ///@}
+
+  ///@{
   /// Returns the elem and neighbor elements adjacent to the face.
   /// If a face is on a mesh boundary, the neighborPtr
   /// will return nullptr - the elem will never be null.
@@ -158,21 +165,50 @@ public:
   /// Return the geometric weighting factor
   Real gC() const { return _gc; }
 
+  /// Return the weighting factor for skewed element-pairs
+  Real gCSkewed() const { return _gc_skewed; }
+
+  /**
+   * @return the distance vector drawn from centroid C to F, or in terms of MOOSE implementation,
+   * the distance vector obtained from subtracting the element centroid from the neighbor centroid
+   */
   const RealVectorValue & dCF() const { return _d_cf; }
 
+  /**
+   * @return the magnitude of the distance vector between centroids C and F, or in terms of MOOSE
+   * implementation, the magnitude of the distance vector between neighbor and element centroids
+   */
   Real dCFMag() const { return _d_cf_mag; }
 
+  /**
+   * @return the normalized (e.g. unit) distance vector drawn from centroid C to F, or in terms of
+   * MOOSE implementation, the normalized (e.g. unit) distance vector obtained from subtracting the
+   * element centroid from the neighbor centroid
+   */
   const RealVectorValue & eCF() const { return _e_cf; }
 
+  /**
+   * @return the ID of the processor that owns this object
+   */
   processor_id_type processor_id() const { return _processor_id; }
 
+  /**
+   * @return the vertices attached to this face
+   */
   const std::vector<const Node *> & vertices() const { return _vertices; }
+
+  /**
+   * @return a unique identifier of this face object. It's formed using the element id and the
+   * element's side that corresponds to this face
+   */
+  const std::pair<dof_id_type, unsigned int> & id() const { return _id; }
 
 private:
   Real _face_coord = 0;
   Point _normal;
 
   const processor_id_type _processor_id;
+  const std::pair<dof_id_type, unsigned int> _id;
 
   /// the elem and neighbor elems
   const Elem * const _elem;
@@ -205,15 +241,24 @@ private:
   const Point _neighbor_centroid;
   const Real _neighbor_volume;
 
-  /// Geometric weighting factor
+  /// Geometric weighting factor for face value interpolation
   const Real _gc;
 
   /// the distance vector between neighbor and element centroids
   const RealVectorValue _d_cf;
+
   /// the distance norm between neighbor and element centroids
   const Real _d_cf_mag;
+
   /// The unit normal vector pointing from element center C to element center F
   const RealVectorValue _e_cf;
+
+  /// The vector to the intersection of d_{CF} and the face.
+  Point _r_intersection;
+
+  /// Geometric weighting factor for face value interpolation in case of skewed
+  /// cell-connections
+  Real _gc_skewed;
 
   /// cached locations of variables in solution vectors
   /// TODO: make this more efficient by not using a map if possible
