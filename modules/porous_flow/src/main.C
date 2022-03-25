@@ -14,8 +14,8 @@
 #include "AppFactory.h"
 #include "VnV.h"
 
-INJECTION_EXECUTABLE(MOOSE_PF_EX) 
-INJECTION_SUBPACKAGE(MOOSE_PF_EX,MOOSE)
+INJECTION_EXECUTABLE(POROUSFLOW) 
+INJECTION_SUBPACKAGE(POROUSFLOW,MOOSE)
 
 int moose_pf_ex_vnv_test_function(int x) {
   
@@ -28,13 +28,13 @@ int moose_pf_ex_vnv_test_function(int x) {
    * here as well. 
    *
    */      	
-  INJECTION_LOOP_BEGIN(MOOSE_PF_EX, VWORLD(MOOSE_PF_EX), SanityCheck, x)
+  INJECTION_LOOP_BEGIN("POROUSFLOW", VWORLD, "SanityCheck", x)
   for (int i = 0; i < 10; i++) {
     x += i;
-    INJECTION_LOOP_ITER(MOOSE_PF_EX,SanityCheck, inner);
+    INJECTION_LOOP_ITER("POROUSFLOW","SanityCheck", "inner");
   }
 
-  INJECTION_LOOP_END(MOOSE_PF_EX,SanityCheck);
+  INJECTION_LOOP_END("POROUSFLOW", "SanityCheck");
   return x;
 }
 
@@ -52,7 +52,7 @@ main(int argc, char * argv[])
    * This is the introduction.
    *
    */ 
-  INJECTION_INITIALIZE(MOOSE_PF_EX, &argc, &argv, "./vv-input.json" );
+  INJECTION_INITIALIZE(POROUSFLOW, &argc, &argv, "./vv-input.json" );
 
   /** 
    * Run a quick function with some injetion points for testing. 
@@ -68,7 +68,7 @@ main(int argc, char * argv[])
   // Execute the application
   app->run();
 
-  INJECTION_FINALIZE(MOOSE_PF_EX)
+  INJECTION_FINALIZE(POROUSFLOW)
 
   return 0;
 }

@@ -179,31 +179,6 @@ PicardSolve::savePostprocessorValues(const bool primary)
     transformed_pps_values = &_secondary_transformed_pps_values;
   }
 
-<<<<<<< HEAD
-  if (_problem.haveXFEM() && _update_xfem_at_timestep_begin)
-    _problem.updateMeshXFEM();
-
-  _problem.execute(EXEC_TIMESTEP_BEGIN);
-
-  if (_has_picard_its && _has_picard_norm)
-    if (_problem.hasMultiApps(EXEC_TIMESTEP_BEGIN) || _picard_force_norms)
-    {
-      begin_norm = _problem.computeResidualL2Norm();
-
-     
-
-      _console << COLOR_MAGENTA << "Picard Norm after TIMESTEP_BEGIN MultiApps: "
-               << Console::outputNorm(begin_norm_old, begin_norm) << '\n';
-    }
-
-  // Perform output for timestep begin
-  _problem.outputStep(EXEC_TIMESTEP_BEGIN);
-
-  
-
-  // Update warehouse active objects
-  _problem.updateActiveObjects();
-=======
   if (relaxation_factor != 1.)
     // Save postprocessor previous values
     for (size_t i = 0; i < (*transformed_pps).size(); i++)
@@ -220,7 +195,6 @@ PicardSolve::useFixedPointAlgorithmUpdateInsteadOfPicard(const bool primary)
   else
     return _secondary_relaxation_factor != 1. && _main_fixed_point_it > 0;
 }
->>>>>>> 71e154c564a08e6b29f64374f094721c700d8141
 
 void
 PicardSolve::transformPostprocessors(const bool primary)
@@ -283,21 +257,6 @@ PicardSolve::transformVariables(const std::set<dof_id_type> & transformed_dofs, 
   _nl.update();
 }
 
-<<<<<<< HEAD
-      /**
-       * Picard Step Completed 
-       * ==================================
-       *
-       * A picard step was completed successfully. 
-       */
-      INJECTION_POINT("MOOSE", VWORLD, "PicardStepSuccessfull", end_norm_old, end_norm);
-
-
-      _console << COLOR_MAGENTA << "Picard Norm after TIMESTEP_END MultiApps: "
-               << Console::outputNorm(end_norm_old, end_norm) << '\n';
-    }
-  return true;
-=======
 void
 PicardSolve::printFixedPointConvergenceHistory()
 {
@@ -315,5 +274,4 @@ PicardSolve::printFixedPointConvergenceHistory()
   }
 
   _console << std::flush;
->>>>>>> 71e154c564a08e6b29f64374f094721c700d8141
 }

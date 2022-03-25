@@ -35,9 +35,10 @@
   TIME_SECTION1(__perf_id);
 
 // Overloading solution from https://stackoverflow.com/a/11763277
-#define GET_MACRO(_1, _2, _3, _4, NAME, ...) NAME
+// Scope Get macro to moose -- turns out vnv copied the same stack overflow question :) 
+#define MOOSE_GET_MACRO(_1, _2, _3, _4, NAME, ...) NAME
 #define TIME_SECTION(...)                                                                          \
-  GET_MACRO(__VA_ARGS__, TIME_SECTION4, TIME_SECTION3, TIME_SECTION2, TIME_SECTION1, )(__VA_ARGS__)
+  MOOSE_GET_MACRO(__VA_ARGS__, TIME_SECTION4, TIME_SECTION3, TIME_SECTION2, TIME_SECTION1, )(__VA_ARGS__)
 
 /**
  * Interface for objects interacting with the PerfGraph.
