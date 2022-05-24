@@ -493,32 +493,20 @@ sa: $(app_analyzer)
 
 compile_commands_all_srcfiles += $(srcfiles)
 
-############## Add vnv stuff to the application. 
-
-app_compile_commands.json:
-ifeq (4.0,$(firstword $(sort $(MAKE_VERSION) 4.0)))
-  $(file > .compile_commands.json,$(CURDIR))
-  $(file >> .compile_commands.json,$(libmesh_CXX))
-  $(file >> .compile_commands.json,$(libmesh_CPPFLAGS) $(CXXFLAGS) $(ADDITIONAL_CPPFLAGS) $(libmesh_CXXFLAGS) $(app_INCLUDES) $(libmesh_INCLUDE))
-  $(file >> .compile_commands.json,$(srcfiles))
-else
-  @echo $(CURDIR) > .compile_commands.json
-  @echo $(libmesh_CXX) >> .compile_commands.json
-  @echo $(libmesh_CPPFLAGS) $(CXXFLAGS) $(libmesh_CXXFLAGS) $(ADDITIONAL_CPPFLAGS) $(app_INCLUDES) $(libmesh_INCLUDE) >> .compile_commands.json
-  @echo $(srcfiles) >> .compile_commands.json
-endif
-  @$(FRAMEWORK_DIR)/scripts/compile_commands.py < .compile_commands.json > app_compile_commands.json
-  @rm .compile_commands.json
+vnv-clean: clean 
+	@rm -f vnv.__cache__ compile_commands.json src/vnv.C
 
 
-vnv-reset: 
-  printf "#include \"VnV.h\" \n INJECTION_REGISTRATION(VNV_APP_NAME){}" > src/vnv.C
-  @rm -f vnv.__cache__
+#Clean and build using bear to generate a compile_commands.json file. This should be done when 
+# you add files to the project, remove files from the project, or when you just want to start again. 
+# 
+vnv-init: vnv-clean
+	printf "#include \"VnV.h\" \n INJECTION_REGISTRATION(VNV_APP_NAME){}" > src/vnv.C
+	@bear ${MAKE}
 
-#Generate the VnV File (assumes compile commands.json exists)
-vnv-gen: app_compile_commands.json
-  echo ${app_INCLUDES}
-  cp app_compile_commands.json compile_commands.json
-  ${VNV_DIR}/bin/vnv-matcher --fix-omp --cache vnv.__cache__ --regFile ${MOOSE_DIR}/vnv.__registration__ --targetFile ${APPLICATION_DIR}/$(APPLICATION_NAME) --package $(APPLICATION_NAME) --output src/vnv.C compile_commands.json
+#Update the vnv file and rebuild. This should be done when you add new VnV components or change comments.  
+vnv-update:   
+	@${VNV_DIR}/bin/vnv-matcher --fix-omp --cache vnv.__cache__ --regFile ${MOOSE_DIR}/vnv.__registration__ --targetFile ${APPLICATION_DIR}/$(APPLICATION_NAME) --package $(APPLICATION_NAME) --output src/vnv.C compile_commands.json
+	@${MAKE}
 
-
+vnv: vnv-init vnv-update

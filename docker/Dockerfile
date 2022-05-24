@@ -4,7 +4,6 @@ FROM ${FROM_IMAGE}:latest
 ARG COMMIT_HASH=unknown
 LABEL vnv.version.moose=${COMMIT_HASH}
 
-ENV VNV_CONFIG=${VNV_CONFIG}:${SOURCE_DIR}/MOOSE/.vnv-config.json
 
 #Install MOOSE with VnV
 COPY . ${SOURCE_DIR}/moose 
@@ -18,7 +17,12 @@ RUN cd ${SOURCE_DIR}/moose/framework\
                       compile_commands.json \
     && make
 
+# Build the VnV example that we created 
+RUN cd ${SOURCE_DIR}/moose/examples/ex01_inputfile && make vnv 
 
+ENV MOOSE_DIR=${SOURCE_DIR}/moose
 
+ENV VNV_CONFIG=${VNV_CONFIG}:${MOOSE_DIR}/vnv.__registration__
+ENV VNV_CONFIG=${VNV_CONFIG}:${SOURCE_DIR}/moose/docker/config/vnv.__registration__
 
 

@@ -1,0 +1,10 @@
+{
+    "logo" : {
+        "small" : "moose/static/moose.jpeg",
+        "large" : "moose/static/moose1.jpeg"
+    },
+    "copyright" : {
+        "message" : "RNET Technolgies Inc.",
+        "link" : "https://rnet-tech.com"
+    }
+}
