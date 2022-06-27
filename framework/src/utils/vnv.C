@@ -11,7 +11,7 @@ static const char* moose_vnv_schema = "{\"type\": \"object\", \"required\":[]}";
  *
  */ 
 
-INJECTION_OPTIONS(MOOSE, moose_vnv_schema) {
+INJECTION_OPTIONS(MOOSE, moose_vnv_schema,void) {
 	return nullptr;
 }
 
