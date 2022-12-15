@@ -619,7 +619,7 @@ Parser::parse(const std::vector<std::string> & input_filenames)
     * Name of all the input files. 
     *
     **/
-  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, Parse, IPCALLBACK {
+  INJECTION_LOOP_BEGIN(MOOSE, VWORLD, Parse, VNV_CALLBACK {
     
   }, *this);
   
@@ -751,7 +751,7 @@ Parser::parse(const std::vector<std::string> & input_filenames)
     mooseError(_errmsg);
 
 
-  INJECTION_LOOP_END(MOOSE,Parse);  
+  INJECTION_LOOP_END(MOOSE,Parse,VNV_NOCALLBACK);  
 }
 
 // Checks the input and the way it has been used and emits any errors/warnings.

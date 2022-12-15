@@ -34,10 +34,8 @@ VnVSteadyIP::VnVSteadyIP(Steady* steady) : s(steady) {
    * 
    * Info about the built steady executioner
   */
-  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, ConstructSteadyExecutioner, IPCALLBACK{
-    if (type == VnV::InjectionPointType::End) {
+  INJECTION_LOOP_BEGIN(MOOSE, VWORLD, ConstructSteadyExecutioner, VNV_CALLBACK{
       // TODO print any required data (happens at the end of the constructor.)
-    }
   },*this);
 }
 
@@ -50,12 +48,12 @@ Steady::Steady(const InputParameters & parameters)
     _time(_problem.time())
 {
   
-  INJECTION_LOOP_ITER(MOOSE, ConstructSteadExecutioner, BeginSteadyConstructor);
+  INJECTION_LOOP_ITER(MOOSE, ConstructSteadExecutioner, "BeginSteadyConstructor",VNV_NOCALLBACK);
   
   _fixed_point_solve->setInnerSolve(_feproblem_solve);
   _time = _system_time;
 
-  INJECTION_LOOP_END(MOOSE, ConstructSteadyExecutioner);
+  INJECTION_LOOP_END(MOOSE, ConstructSteadyExecutioner,VNV_NOCALLBACK);
 }
 
 void
@@ -73,7 +71,7 @@ Steady::init()
    * Setting up the steady Executioner. 
    *
    **/
-  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, SteadyExecutionerSetup, IPCALLBACK {
+  INJECTION_LOOP_BEGIN(MOOSE, VWORLD, SteadyExecutionerSetup, VNV_CALLBACK {
 
   }, *this);
 
@@ -82,7 +80,7 @@ Steady::init()
   _problem.execute(EXEC_PRE_MULTIAPP_SETUP);
   _problem.initialSetup();
 
-  INJECTION_LOOP_END(MOOSE,SteadyExecutionerSetup);
+  INJECTION_LOOP_END(MOOSE,SteadyExecutionerSetup,VNV_NOCALLBACK);
 }
 
 void
@@ -97,7 +95,7 @@ Steady::execute()
    * Executing the Steady state exuectioner function. . 
    *
    **/
-  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, SteadyExecutionerExecute, IPCALLBACK {
+  INJECTION_LOOP_BEGIN(MOOSE, VWORLD, SteadyExecutionerExecute, VNV_CALLBACK {
 
   }, *this);
 
@@ -123,7 +121,7 @@ Steady::execute()
   for (unsigned int r_step = 0; r_step <= steps; r_step++)
   {
     std::string r = "Refinement Level " + std::to_string(r_step);
-    INJECTION_LOOP_ITER_D(MOOSE, SteadyExecutionerExecute, r);
+    INJECTION_LOOP_ITER(MOOSE, SteadyExecutionerExecute, r,VNV_NOCALLBACK);
 #endif // LIBMESH_ENABLE_AMR
     
 
@@ -135,7 +133,7 @@ Steady::execute()
     
     if (!lastSolveConverged())
     {
-      INJECTION_LOOP_ITER(MOOSE, SteadyExecutionerExecute, ConvergenceFailure);   
+      INJECTION_LOOP_ITER(MOOSE, SteadyExecutionerExecute, "ConvergenceFailure",VNV_NOCALLBACK);   
       _console << "Aborting as solve did not converge" << std::endl;
       break;
     }
@@ -156,7 +154,7 @@ Steady::execute()
 
     _time_step++;
   }
-  INJECTION_LOOP_ITER(MOOSE, SteadyExecutionerExecute, RefinementComplete);
+  INJECTION_LOOP_ITER(MOOSE, SteadyExecutionerExecute,"RefinementComplete",VNV_NOCALLBACK);
 
 #endif
 
@@ -170,11 +168,11 @@ Steady::execute()
     _problem.outputStep(EXEC_FINAL);
     _time = _system_time;
   }
-  INJECTION_LOOP_ITER(MOOSE, SteadyExecutionerExecute, FinalExecutionComplete);
+  INJECTION_LOOP_ITER(MOOSE, SteadyExecutionerExecute, "FinalExecutionComplete",VNV_NOCALLBACK);
 
   postExecute();
 
-  INJECTION_LOOP_END(MOOSE,SteadyExecutionerExecute );
+  INJECTION_LOOP_END(MOOSE,SteadyExecutionerExecute ,VNV_NOCALLBACK);
 }
 
 void

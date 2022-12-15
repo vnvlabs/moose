@@ -138,7 +138,7 @@ NonlinearSystem::solve()
    * sdf
    * sdfsdfsdfsdfsdf
   */
-  INJECTION_LOOP_BEGIN(MOOSE,VWORLD,SolveNonlinearSystem, *this);
+  INJECTION_LOOP_BEGIN(MOOSE,VWORLD,SolveNonlinearSystem, VNV_NOCALLBACK, *this);
   
   // Only attach the postcheck function to the solver if we actually
   // have dampers or if the FEProblemBase needs to update the solution,
@@ -151,7 +151,7 @@ NonlinearSystem::solve()
   if (_fe_problem.solverParams()._type != Moose::ST_LINEAR)
   {
     
-    INJECTION_LOOP_ITER(MOOSE,SolveNonlinearSystem,ComputeInitialResidual);
+    INJECTION_LOOP_ITER(MOOSE,SolveNonlinearSystem,"ComputeInitialResidual",VNV_NOCALLBACK);
 
     TIME_SECTION("nlInitialResidual", 3, "Computing Initial Residual"); 
     // Calculate the initial residual for use in the convergence criterion.
@@ -170,7 +170,7 @@ NonlinearSystem::solve()
   _current_nl_its = 0;
 
   // Initialize the solution vector using a predictor and known values from nodal bcs
-  INJECTION_LOOP_ITER(MOOSE,SolveNonlinearSystem,SetInitialSolution);
+  INJECTION_LOOP_ITER(MOOSE,SolveNonlinearSystem,"SetInitialSolution",VNV_NOCALLBACK);
 
   setInitialSolution();
 
@@ -192,7 +192,7 @@ NonlinearSystem::solve()
 #ifdef MOOSE_GLOBAL_AD_INDEXING
   // We do not know a priori what variable a global degree of freedom corresponds to, so we need a
   // map from global dof to scaling factor. We just use a ghosted NumericVector for that mapping
-  INJECTION_LOOP_ITER(MOOSE,SolveNonlinearSystem,AssembleScalingVector);
+  INJECTION_LOOP_ITER(MOOSE,SolveNonlinearSystem,"AssembleScalingVector",VNV_NOCALLBACK);
 
   assembleScalingVector();
 #endif
@@ -200,7 +200,7 @@ NonlinearSystem::solve()
   if (_use_finite_differenced_preconditioner)
   {
     _nl_implicit_sys.nonlinear_solver->fd_residual_object = &_fd_residual_functor;
-    INJECTION_LOOP_ITER(MOOSE,SolveNonlinearSystem,SetupFiniteDifferencePreconditioner);
+    INJECTION_LOOP_ITER(MOOSE,SolveNonlinearSystem,"SetupFiniteDifferencePreconditioner",VNV_NOCALLBACK);
     setupFiniteDifferencedPreconditioner();
   }
 
@@ -219,14 +219,14 @@ NonlinearSystem::solve()
   }
   else
   {
-    INJECTION_LOOP_ITER(MOOSE,SolveNonlinearSystem,Solve);
+    INJECTION_LOOP_ITER(MOOSE,SolveNonlinearSystem,"Solve",VNV_NOCALLBACK);
 
     system().solve();
     _n_iters = _nl_implicit_sys.n_nonlinear_iterations();
     _n_linear_iters = solver.get_total_linear_iterations();
   }
 
-  INJECTION_LOOP_END(MOOSE,SolveNonlinearSystem);
+  INJECTION_LOOP_END(MOOSE,SolveNonlinearSystem,VNV_NOCALLBACK);
 
   // store info about the solve
   _final_residual = _nl_implicit_sys.final_nonlinear_residual();

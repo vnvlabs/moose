@@ -20,6 +20,10 @@ public:
 
 class ExampleApp : public VnVExampleApp, public MooseApp
 {
+public:
+
+  ExampleApp(InputParameters parameters);
+
   static InputParameters validParams();
 
   static void registerApps();

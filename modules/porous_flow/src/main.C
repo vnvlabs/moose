@@ -17,27 +17,6 @@
 INJECTION_EXECUTABLE(POROUSFLOW) 
 INJECTION_SUBPACKAGE(POROUSFLOW,MOOSE)
 
-int moose_pf_ex_vnv_test_function(int x) {
-  
-  /**
-   * This is some information about the injection point. This text is 
-   * parsed as restructured text (rST). What ever we put here will show
-   * up in the introduction section of this injection point. If you
-   * pass a callback function, or set the "write-data" flag for the injection
-   * point, you can use the vnv extension for sphinx to inject data values
-   * here as well. 
-   *
-   */      	
-  INJECTION_LOOP_BEGIN("POROUSFLOW", VWORLD, "SanityCheck", x)
-  for (int i = 0; i < 10; i++) {
-    x += i;
-    INJECTION_LOOP_ITER("POROUSFLOW","SanityCheck", "inner");
-  }
-
-  INJECTION_LOOP_END("POROUSFLOW", "SanityCheck");
-  return x;
-}
-
 // Create a performance log
 PerfLog Moose::perf_log("PorousFlow");
 

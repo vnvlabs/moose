@@ -56,17 +56,17 @@ ActionWarehouse::build()
   /**
    * @title Building the Actions. 
   */
-  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, BuildActions, IPCALLBACK {
+  INJECTION_LOOP_BEGIN(MOOSE, VWORLD, BuildActions, VNV_CALLBACK {
 
   }, *this);
 
   _ordered_names = _syntax.getSortedTask();
   for (const auto & name : _ordered_names) {
-    INJECTION_LOOP_ITER_D(MOOSE, BuildActions, name );
+    INJECTION_LOOP_ITER(MOOSE, BuildActions, name ,VNV_NOCALLBACK);
     buildBuildableActions(name);
   }
 
-  INJECTION_LOOP_END(MOOSE, BuildActions);
+  INJECTION_LOOP_END(MOOSE, BuildActions,VNV_NOCALLBACK);
 }
 
 void
@@ -359,13 +359,13 @@ ActionWarehouse::executeAllActions()
    * 
    * In this stage we are executing all the actions. 
   */
-  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, ExecuteActions, IPCALLBACK {
+  INJECTION_LOOP_BEGIN(MOOSE, VWORLD, ExecuteActions, VNV_CALLBACK {
 
   }, *this);
 
   for (const auto & task : _ordered_names)
   {
-    INJECTION_LOOP_ITER_D(MOOSE, ExecuteActions, task);
+    INJECTION_LOOP_ITER(MOOSE, ExecuteActions, task,VNV_NOCALLBACK);
     executeActionsWithAction(task);
     _completed_tasks.insert(task);
 
@@ -373,7 +373,7 @@ ActionWarehouse::executeAllActions()
       break;
   
   }
-  INJECTION_LOOP_END(MOOSE, ExecuteActions );
+  INJECTION_LOOP_END(MOOSE, ExecuteActions ,VNV_NOCALLBACK);
 
   if (_show_actions)
   {

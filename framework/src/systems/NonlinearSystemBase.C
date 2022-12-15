@@ -805,13 +805,13 @@ NonlinearSystemBase::setInitialSolution()
    * 
    * description goes here. 
   */
-  INJECTION_LOOP_BEGIN(MOOSE,VWORLD,SetInitialSolution,*this);
+  INJECTION_LOOP_BEGIN(MOOSE,VWORLD,SetInitialSolution, VNV_NOCALLBACK, *this);
 
   NumericVector<Number> & initial_solution(solution());
   if (_predictor.get() && _predictor->shouldApply())
   {
     TIME_SECTION("applyPredictor", 2, "Applying Predictor");
-    INJECTION_LOOP_ITER(MOOSE,SetInitialSolution,ApplyPredictor);
+    INJECTION_LOOP_ITER(MOOSE,SetInitialSolution,"ApplyPredictor",VNV_NOCALLBACK);
     _predictor->apply(initial_solution);
     _fe_problem.predictorCleanup(initial_solution);
   }
@@ -821,7 +821,7 @@ NonlinearSystemBase::setInitialSolution()
 
     TIME_SECTION("initialBCs", 2, "Applying BCs To Initial Condition"); 
 
-    INJECTION_LOOP_ITER(MOOSE,SetInitialSolution,ApplyBCS);
+    INJECTION_LOOP_ITER(MOOSE,SetInitialSolution, "ApplyBCS",VNV_NOCALLBACK);
     ConstBndNodeRange & bnd_nodes = *_mesh.getBoundaryNodeRange();
     for (const auto & bnode : bnd_nodes)
     {
@@ -859,7 +859,7 @@ NonlinearSystemBase::setInitialSolution()
     setConstraintSecondaryValues(initial_solution, true);
 
   
-  INJECTION_LOOP_END(MOOSE,SetInitialSolution);
+  INJECTION_LOOP_END(MOOSE,SetInitialSolution,VNV_NOCALLBACK);
 }
 
 void

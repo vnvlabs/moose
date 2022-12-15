@@ -225,7 +225,7 @@ FEProblemSolve::solve()
    * 
    * 
   */
-  INJECTION_LOOP_BEGIN(MOOSE,VWORLD, NonlinearMultigrids, *this);
+  INJECTION_LOOP_BEGIN(MOOSE,VWORLD, NonlinearMultigrids,VNV_NOCALLBACK, *this);
   
   for (MooseIndex(_num_grid_steps) grid_step = 0; grid_step <= _num_grid_steps; ++grid_step) 
   {
@@ -238,7 +238,7 @@ FEProblemSolve::solve()
       _problem.uniformRefine();
   }
 
-  INJECTION_LOOP_END(MOOSE,NonlinearMultigrids);
+  INJECTION_LOOP_END(MOOSE,NonlinearMultigrids,VNV_NOCALLBACK);
 
   return _problem.converged();
 }

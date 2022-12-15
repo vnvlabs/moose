@@ -567,7 +567,7 @@ FEProblemBase::initialSetup() {
   /**
    * @Title Setting up the FE Problem.
   */
-  INJECTION_LOOP_BEGIN(MOOSE,VWORLD, FESetup, *this);
+  INJECTION_LOOP_BEGIN(MOOSE,VWORLD, FESetup, VNV_NOCALLBACK, *this);
 
 
   SubProblem::initialSetup();
@@ -598,7 +598,7 @@ FEProblemBase::initialSetup() {
   dof_id_type max_var_n_dofs_per_node;
   {
     TIME_SECTION("computingMaxDofs", 3, "Computing Max Dofs Per Element"); 
-    INJECTION_LOOP_ITER(MOOSE,FESetup,ComputeMaxDofs);
+    INJECTION_LOOP_ITER(MOOSE,FESetup,"ComputeMaxDofs",VNV_NOCALLBACK);
     MaxVarNDofsPerElem mvndpe(*this, *_nl);
     Threads::parallel_reduce(*_mesh.getActiveLocalElementRange(), mvndpe);
     max_var_n_dofs_per_elem = mvndpe.max();
@@ -612,7 +612,7 @@ FEProblemBase::initialSetup() {
 
   {
     TIME_SECTION("assignMaxDofs", 5, "Assigning Maximum Dofs Per Elem"); 
-    INJECTION_LOOP_ITER(MOOSE,FESetup,AssignMaxDofs);
+    INJECTION_LOOP_ITER(MOOSE,FESetup,"AssignMaxDofs",VNV_NOCALLBACK);
 
     _nl->assignMaxVarNDofsPerElem(max_var_n_dofs_per_elem);
     auto displaced_problem = getDisplacedProblem();
@@ -626,7 +626,7 @@ FEProblemBase::initialSetup() {
 
   {
     TIME_SECTION("settingRequireDerivativeSize", 5, "Setting Required Derivative Size")
-    INJECTION_LOOP_ITER(MOOSE,FESetup,SetDerivitiveSize);
+    INJECTION_LOOP_ITER(MOOSE,FESetup,"SetDerivitiveSize",VNV_NOCALLBACK);
 
 
 #ifndef MOOSE_SPARSE_AD
@@ -642,7 +642,7 @@ FEProblemBase::initialSetup() {
 
   {
     TIME_SECTION("resizingVarValues", 5, "Resizing Variable Values");
-    INJECTION_LOOP_ITER(MOOSE,FESetup,ResizeVarValues);
+    INJECTION_LOOP_ITER(MOOSE,FESetup,"ResizeVarValues",VNV_NOCALLBACK);
 
 
     for (unsigned int tid = 0; tid < libMesh::n_threads(); ++tid)
@@ -664,7 +664,7 @@ FEProblemBase::initialSetup() {
   if ((_app.isRestarting() || _app.isRecovering()) && (_app.isUltimateMaster() || _force_restart))
   {
     TIME_SECTION("restartFromFile", 3, "Restarting From File");
-    INJECTION_LOOP_ITER(MOOSE,FESetup,RestartFromFile);
+    INJECTION_LOOP_ITER(MOOSE,FESetup,"RestartFromFile",VNV_NOCALLBACK);
 
     _restart_io->readRestartableDataHeader(true);
     _restart_io->restartEquationSystemsObject();
@@ -698,7 +698,7 @@ FEProblemBase::initialSetup() {
   }
 
   // Perform output related setups
-  INJECTION_LOOP_ITER(MOOSE,FESetup,SettingUpOutput);
+  INJECTION_LOOP_ITER(MOOSE,FESetup,"SettingUpOutput",VNV_NOCALLBACK);
 
   _app.getOutputWarehouse().initialSetup(); 
   
@@ -760,7 +760,7 @@ FEProblemBase::initialSetup() {
 
   {
     TIME_SECTION("initializingFunctions", 5, "Initializing Functions");
-    INJECTION_LOOP_ITER(MOOSE,FESetup,InitializingFunctions);
+    INJECTION_LOOP_ITER(MOOSE,FESetup,"InitializingFunctions",VNV_NOCALLBACK);
 
     // Call the initialSetup methods for functions
     for (THREAD_ID tid = 0; tid < n_threads; tid++)
@@ -773,7 +773,7 @@ FEProblemBase::initialSetup() {
 
   {
     TIME_SECTION("initializingRandomObjects", 5, "Initializing Random Objects"); 
-    INJECTION_LOOP_ITER(MOOSE,FESetup,InitializingRandomObjects);
+    INJECTION_LOOP_ITER(MOOSE,FESetup,"InitializingRandomObjects",VNV_NOCALLBACK);
 
 
     // Random interface objects
@@ -787,7 +787,7 @@ FEProblemBase::initialSetup() {
 
     {
       TIME_SECTION("ICiniitalSetup", 5, "Setting Up Initial Conditions"); 
-      INJECTION_LOOP_ITER(MOOSE,FESetup,SettingUpInitialConditions);
+      INJECTION_LOOP_ITER(MOOSE,FESetup,"SettingUpInitialConditions",VNV_NOCALLBACK);
 
       for (THREAD_ID tid = 0; tid < n_threads; tid++)
         _ics.initialSetup(tid);
@@ -802,7 +802,7 @@ FEProblemBase::initialSetup() {
   if (_all_materials.hasActiveObjects(0))
   {
     TIME_SECTION("materialInitialSetup", 3, "Setting Up Materials");
-    INJECTION_LOOP_ITER(MOOSE,FESetup,SettingUpMaterials);
+    INJECTION_LOOP_ITER(MOOSE,FESetup,"SettingUpMaterials",VNV_NOCALLBACK);
 
     for (THREAD_ID tid = 0; tid < n_threads; tid++)
     {
@@ -825,7 +825,7 @@ FEProblemBase::initialSetup() {
 
     {
       TIME_SECTION("computingInitialStatefulProps", 3, "Computing Initial Material Values"); 
-      INJECTION_LOOP_ITER(MOOSE,FESetup,ComputingInitialMaterialValues);
+      INJECTION_LOOP_ITER(MOOSE,FESetup,"ComputingInitialMaterialValues",VNV_NOCALLBACK);
 
 
       const ConstElemRange & elem_range = *_mesh.getActiveLocalElementRange();
@@ -1080,7 +1080,7 @@ FEProblemBase::initialSetup() {
 
   setCurrentExecuteOnFlag(EXEC_NONE);
 
-  INJECTION_LOOP_END(MOOSE,FESetup);
+  INJECTION_LOOP_END(MOOSE,FESetup,VNV_NOCALLBACK);
 
 }
 
@@ -5036,7 +5036,7 @@ FEProblemBase::solve()
   /**
    * @title Solving the Finite Element Problem.
   */
-  INJECTION_LOOP_BEGIN(MOOSE,VWORLD, FESolve,*this);
+  INJECTION_LOOP_BEGIN(MOOSE,VWORLD, FESolve, VNV_NOCALLBACK, *this);
 
   TIME_SECTION("solve", 1, "Solving", false); 
   // This prevents stale dof indices from lingering around and possibly leading to invalid reads and
@@ -5092,7 +5092,7 @@ FEProblemBase::solve()
     PetscOptionsPop();
 #endif
 
-  INJECTION_LOOP_END(MOOSE,FESolve);
+  INJECTION_LOOP_END(MOOSE,FESolve,VNV_NOCALLBACK);
 
 
 }
@@ -5628,7 +5628,7 @@ FEProblemBase::computeJacobianInternal(const NumericVector<Number> & soln,
    * 
    * description goes here
   */
-  INJECTION_LOOP_BEGIN(MOOSE,VWORLD,ComputeJacobian, *this, soln, jacobian, tags);
+  INJECTION_LOOP_BEGIN(MOOSE,VWORLD,ComputeJacobian, VNV_NOCALLBACK, *this, soln, jacobian, tags);
 
   _nl->setSolution(soln);
 
@@ -5638,7 +5638,7 @@ FEProblemBase::computeJacobianInternal(const NumericVector<Number> & soln,
 
   _nl->disassociateMatrixFromTag(jacobian, _nl->systemMatrixTag());
 
-  INJECTION_LOOP_END(MOOSE,ComputeJacobian);
+  INJECTION_LOOP_END(MOOSE,ComputeJacobian,VNV_NOCALLBACK);
 }
 
 void

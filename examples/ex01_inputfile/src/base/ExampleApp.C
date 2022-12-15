@@ -21,15 +21,7 @@ VnVExampleApp::VnVExampleApp(ExampleApp *app) {
       * description: todo
       *
       **/
-    INJECTION_LOOP_BEGIN_C(VNV_APP_NAME, VWORLD, BuildExampleApp, IPCALLBACK {
-      if (type == VnV::InjectionPointType::Begin) {
-      
-      }
-      else if (type == VnV::InjectionPointType::Iter) {
-      
-      } else {
-
-      }
+    INJECTION_LOOP_BEGIN(VNV_APP_NAME, VWORLD, BuildExampleApp, VNV_CALLBACK {
        
     }, app);
     
@@ -49,7 +41,7 @@ ExampleApp::ExampleApp(InputParameters parameters) : VnVExampleApp(this), MooseA
 {
   srand(processor_id());
   ExampleApp::registerAll(_factory, _action_factory, _syntax);
-  INJECTION_LOOP_END(VNV_APP_NAME, BuildExampleApp);
+  INJECTION_LOOP_END(VNV_APP_NAME, BuildExampleApp,VNV_NOCALLBACK);
 }
 
 void
@@ -61,14 +53,14 @@ ExampleApp::registerAll(Factory & f, ActionFactory & af, Syntax & /*s*/)
    * 
    * Moose will now register all the factories to the Example Application. 
   */
-  INJECTION_LOOP_BEGIN_C(MOOSE,VWORLD, RegisterFactories, IPCALLBACK {
+  INJECTION_LOOP_BEGIN(MOOSE,VWORLD, RegisterFactories, VNV_CALLBACK {
 
   }, f );
 
   Registry::registerObjectsTo(f, {"ExampleApp"});
   Registry::registerActionsTo(af, {"ExampleApp"});
 
-  INJECTION_LOOP_END(MOOSE, RegisterFactories);
+  INJECTION_LOOP_END(MOOSE, RegisterFactories,VNV_NOCALLBACK);
 
   
 

@@ -25,27 +25,6 @@
 INJECTION_EXECUTABLE(MOOSE_EX01) 
 INJECTION_SUBPACKAGE(MOOSE_EX01,MOOSE)
 
-int moose_ex01_vnv_test_function(int x) {
-  
-  /**
-   * This is some information about the injection point. This text is 
-   * parsed as restructured text (rST). What ever we put here will show
-   * up in the introduction section of this injection point. If you
-   * pass a callback function, or set the "write-data" flag for the injection
-   * point, you can use the vnv extension for sphinx to inject data values
-   * here as well. 
-   *
-   */      	
-  INJECTION_LOOP_BEGIN("MOOSE_EX01", VWORLD, "SanityCheck", x);
-  for (int i = 0; i < 10; i++) {
-    x += i;
-    INJECTION_LOOP_ITER("MOOSE_EX01","SanityCheck","inner");
-  }
-
-  INJECTION_LOOP_END("MOOSE_EX01","SanityCheck");
-  return x;
-}
-
 // Create a performance log
 PerfLog Moose::perf_log("Example");
 
@@ -62,10 +41,6 @@ main(int argc, char * argv[])
    */ 
   INJECTION_INITIALIZE(MOOSE_EX01, &argc, &argv, "./vv-input.json" );
 
-  /** 
-   * Run a quick function with some injetion points for testing. 
-   */
-  moose_ex01_vnv_test_function(10);
 		  
   // Register this application's MooseApp and any it depends on
   ExampleApp::registerApps();

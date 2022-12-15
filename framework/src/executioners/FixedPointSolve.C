@@ -189,7 +189,7 @@ FixedPointSolve::solve()
    * 
    * description
   */
-  INJECTION_LOOP_BEGIN(MOOSE,VWORLD, PicardSolve, *this);
+  INJECTION_LOOP_BEGIN(MOOSE,VWORLD, PicardSolve,VNV_NOCALLBACK, *this);
 
 
   Real current_dt = _problem.dt();
@@ -333,7 +333,7 @@ FixedPointSolve::solve()
   if (_has_fixed_point_its)
     printFixedPointConvergenceReason();
 
-  INJECTION_LOOP_END(MOOSE, PicardSolve);
+  INJECTION_LOOP_END(MOOSE, PicardSolve,VNV_NOCALLBACK);
   
   return converged;
 }
@@ -351,7 +351,7 @@ FixedPointSolve::solveStep(Real & begin_norm,
                            const std::set<dof_id_type> & transformed_dofs)
 {
   bool auto_advance = autoAdvance(); 
-  INJECTION_LOOP_BEGIN(MOOSE,VWORLD, FixedPointSolve, *this, begin_norm, end_norm);
+  INJECTION_LOOP_BEGIN(MOOSE,VWORLD, FixedPointSolve, VNV_NOCALLBACK, *this, begin_norm, end_norm);
 
   // Compute previous norms for coloring the norm output
   Real begin_norm_old = (_fixed_point_it > 0 ? _fixed_point_timestep_begin_norm[_fixed_point_it - 1]
@@ -462,7 +462,7 @@ FixedPointSolve::solveStep(Real & begin_norm,
       
                << Console::outputNorm(end_norm_old, end_norm) << std::endl;
     }
-  INJECTION_LOOP_END(MOOSE,FixedPointSolve);
+  INJECTION_LOOP_END(MOOSE,FixedPointSolve,VNV_NOCALLBACK);
 
   return true;
 }

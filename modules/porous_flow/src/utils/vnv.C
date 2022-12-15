@@ -22,18 +22,3 @@ INJECTION_OPTIONS(MOOSE_PF, moose_pf_vnv_schema, void) {
 INJECTION_SUBPACKAGE(MOOSE_PF, MOOSE)
 
 
-/** For testing purposes only -- if you are seeing this, i forgot to remove it
- *
- */
-
-int moose_pf_vnv_test_function(int x) {
-   
-  INJECTION_LOOP_BEGIN(MOOSE_PF, VWORLD(MOOSE_GEOCHEM), SanityCheck, x)
-  for (int i = 0; i < 10; i++) {
-    x += i;
-    INJECTION_LOOP_ITER(MOOSE_PF,SanityCheck, inner);
-  }
-
-  INJECTION_LOOP_END(MOOSE_PF,SanityCheck);
-  return x;
-}

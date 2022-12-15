@@ -82,11 +82,9 @@ AppFactory::createShared(const std::string & app_type,
    * 
    *  
   */
-  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, CreateApplication, IPCALLBACK {
-    if (type == VnV::InjectionPointType::Begin) {  
-      engine->Put("app_type",app_type);
-      engine->Put("name", name);
-    } 
+  INJECTION_LOOP_BEGIN(MOOSE, VWORLD, CreateApplication, VNV_CALLBACK {
+     data.engine->Put("app_type",app_type);
+     data.engine->Put("name", name);
   }, parameters, app_type, name);
   
   
@@ -119,7 +117,7 @@ AppFactory::createShared(const std::string & app_type,
 
  r = (*_name_to_build_pointer[app_type])(parameters);
   
- INJECTION_LOOP_END(MOOSE, CreateApplication);
+ INJECTION_LOOP_END(MOOSE, CreateApplication,VNV_NOCALLBACK);
 
  return r;
 }

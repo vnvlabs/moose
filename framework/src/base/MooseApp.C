@@ -340,10 +340,8 @@ VnVIpConstruction::VnVIpConstruction(MooseApp *app) {
      * ..vnv-todo:: Write more application configuration information.
      *  
     */
-    INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, BuildCoreMooseApp, IPCALLBACK {
-      if (type == VnV::InjectionPointType::End) {
-        engine->Put("name" , "todo");
-      }
+    INJECTION_LOOP_BEGIN(MOOSE, VWORLD, BuildCoreMooseApp, VNV_CALLBACK {
+       data.engine->Put("name" , "todo");
     }, app);  
 }
 
@@ -601,7 +599,7 @@ MooseApp::MooseApp(InputParameters parameters)
 
   Moose::out << std::flush;
 
-  INJECTION_LOOP_END(MOOSE, BuildCoreMooseApp );
+  INJECTION_LOOP_END(MOOSE, BuildCoreMooseApp ,VNV_NOCALLBACK);
 
 }
 
@@ -670,12 +668,7 @@ MooseApp::setupOptions()
    *    
   */
   std::string reason = "No options said otherwise";
-  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, SetupOptions, IPCALLBACK {
-      if (type == VnV::InjectionPointType::End) {
-        engine->Put("Reason", reason);
-        engine->Put("Exit", _ready_to_exit ? "exit" : "continue");
-      }
-  }, *this);
+  INJECTION_LOOP_BEGIN(MOOSE, VWORLD, SetupOptions, VNV_NOCALLBACK , *this);
 
   // MOOSE was updated to have the ability to register execution flags in similar fashion as
   // objects. However, this change requires all *App.C/h files to be updated with the new
@@ -1073,7 +1066,10 @@ MooseApp::setupOptions()
     reason = "you passed bad parameters. ";
     _ready_to_exit = true;
   }
-  INJECTION_LOOP_END(MOOSE, SetupOptions);
+  INJECTION_LOOP_END(MOOSE, SetupOptions,VNV_CALLBACK {
+       data.engine->Put("Reason", reason);
+       data.engine->Put("Exit", _ready_to_exit ? "exit" : "continue");
+  });
   Moose::out << std::flush;
 }
 
@@ -1152,7 +1148,7 @@ MooseApp::executeExecutioner()
     * Running the simulation. 
     *
     **/
-  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, ExecuteExecutioner, IPCALLBACK{
+  INJECTION_LOOP_BEGIN(MOOSE, VWORLD, ExecuteExecutioner, VNV_CALLBACK{
 
   }, *this);
   
@@ -1177,7 +1173,7 @@ MooseApp::executeExecutioner()
   else
     mooseError("No executioner was specified (go fix your input file)");
 
-  INJECTION_LOOP_END(MOOSE,ExecuteExecutioner);
+  INJECTION_LOOP_END(MOOSE,ExecuteExecutioner,VNV_NOCALLBACK);
   
 }
 
@@ -1483,7 +1479,7 @@ MooseApp::run()
    * 
    * MOOSE is now running the Applicaiton. 
   */
-  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, RunApplication, IPCALLBACK{
+  INJECTION_LOOP_BEGIN(MOOSE, VWORLD, RunApplication, VNV_CALLBACK{
 
   }, *this);
 
@@ -1510,7 +1506,7 @@ MooseApp::run()
     Moose::err << "Syntax OK" << std::endl;
   }
   
-  INJECTION_LOOP_END(MOOSE, RunApplication);
+  INJECTION_LOOP_END(MOOSE, RunApplication,VNV_NOCALLBACK);
 
 }
 

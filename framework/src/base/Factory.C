@@ -52,18 +52,12 @@ Factory::reg(const std::string & label,
    * Status: :vnv:`status`
    * 
   **/
-  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, ApplicationRegistration, IPCALLBACK{
-    if (type == VnV::InjectionPointType::Begin) {
-      engine->Put("name", obj_name);
-      engine->Put("label", label);
-      engine->Put("file", file);
-      engine->Put("line", line);
-    } else if (stageId == "Skipped") {
-      engine->Put("status", "skipped");
-    } else if (stageId == "Success") {
-      engine->Put("status", "registered");
-    }
-  }, key);
+  INJECTION_LOOP_BEGIN(MOOSE, VWORLD, ApplicationRegistration, VNV_CALLBACK{
+     data.engine->Put("name", obj_name);
+     data.engine->Put("label", label);
+     data.engine->Put("file", file);
+     data.engine->Put("line", line);
+    }, key);
   
   /*
    * If _registerable_objects has been set the user has requested that we only register some
@@ -88,9 +82,13 @@ Factory::reg(const std::string & label,
     _name_to_params_pointer[obj_name] = params_ptr;
     _objects_by_label.insert(key);
 
-    INJECTION_LOOP_ITER(MOOSE, ApplicationRegistration, Registered);
+    INJECTION_LOOP_ITER(MOOSE, ApplicationRegistration, "Registered",VNV_CALLBACK {
+     data.engine->Put("status", "registered");
+    });
   } else {
-     INJECTION_LOOP_ITER(MOOSE, ApplicationRegistration, Skipped);
+     INJECTION_LOOP_ITER(MOOSE, ApplicationRegistration, "Skipped",VNV_CALLBACK{
+       data.engine->Put("status", "skipped");
+     });
   }
   _name_to_line.addInfo(obj_name, file, line);
 
@@ -102,7 +100,7 @@ Factory::reg(const std::string & label,
     _deprecated_time[obj_name] = parseTime(deprecated_time);
 
 
-  INJECTION_LOOP_END(MOOSE, ApplicationRegistration);
+  INJECTION_LOOP_END(MOOSE, ApplicationRegistration,VNV_NOCALLBACK);
   
 
   // TODO: Possibly store and print information about objects that are skipped here?
