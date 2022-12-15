@@ -21,10 +21,18 @@ class FEProblemBase;
 template <typename T>
 InputParameters validParams();
 
+class Steady;
+
+class VnVSteadyIP {
+  Steady* s;
+public:
+  VnVSteadyIP(Steady* steady);
+};
+
 /**
  * Steady executioners usually only call "solve()" on the NonlinearSystem once.
  */
-class Steady : public Executioner
+class Steady : public VnVSteadyIP, public Executioner
 {
 public:
   /**

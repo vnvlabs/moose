@@ -13,6 +13,8 @@
 // Just for testing...
 #include "Diffusion.h"
 
+#include "VnV.h"
+
 Factory::Factory(MooseApp & app) : _app(app) {}
 
 Factory::~Factory() {}
@@ -27,11 +29,42 @@ Factory::reg(const std::string & label,
              const std::string & file,
              int line)
 {
+
+  
   // do nothing if we have already added this exact object before
   auto key = std::make_pair(label, obj_name);
   if (_objects_by_label.find(key) != _objects_by_label.end())
     return;
 
+  /**
+   * @title Registration for Application: :vnv:`name` (:vnv:`label`)
+   * 
+   * Moose Application registration registers the app for execution within moose. 
+   * Registration allows the app to define all of its components and parameters.
+   *
+   * Registration Information:
+   * -------------------------
+   * 
+   * Name: :vnv:`name`
+   * Label: :vnv:`label`
+   * File: :vnv:`file`
+   * Line: :vnv:`line`
+   * Status: :vnv:`status`
+   * 
+  **/
+  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, ApplicationRegistration, IPCALLBACK{
+    if (type == VnV::InjectionPointType::Begin) {
+      engine->Put("name", obj_name);
+      engine->Put("label", label);
+      engine->Put("file", file);
+      engine->Put("line", line);
+    } else if (stageId == "Skipped") {
+      engine->Put("status", "skipped");
+    } else if (stageId == "Success") {
+      engine->Put("status", "registered");
+    }
+  }, key);
+  
   /*
    * If _registerable_objects has been set the user has requested that we only register some
    * subset
@@ -44,21 +77,33 @@ Factory::reg(const std::string & label,
   if (_registerable_objects.empty() ||
       _registerable_objects.find(obj_name) != _registerable_objects.end())
   {
+    
     if (_name_to_build_pointer.find(obj_name) != _name_to_build_pointer.end())
       mooseError("Object '" + obj_name + "' registered from multiple files: ",
                  file,
                  " and ",
                  _name_to_line.getInfo(obj_name).file());
+
     _name_to_build_pointer[obj_name] = build_ptr;
     _name_to_params_pointer[obj_name] = params_ptr;
     _objects_by_label.insert(key);
+
+    INJECTION_LOOP_ITER(MOOSE, ApplicationRegistration, Registered);
+  } else {
+     INJECTION_LOOP_ITER(MOOSE, ApplicationRegistration, Skipped);
   }
   _name_to_line.addInfo(obj_name, file, line);
+
+
 
   if (!replacement_name.empty())
     _deprecated_name[obj_name] = replacement_name;
   if (!deprecated_time.empty())
     _deprecated_time[obj_name] = parseTime(deprecated_time);
+
+
+  INJECTION_LOOP_END(MOOSE, ApplicationRegistration);
+  
 
   // TODO: Possibly store and print information about objects that are skipped here?
 }

@@ -12,6 +12,8 @@
 #include "InputParameters.h"
 #include "MooseApp.h"
 
+#include "VnV.h"
+
 AppFactory AppFactory::_instance = AppFactory();
 
 AppFactory &
@@ -61,12 +63,42 @@ AppFactory::createShared(const std::string & app_type,
                          InputParameters parameters,
                          MPI_Comm comm_world_in)
 {
+  
+  MooseAppPtr r;
+
+  /**
+   * @title Moose Stage One: Application Creatation: 
+   * 
+   * In this stage of the process, MOOSE is creating the application object. Application
+   * creation involves merging the command line parameters and the input parameters into
+   * a single input parameters object and calling the Applications build function. The build function
+   * returns a shared pointer to the application object. 
+   * 
+   * Application Creation Infomration
+   * Application Type: :vnv:`app_type`
+   * Application Name: :vnv:`app_name`
+   * 
+   * .. todo:: Add more data about the application created. 
+   * 
+   *  
+  */
+  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, CreateApplication, IPCALLBACK {
+    if (type == VnV::InjectionPointType::Begin) {  
+      engine->Put("app_type",app_type);
+      engine->Put("name", name);
+    } 
+  }, parameters, app_type, name);
+  
+  
+  
   // Error if the application type is not located
   if (_name_to_build_pointer.find(app_type) == _name_to_build_pointer.end())
     mooseError("Object '" + app_type + "' was not registered.");
 
+   
   // Take the app_type and add it to the parameters so that it can be retrieved in the Application
   parameters.set<std::string>("_type") = app_type;
+
 
   // Check to make sure that all required parameters are supplied
   parameters.checkParams("");
@@ -84,5 +116,10 @@ AppFactory::createShared(const std::string & app_type,
   command_line->addCommandLineOptionsFromParams(parameters);
   command_line->populateInputParams(parameters);
 
-  return (*_name_to_build_pointer[app_type])(parameters);
+
+ r = (*_name_to_build_pointer[app_type])(parameters);
+  
+ INJECTION_LOOP_END(MOOSE, CreateApplication);
+
+ return r;
 }

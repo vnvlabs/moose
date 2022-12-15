@@ -23,6 +23,8 @@
 
 #include "libmesh/simple_range.h"
 
+#include "VnV.h"
+
 ActionWarehouse::ActionWarehouse(MooseApp & app, Syntax & syntax, ActionFactory & factory)
   : ConsoleStreamInterface(app),
     _app(app),
@@ -50,9 +52,21 @@ ActionWarehouse::setFinalTask(const std::string & task)
 void
 ActionWarehouse::build()
 {
+  //VNV-TODO Build Actions. 
+  /**
+   * @title Building the Actions. 
+  */
+  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, BuildActions, IPCALLBACK {
+
+  }, *this);
+
   _ordered_names = _syntax.getSortedTask();
-  for (const auto & name : _ordered_names)
+  for (const auto & name : _ordered_names) {
+    INJECTION_LOOP_ITER_D(MOOSE, BuildActions, name );
     buildBuildableActions(name);
+  }
+
+  INJECTION_LOOP_END(MOOSE, BuildActions);
 }
 
 void
@@ -329,6 +343,7 @@ ActionWarehouse::printActionDependencySets() const
 void
 ActionWarehouse::executeAllActions()
 {
+
   _completed_tasks.clear();
 
   if (_show_action_dependencies)
@@ -339,13 +354,26 @@ ActionWarehouse::executeAllActions()
     _console << "\n[DBG][ACT] Executing actions:" << std::endl;
   }
 
+  /**
+   * @title Execute Actions
+   * 
+   * In this stage we are executing all the actions. 
+  */
+  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, ExecuteActions, IPCALLBACK {
+
+  }, *this);
+
   for (const auto & task : _ordered_names)
   {
+    INJECTION_LOOP_ITER_D(MOOSE, ExecuteActions, task);
     executeActionsWithAction(task);
     _completed_tasks.insert(task);
+
     if (_final_task != "" && task == _final_task)
       break;
+  
   }
+  INJECTION_LOOP_END(MOOSE, ExecuteActions );
 
   if (_show_actions)
   {

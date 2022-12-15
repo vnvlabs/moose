@@ -1,5 +1,5 @@
 ARG FROM_IMAGE=vnv_libmesh
-FROM ${FROM_IMAGE}:latest
+FROM ${FROM_IMAGE}
 
 ARG COMMIT_HASH=unknown
 LABEL vnv.version.moose=${COMMIT_HASH}

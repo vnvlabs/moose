@@ -50,6 +50,14 @@ namespace libMesh
 class ExodusII_IO;
 }
 
+//Little class that ensures we can wrap the entire constructor, including the creation
+//of all the base class methods. 
+class VnVIpConstruction {
+public:
+  VnVIpConstruction(MooseApp* app);
+
+};
+
 /**
  * Base class for MOOSE-based applications
  *
@@ -60,7 +68,8 @@ class ExodusII_IO;
  *
  * Each application should register its own objects and register its own special syntax
  */
-class MooseApp : public ConsoleStreamInterface,
+class MooseApp : public VnVIpConstruction,
+                 public ConsoleStreamInterface,
                  public PerfGraphInterface,
                  public libMesh::ParallelObject
 {

@@ -16,6 +16,7 @@
 #include "AllLocalDofIndicesThread.h"
 #include "Console.h"
 #include "EigenExecutionerBase.h"
+#include "VnV.h"
 
 InputParameters
 FixedPointSolve::validParams()
@@ -181,7 +182,15 @@ FixedPointSolve::FixedPointSolve(Executioner & ex)
 bool
 FixedPointSolve::solve()
 {
-  TIME_SECTION("PicardSolve", 1);
+  TIME_SECTION("PicardSolve", 1); 
+
+  /**
+   * @title Iterative Picard Solve.
+   * 
+   * description
+  */
+  INJECTION_LOOP_BEGIN(MOOSE,VWORLD, PicardSolve, *this);
+
 
   Real current_dt = _problem.dt();
 
@@ -272,7 +281,7 @@ FixedPointSolve::solve()
     // Solve a single application for one time step
     bool solve_converged = solveStep(_fixed_point_timestep_begin_norm[_fixed_point_it],
                                      _fixed_point_timestep_end_norm[_fixed_point_it],
-                                     transformed_dofs);
+                                     transformed_dofs); 
 
     // Get new value and print history for the custom postprocessor convergence criterion
     if (_fixed_point_custom_pp)
@@ -324,6 +333,8 @@ FixedPointSolve::solve()
   if (_has_fixed_point_its)
     printFixedPointConvergenceReason();
 
+  INJECTION_LOOP_END(MOOSE, PicardSolve);
+  
   return converged;
 }
 
@@ -339,7 +350,8 @@ FixedPointSolve::solveStep(Real & begin_norm,
                            Real & end_norm,
                            const std::set<dof_id_type> & transformed_dofs)
 {
-  bool auto_advance = autoAdvance();
+  bool auto_advance = autoAdvance(); 
+  INJECTION_LOOP_BEGIN(MOOSE,VWORLD, FixedPointSolve, *this, begin_norm, end_norm);
 
   // Compute previous norms for coloring the norm output
   Real begin_norm_old = (_fixed_point_it > 0 ? _fixed_point_timestep_begin_norm[_fixed_point_it - 1]
@@ -447,8 +459,10 @@ FixedPointSolve::solveStep(Real & begin_norm,
       end_norm = _problem.computeResidualL2Norm();
 
       _console << COLOR_MAGENTA << "Fixed point residual norm after TIMESTEP_END MultiApps: "
+      
                << Console::outputNorm(end_norm_old, end_norm) << std::endl;
     }
+  INJECTION_LOOP_END(MOOSE,FixedPointSolve);
 
   return true;
 }

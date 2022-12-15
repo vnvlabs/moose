@@ -26,6 +26,8 @@
 #include "libmesh/diagonal_matrix.h"
 #include "libmesh/default_coupling.h"
 
+#include "VnV.h"
+
 namespace Moose
 {
 void
@@ -128,6 +130,16 @@ NonlinearSystem::init()
 void
 NonlinearSystem::solve()
 {
+  
+  /**
+   * @title Solve Nonlinear System
+   * 
+   * sdfsdfsdf
+   * sdf
+   * sdfsdfsdfsdfsdf
+  */
+  INJECTION_LOOP_BEGIN(MOOSE,VWORLD,SolveNonlinearSystem, *this);
+  
   // Only attach the postcheck function to the solver if we actually
   // have dampers or if the FEProblemBase needs to update the solution,
   // which is also done during the linesearch postcheck.  It doesn't
@@ -138,7 +150,10 @@ NonlinearSystem::solve()
 
   if (_fe_problem.solverParams()._type != Moose::ST_LINEAR)
   {
-    TIME_SECTION("nlInitialResidual", 3, "Computing Initial Residual");
+    
+    INJECTION_LOOP_ITER(MOOSE,SolveNonlinearSystem,ComputeInitialResidual);
+
+    TIME_SECTION("nlInitialResidual", 3, "Computing Initial Residual"); 
     // Calculate the initial residual for use in the convergence criterion.
     _computing_initial_residual = true;
     _fe_problem.computeResidualSys(_nl_implicit_sys, *_current_solution, *_nl_implicit_sys.rhs);
@@ -155,6 +170,8 @@ NonlinearSystem::solve()
   _current_nl_its = 0;
 
   // Initialize the solution vector using a predictor and known values from nodal bcs
+  INJECTION_LOOP_ITER(MOOSE,SolveNonlinearSystem,SetInitialSolution);
+
   setInitialSolution();
 
   // Now that the initial solution has ben set, potentially perform a residual/Jacobian evaluation
@@ -175,12 +192,15 @@ NonlinearSystem::solve()
 #ifdef MOOSE_GLOBAL_AD_INDEXING
   // We do not know a priori what variable a global degree of freedom corresponds to, so we need a
   // map from global dof to scaling factor. We just use a ghosted NumericVector for that mapping
+  INJECTION_LOOP_ITER(MOOSE,SolveNonlinearSystem,AssembleScalingVector);
+
   assembleScalingVector();
 #endif
 
   if (_use_finite_differenced_preconditioner)
   {
     _nl_implicit_sys.nonlinear_solver->fd_residual_object = &_fd_residual_functor;
+    INJECTION_LOOP_ITER(MOOSE,SolveNonlinearSystem,SetupFiniteDifferencePreconditioner);
     setupFiniteDifferencedPreconditioner();
   }
 
@@ -199,10 +219,14 @@ NonlinearSystem::solve()
   }
   else
   {
+    INJECTION_LOOP_ITER(MOOSE,SolveNonlinearSystem,Solve);
+
     system().solve();
     _n_iters = _nl_implicit_sys.n_nonlinear_iterations();
     _n_linear_iters = solver.get_total_linear_iterations();
   }
+
+  INJECTION_LOOP_END(MOOSE,SolveNonlinearSystem);
 
   // store info about the solve
   _final_residual = _nl_implicit_sys.final_nonlinear_residual();

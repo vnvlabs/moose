@@ -28,17 +28,34 @@ Steady::validParams()
   return params;
 }
 
+VnVSteadyIP::VnVSteadyIP(Steady* steady) : s(steady) {
+  /**
+   * @title Construct the Steady Executioner object.
+   * 
+   * Info about the built steady executioner
+  */
+  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, ConstructSteadyExecutioner, IPCALLBACK{
+    if (type == VnV::InjectionPointType::End) {
+      // TODO print any required data (happens at the end of the constructor.)
+    }
+  },*this);
+}
+
 Steady::Steady(const InputParameters & parameters)
-  : Executioner(parameters),
+  : VnVSteadyIP(this), Executioner(parameters),
     _problem(_fe_problem),
     _feproblem_solve(*this),
     _system_time(getParam<Real>("time")),
     _time_step(_problem.timeStep()),
     _time(_problem.time())
 {
+  
+  INJECTION_LOOP_ITER(MOOSE, ConstructSteadExecutioner, BeginSteadyConstructor);
+  
   _fixed_point_solve->setInnerSolve(_feproblem_solve);
-
   _time = _system_time;
+
+  INJECTION_LOOP_END(MOOSE, ConstructSteadyExecutioner);
 }
 
 void
@@ -49,10 +66,23 @@ Steady::init()
     _console << "\nCannot recover steady solves!\nExiting...\n" << std::endl;
     return;
   }
+  
+  /**
+   * @title Steady Executioner Setup.
+   *
+   * Setting up the steady Executioner. 
+   *
+   **/
+  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, SteadyExecutionerSetup, IPCALLBACK {
+
+  }, *this);
+
 
   checkIntegrity();
   _problem.execute(EXEC_PRE_MULTIAPP_SETUP);
   _problem.initialSetup();
+
+  INJECTION_LOOP_END(MOOSE,SteadyExecutionerSetup);
 }
 
 void
@@ -61,10 +91,23 @@ Steady::execute()
   if (_app.isRecovering())
     return;
 
+  /**
+   * @title Steady Executioner Execution.
+   *
+   * Executing the Steady state exuectioner function. . 
+   *
+   **/
+  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, SteadyExecutionerExecute, IPCALLBACK {
+
+  }, *this);
+
+
   _time_step = 0;
   _time = _time_step;
   _problem.outputStep(EXEC_INITIAL);
   _time = _system_time;
+
+  
 
   preExecute();
 
@@ -79,13 +122,20 @@ Steady::execute()
   unsigned int steps = _problem.adaptivity().getSteps();
   for (unsigned int r_step = 0; r_step <= steps; r_step++)
   {
+    std::string r = "Refinement Level " + std::to_string(r_step);
+    INJECTION_LOOP_ITER_D(MOOSE, SteadyExecutionerExecute, r);
 #endif // LIBMESH_ENABLE_AMR
+    
+
     _problem.timestepSetup();
 
+    
     _last_solve_converged = _fixed_point_solve->solve();
 
+    
     if (!lastSolveConverged())
     {
+      INJECTION_LOOP_ITER(MOOSE, SteadyExecutionerExecute, ConvergenceFailure);   
       _console << "Aborting as solve did not converge" << std::endl;
       break;
     }
@@ -106,6 +156,8 @@ Steady::execute()
 
     _time_step++;
   }
+  INJECTION_LOOP_ITER(MOOSE, SteadyExecutionerExecute, RefinementComplete);
+
 #endif
 
   {
@@ -118,8 +170,11 @@ Steady::execute()
     _problem.outputStep(EXEC_FINAL);
     _time = _system_time;
   }
+  INJECTION_LOOP_ITER(MOOSE, SteadyExecutionerExecute, FinalExecutionComplete);
 
   postExecute();
+
+  INJECTION_LOOP_END(MOOSE,SteadyExecutionerExecute );
 }
 
 void

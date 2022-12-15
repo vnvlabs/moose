@@ -11,6 +11,7 @@
 
 #include "FEProblem.h"
 #include "NonlinearSystemBase.h"
+#include "VnV.h"
 
 std::set<std::string> const FEProblemSolve::_moose_line_searches = {"contact", "project"};
 
@@ -219,7 +220,14 @@ bool
 FEProblemSolve::solve()
 {
   // This loop is for nonlinear multigrids (developed by Alex)
-  for (MooseIndex(_num_grid_steps) grid_step = 0; grid_step <= _num_grid_steps; ++grid_step)
+  /**
+   * @title Iterate over muiltiple grids using uniform refinement
+   * 
+   * 
+  */
+  INJECTION_LOOP_BEGIN(MOOSE,VWORLD, NonlinearMultigrids, *this);
+  
+  for (MooseIndex(_num_grid_steps) grid_step = 0; grid_step <= _num_grid_steps; ++grid_step) 
   {
     _problem.solve();
 
@@ -229,5 +237,8 @@ FEProblemSolve::solve()
     if (grid_step != _num_grid_steps)
       _problem.uniformRefine();
   }
+
+  INJECTION_LOOP_END(MOOSE,NonlinearMultigrids);
+
   return _problem.converged();
 }

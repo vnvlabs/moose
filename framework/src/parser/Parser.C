@@ -50,6 +50,8 @@
 #include <algorithm>
 #include <cstdlib>
 
+#include "VnV.h"
+
 std::string
 FuncParseEvaler::eval(hit::Field * n, const std::list<std::string> & args, hit::BraceExpander & exp)
 {
@@ -610,6 +612,17 @@ Parser::hitCLIFilter(std::string appname, const std::vector<std::string> & argv)
 void
 Parser::parse(const std::vector<std::string> & input_filenames)
 {
+
+  /**
+    * @title Parse Input Files.
+    *
+    * Name of all the input files. 
+    *
+    **/
+  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, Parse, IPCALLBACK {
+    
+  }, *this);
+  
   // Save the filename
   _input_filenames = input_filenames;
   if (_input_filenames.empty())
@@ -736,6 +749,9 @@ Parser::parse(const std::vector<std::string> & input_filenames)
 
   if (_errmsg.size() > 0)
     mooseError(_errmsg);
+
+
+  INJECTION_LOOP_END(MOOSE,Parse);  
 }
 
 // Checks the input and the way it has been used and emits any errors/warnings.

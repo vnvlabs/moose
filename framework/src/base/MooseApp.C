@@ -75,6 +75,9 @@
 #include <chrono>
 #include <thread>
 
+
+#include "VnV.h"
+
 #define QUOTE(macro) stringifyName(macro)
 
 void
@@ -323,8 +326,31 @@ MooseApp::validParams()
   return params;
 }
 
+VnVIpConstruction::VnVIpConstruction(MooseApp *app) {
+
+    /**
+     * @title Building the Core Moose Application. 
+     * 
+     * In this stage of the program we build the core moose application.
+     * 
+     * The Application is configured as follows:
+     * 
+     * Name:  :vnv:`name`
+     * 
+     * ..vnv-todo:: Write more application configuration information.
+     *  
+    */
+    INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, BuildCoreMooseApp, IPCALLBACK {
+      if (type == VnV::InjectionPointType::End) {
+        engine->Put("name" , "todo");
+      }
+    }, app);  
+}
+
+
 MooseApp::MooseApp(InputParameters parameters)
-  : ConsoleStreamInterface(*this),
+  : VnVIpConstruction(*this),
+    ConsoleStreamInterface(*this),
     PerfGraphInterface(*this, "MooseApp"),
     ParallelObject(*parameters.get<std::shared_ptr<Parallel::Communicator>>(
         "_comm")), // Can't call getParam() before pars is set
@@ -574,7 +600,12 @@ MooseApp::MooseApp(InputParameters parameters)
                     " to remove this deprecation warning.");
 
   Moose::out << std::flush;
+
+  INJECTION_LOOP_END(MOOSE, BuildCoreMooseApp );
+
 }
+
+  
 
 MooseApp::~MooseApp()
 {
@@ -621,6 +652,30 @@ void
 MooseApp::setupOptions()
 {
   TIME_SECTION("setupOptions", 5, "Setting Up Options");
+
+  /**
+   * @title Setting Up Moose Options.
+   * 
+   * In this section we setup the application based on the options provided 
+   * int the input file and on the command line. Based on these options, MOOSE
+   * decided if it is ready to exit, or if we should run the excutioner.
+   * H
+   * Here are some interesting information for ya.
+   * 
+   * todo. Print out information here. We could do a number of things, like, we 
+   * could dump the json dump to a json object and then display it. We could
+   * print out registered objects, etc.  
+   * 
+   * After this function moose will :vnv:`exit` because :vnv:`reason`
+   *    
+  */
+  std::string reason = "No options said otherwise";
+  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, SetupOptions, IPCALLBACK {
+      if (type == VnV::InjectionPointType::End) {
+        engine->Put("Reason", reason);
+        engine->Put("Exit", _ready_to_exit ? "exit" : "continue");
+      }
+  }, *this);
 
   // MOOSE was updated to have the ability to register execution flags in similar fashion as
   // objects. However, this change requires all *App.C/h files to be updated with the new
@@ -717,6 +772,7 @@ MooseApp::setupOptions()
   {
     Moose::perf_log.disable_logging();
     Moose::out << getPrintableVersion() << std::endl;
+    reason = "you asked us to display the version";
     _ready_to_exit = true;
     return;
   }
@@ -725,6 +781,8 @@ MooseApp::setupOptions()
     Moose::perf_log.disable_logging();
 
     _command_line->printUsage();
+    
+    reason = "you asked us to print the help message (param --help)";
     _ready_to_exit = true;
   }
   else if (isParamValid("dump"))
@@ -753,6 +811,9 @@ MooseApp::setupOptions()
     JsonInputFileFormatter formatter;
     Moose::out << "\n### START DUMP DATA ###\n"
                << formatter.toString(tree.getRoot()) << "\n### END DUMP DATA ###" << std::endl;
+    
+    reason = "you asked us to dump the data.";
+    
     _ready_to_exit = true;
   }
   else if (isParamValid("registry"))
@@ -784,6 +845,7 @@ MooseApp::setupOptions()
         Moose::out << entry.first << "\taction\t" << act._name << "\t" << act._classname << "\t"
                    << act._file << "\n";
     }
+    reason = "you asked us to print the registry.";
 
     _ready_to_exit = true;
   }
@@ -840,6 +902,8 @@ MooseApp::setupOptions()
     Moose::out << root.render();
 
     Moose::out << "\n### END REGISTRY DATA ###\n";
+    reason = "you asked us to print the registry hit data.";
+
     _ready_to_exit = true;
   }
   else if (isParamValid("definition"))
@@ -852,6 +916,8 @@ MooseApp::setupOptions()
     SONDefinitionFormatter formatter;
     Moose::out << "%-START-SON-DEFINITION-%\n"
                << formatter.toString(tree.getRoot()) << "\n%-END-SON-DEFINITION-%\n";
+    
+    reason = "you asked us to dump the sof definition for the input file.";
     _ready_to_exit = true;
   }
   else if (isParamValid("yaml"))
@@ -873,6 +939,7 @@ MooseApp::setupOptions()
     else
       _parser.buildFullTree(yaml_following_arg);
 
+    reason = "you asked us to dump the yaml definition for the input file.";
     _ready_to_exit = true;
   }
   else if (isParamValid("json"))
@@ -894,6 +961,8 @@ MooseApp::setupOptions()
     _parser.buildJsonSyntaxTree(tree);
 
     Moose::out << "**START JSON DATA**\n" << tree.getRoot().dump(2) << "\n**END JSON DATA**\n";
+    reason = "you asked us to dump the json definition for the input file.";
+
     _ready_to_exit = true;
   }
   else if (getParam<bool>("syntax"))
@@ -907,6 +976,8 @@ MooseApp::setupOptions()
     for (const auto & it : syntax)
       Moose::out << it.first << "\n";
     Moose::out << "**END SYNTAX DATA**\n" << std::endl;
+    
+    reason = "you asked us to dump the syntax file.";
     _ready_to_exit = true;
   }
   else if (getParam<bool>("apptype"))
@@ -915,6 +986,7 @@ MooseApp::setupOptions()
 
     Moose::perf_log.disable_logging();
     Moose::out << "MooseApp Type: " << type() << std::endl;
+    reason = "you asked us to print the app type";
     _ready_to_exit = true;
   }
   else if (!_input_filenames.empty() ||
@@ -998,9 +1070,10 @@ MooseApp::setupOptions()
                  "<inputfile> to your command line.");
 
     _command_line->printUsage();
+    reason = "you passed bad parameters. ";
     _ready_to_exit = true;
   }
-
+  INJECTION_LOOP_END(MOOSE, SetupOptions);
   Moose::out << std::flush;
 }
 
@@ -1025,11 +1098,17 @@ MooseApp::runInputFile()
 {
   TIME_SECTION("runInputFile", 3);
 
+  
+
   // If ready to exit has been set, then just return
   if (_ready_to_exit)
     return;
 
+
+
   _action_warehouse.executeAllActions();
+
+
 
   if (isParamValid("mesh_only") || isParamValid("split_mesh"))
     _ready_to_exit = true;
@@ -1063,11 +1142,20 @@ void
 MooseApp::executeExecutioner()
 {
   TIME_SECTION("executeExecutioner", 3);
-
   // If ready to exit has been set, then just return
   if (_ready_to_exit)
     return;
 
+  /**
+    * @title Running Executioner
+    *
+    * Running the simulation. 
+    *
+    **/
+  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, ExecuteExecutioner, IPCALLBACK{
+
+  }, *this);
+  
   // run the simulation
   if (_use_executor && _executor)
   {
@@ -1088,6 +1176,9 @@ MooseApp::executeExecutioner()
   }
   else
     mooseError("No executioner was specified (go fix your input file)");
+
+  INJECTION_LOOP_END(MOOSE,ExecuteExecutioner);
+  
 }
 
 bool
@@ -1351,7 +1442,11 @@ MooseApp::setErrorOverridden()
 void
 MooseApp::run()
 {
+
+
+
   TIME_SECTION("run", 3);
+  
   if (isParamValid("show_docs") && getParam<bool>("show_docs"))
   {
     auto binname = appBinaryName();
@@ -1383,6 +1478,15 @@ MooseApp::run()
     return;
   }
 
+  /**
+   * @title Running the Moose Application. 
+   * 
+   * MOOSE is now running the Applicaiton. 
+  */
+  INJECTION_LOOP_BEGIN_C(MOOSE, VWORLD, RunApplication, IPCALLBACK{
+
+  }, *this);
+
   try
   {
     TIME_SECTION("setup", 2, "Setting Up");
@@ -1393,11 +1497,11 @@ MooseApp::run()
   {
     mooseError(err.what());
   }
-
+  
   if (!_check_input)
   {
     TIME_SECTION("execute", 2, "Executing");
-    executeExecutioner();
+    executeExecutioner();    
   }
   else
   {
@@ -1405,6 +1509,9 @@ MooseApp::run()
     // Output to stderr, so it is easier for peacock to get the result
     Moose::err << "Syntax OK" << std::endl;
   }
+  
+  INJECTION_LOOP_END(MOOSE, RunApplication);
+
 }
 
 bool

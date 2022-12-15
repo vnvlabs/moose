@@ -109,6 +109,8 @@
 
 #include "metaphysicl/dualnumber.h"
 
+#include "VnV.h"
+
 // Anonymous namespace for helper function
 namespace
 {
@@ -557,9 +559,16 @@ FEProblemBase::getNonlinearEvaluableElementRange()
 }
 
 void
-FEProblemBase::initialSetup()
-{
+FEProblemBase::initialSetup() {
+
+  
   TIME_SECTION("initialSetup", 2, "Performing Initial Setup");
+
+  /**
+   * @Title Setting up the FE Problem.
+  */
+  INJECTION_LOOP_BEGIN(MOOSE,VWORLD, FESetup, *this);
+
 
   SubProblem::initialSetup();
 
@@ -575,8 +584,8 @@ FEProblemBase::initialSetup()
 
   // Setup the solution states (current, old, etc) in each system based on
   // its default and the states requested of each of its variables
-  _nl->initSolutionState();
-  _aux->initSolutionState();
+  _nl->initSolutionState(); 
+  _aux->initSolutionState(); 
   if (getDisplacedProblem())
   {
     getDisplacedProblem()->nlSys().initSolutionState();
@@ -588,8 +597,8 @@ FEProblemBase::initialSetup()
   dof_id_type max_var_n_dofs_per_elem;
   dof_id_type max_var_n_dofs_per_node;
   {
-    TIME_SECTION("computingMaxDofs", 3, "Computing Max Dofs Per Element");
-
+    TIME_SECTION("computingMaxDofs", 3, "Computing Max Dofs Per Element"); 
+    INJECTION_LOOP_ITER(MOOSE,FESetup,ComputeMaxDofs);
     MaxVarNDofsPerElem mvndpe(*this, *_nl);
     Threads::parallel_reduce(*_mesh.getActiveLocalElementRange(), mvndpe);
     max_var_n_dofs_per_elem = mvndpe.max();
@@ -602,7 +611,8 @@ FEProblemBase::initialSetup()
   }
 
   {
-    TIME_SECTION("assignMaxDofs", 5, "Assigning Maximum Dofs Per Elem");
+    TIME_SECTION("assignMaxDofs", 5, "Assigning Maximum Dofs Per Elem"); 
+    INJECTION_LOOP_ITER(MOOSE,FESetup,AssignMaxDofs);
 
     _nl->assignMaxVarNDofsPerElem(max_var_n_dofs_per_elem);
     auto displaced_problem = getDisplacedProblem();
@@ -615,7 +625,9 @@ FEProblemBase::initialSetup()
   }
 
   {
-    TIME_SECTION("settingRequireDerivativeSize", 5, "Setting Required Derivative Size");
+    TIME_SECTION("settingRequireDerivativeSize", 5, "Setting Required Derivative Size")
+    INJECTION_LOOP_ITER(MOOSE,FESetup,SetDerivitiveSize);
+
 
 #ifndef MOOSE_SPARSE_AD
     auto size_required = max_var_n_dofs_per_elem * _nl->nVariables();
@@ -630,6 +642,8 @@ FEProblemBase::initialSetup()
 
   {
     TIME_SECTION("resizingVarValues", 5, "Resizing Variable Values");
+    INJECTION_LOOP_ITER(MOOSE,FESetup,ResizeVarValues);
+
 
     for (unsigned int tid = 0; tid < libMesh::n_threads(); ++tid)
     {
@@ -650,6 +664,7 @@ FEProblemBase::initialSetup()
   if ((_app.isRestarting() || _app.isRecovering()) && (_app.isUltimateMaster() || _force_restart))
   {
     TIME_SECTION("restartFromFile", 3, "Restarting From File");
+    INJECTION_LOOP_ITER(MOOSE,FESetup,RestartFromFile);
 
     _restart_io->readRestartableDataHeader(true);
     _restart_io->restartEquationSystemsObject();
@@ -683,7 +698,10 @@ FEProblemBase::initialSetup()
   }
 
   // Perform output related setups
-  _app.getOutputWarehouse().initialSetup();
+  INJECTION_LOOP_ITER(MOOSE,FESetup,SettingUpOutput);
+
+  _app.getOutputWarehouse().initialSetup(); 
+  
 
   // Flush all output to _console that occur during construction and initialization of objects
   _app.getOutputWarehouse().mooseConsole();
@@ -742,6 +760,7 @@ FEProblemBase::initialSetup()
 
   {
     TIME_SECTION("initializingFunctions", 5, "Initializing Functions");
+    INJECTION_LOOP_ITER(MOOSE,FESetup,InitializingFunctions);
 
     // Call the initialSetup methods for functions
     for (THREAD_ID tid = 0; tid < n_threads; tid++)
@@ -753,7 +772,9 @@ FEProblemBase::initialSetup()
   }
 
   {
-    TIME_SECTION("initializingRandomObjects", 5, "Initializing Random Objects");
+    TIME_SECTION("initializingRandomObjects", 5, "Initializing Random Objects"); 
+    INJECTION_LOOP_ITER(MOOSE,FESetup,InitializingRandomObjects);
+
 
     // Random interface objects
     for (const auto & it : _random_data_objects)
@@ -765,7 +786,8 @@ FEProblemBase::initialSetup()
     computeUserObjects(EXEC_INITIAL, Moose::PRE_IC);
 
     {
-      TIME_SECTION("ICiniitalSetup", 5, "Setting Up Initial Conditions");
+      TIME_SECTION("ICiniitalSetup", 5, "Setting Up Initial Conditions"); 
+      INJECTION_LOOP_ITER(MOOSE,FESetup,SettingUpInitialConditions);
 
       for (THREAD_ID tid = 0; tid < n_threads; tid++)
         _ics.initialSetup(tid);
@@ -780,6 +802,7 @@ FEProblemBase::initialSetup()
   if (_all_materials.hasActiveObjects(0))
   {
     TIME_SECTION("materialInitialSetup", 3, "Setting Up Materials");
+    INJECTION_LOOP_ITER(MOOSE,FESetup,SettingUpMaterials);
 
     for (THREAD_ID tid = 0; tid < n_threads; tid++)
     {
@@ -801,7 +824,9 @@ FEProblemBase::initialSetup()
     }
 
     {
-      TIME_SECTION("computingInitialStatefulProps", 3, "Computing Initial Material Values");
+      TIME_SECTION("computingInitialStatefulProps", 3, "Computing Initial Material Values"); 
+      INJECTION_LOOP_ITER(MOOSE,FESetup,ComputingInitialMaterialValues);
+
 
       const ConstElemRange & elem_range = *_mesh.getActiveLocalElementRange();
       ComputeMaterialsObjectThread cmt(*this,
@@ -835,6 +860,7 @@ FEProblemBase::initialSetup()
   }
 
 #ifdef LIBMESH_ENABLE_AMR
+  
 
   if (!_app.isRecovering())
   {
@@ -850,7 +876,7 @@ FEProblemBase::initialSetup()
   if (!_app.isRecovering() && !_app.isRestarting())
   {
     // During initial setup the solution is copied to the older solution states (old, older, etc)
-    copySolutionsBackwards();
+    copySolutionsBackwards(); 
   }
 
   if (!_app.isRecovering())
@@ -860,14 +886,14 @@ FEProblemBase::initialSetup()
   }
 
   // Call initialSetup on the nonlinear system
-  _nl->initialSetup();
-
+  _nl->initialSetup();  
+ 
   // Auxilary variable initialSetup calls
-  _aux->initialSetup();
+  _aux->initialSetup(); 
 
   if (_displaced_problem)
     // initialSetup for displaced systems
-    _displaced_problem->initialSetup();
+    _displaced_problem->initialSetup(); 
 
   _nl->setSolution(*(_nl->system().current_local_solution.get()));
 
@@ -1053,6 +1079,9 @@ FEProblemBase::initialSetup()
   _reporter_data.check();
 
   setCurrentExecuteOnFlag(EXEC_NONE);
+
+  INJECTION_LOOP_END(MOOSE,FESetup);
+
 }
 
 void
@@ -5004,8 +5033,12 @@ FEProblemBase::init()
 void
 FEProblemBase::solve()
 {
-  TIME_SECTION("solve", 1, "Solving", false);
+  /**
+   * @title Solving the Finite Element Problem.
+  */
+  INJECTION_LOOP_BEGIN(MOOSE,VWORLD, FESolve,*this);
 
+  TIME_SECTION("solve", 1, "Solving", false); 
   // This prevents stale dof indices from lingering around and possibly leading to invalid reads and
   // writes. Dof indices may be made stale through operations like mesh adaptivity
   clearAllDofIndices();
@@ -5058,6 +5091,10 @@ FEProblemBase::solve()
   if (!_app.isUltimateMaster())
     PetscOptionsPop();
 #endif
+
+  INJECTION_LOOP_END(MOOSE,FESolve);
+
+
 }
 
 void
@@ -5154,7 +5191,7 @@ FEProblemBase::copySolutionsBackwards()
 void
 FEProblemBase::advanceState()
 {
-  TIME_SECTION("advanceState", 5, "Advancing State");
+  TIME_SECTION("advanceState", 5, "Advancing State"); 
 
   _nl->copyOldSolutions();
   _aux->copyOldSolutions();
@@ -5584,7 +5621,14 @@ FEProblemBase::computeJacobianInternal(const NumericVector<Number> & soln,
                                        SparseMatrix<Number> & jacobian,
                                        const std::set<TagID> & tags)
 {
-  TIME_SECTION("computeJacobianInternal", 1);
+  TIME_SECTION("computeJacobianInternal", 1); 
+
+  /**
+   * @title Compute Jacobian
+   * 
+   * description goes here
+  */
+  INJECTION_LOOP_BEGIN(MOOSE,VWORLD,ComputeJacobian, *this, soln, jacobian, tags);
 
   _nl->setSolution(soln);
 
@@ -5593,6 +5637,8 @@ FEProblemBase::computeJacobianInternal(const NumericVector<Number> & soln,
   computeJacobianTags(tags);
 
   _nl->disassociateMatrixFromTag(jacobian, _nl->systemMatrixTag());
+
+  INJECTION_LOOP_END(MOOSE,ComputeJacobian);
 }
 
 void
@@ -5600,7 +5646,7 @@ FEProblemBase::computeJacobianTags(const std::set<TagID> & tags)
 {
   if (!_has_jacobian || !_const_jacobian)
   {
-    TIME_SECTION("computeJacobianTags", 5, "Computing Jacobian");
+    TIME_SECTION("computeJacobianTags", 5, "Computing Jacobian"); 
 
     for (auto tag : tags)
       if (_nl->hasMatrix(tag))

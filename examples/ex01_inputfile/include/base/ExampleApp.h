@@ -11,11 +11,15 @@
 
 #include "MooseApp.h"
 
-class ExampleApp : public MooseApp
-{
-public:
-  ExampleApp(InputParameters parameters);
+class ExampleApp; 
 
+class VnVExampleApp {
+public:
+  VnVExampleApp(ExampleApp* app);
+};
+
+class ExampleApp : public VnVExampleApp, public MooseApp
+{
   static InputParameters validParams();
 
   static void registerApps();
