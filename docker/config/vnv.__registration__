@@ -1,10 +1,11 @@
 {
     "logo" : {
         "small" : "moose/static/moose.jpeg",
-        "large" : "moose/static/moose1.jpeg"
+        "large" : "moose/static/moose2.png"
     },
     "copyright" : {
         "message" : "RNET Technolgies Inc.",
         "link" : "https://rnet-tech.com"
-    }
+    },
+    "exclude_parents" : true
 }

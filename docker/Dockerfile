@@ -22,6 +22,8 @@ RUN cd ${SOURCE_DIR}/moose/examples/ex01_inputfile && make vnv
 
 ENV MOOSE_DIR=${SOURCE_DIR}/moose
 
+#For this example we are going to throw away all of the config options for petsc/libmesh/hypre/vnv
+
 ENV VNV_CONFIG=${VNV_CONFIG}:${MOOSE_DIR}/vnv.__registration__
 ENV VNV_CONFIG=${VNV_CONFIG}:${SOURCE_DIR}/moose/docker/config/vnv.__registration__
 
