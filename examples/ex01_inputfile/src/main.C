@@ -22,7 +22,29 @@
 
 #include "VnV.h"
 
+/**
+ * @title Input Files
+ * @description Moose Tutorial on Input Files
+ * @configuration {
+ *    "specDump" : "${application} -i ex01.i",
+ *    "empty_exec" : false,
+ *    "exec" : {
+ *        "active_overrides" : ["ex01.i"]
+ *        "overrides" : {
+ *           "ex01.i" : {
+ *              "command-line" : "${application} -i ex01.i"
+ *              "name" : "Example 1" 
+ *           },
+ *        }
+ *    }
+ * 
+ * 
+ * }
+*/
 INJECTION_EXECUTABLE(MOOSE_EX01) 
+
+
+
 INJECTION_SUBPACKAGE(MOOSE_EX01,MOOSE)
 
 // Create a performance log
