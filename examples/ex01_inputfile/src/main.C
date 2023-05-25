@@ -22,6 +22,16 @@
 
 #include "VnV.h"
 
+/**
+ * Example 1: As simple As It Gets
+ * ===============================
+ * 
+ * 
+ * This example briefly describes the creation of a basic input file and the 
+ * six required sections for utilizing MOOSE for solving a problem.
+ * 
+ * 
+ */
 INJECTION_EXECUTABLE(MOOSE_EX01) 
 INJECTION_SUBPACKAGE(MOOSE_EX01,MOOSE)
 
@@ -35,13 +45,9 @@ main(int argc, char * argv[])
   // Initialize MPI, solvers and MOOSE
   MooseInit init(argc, argv);
 
-  /**
-   * This is the introduction.
-   *
-   */ 
+  
   INJECTION_INITIALIZE(MOOSE_EX01, &argc, &argv, "./vv-input.json" );
-
-		  
+	  
   // Register this application's MooseApp and any it depends on
   ExampleApp::registerApps();
 
