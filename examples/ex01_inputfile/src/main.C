@@ -23,7 +23,6 @@
 #include "VnV.h"
 
 /**
-<<<<<<< HEAD
  * Example 1: As simple As It Gets
  * ===============================
  * 
@@ -33,27 +32,7 @@
  * 
  * 
  */
-=======
- * @title Input Files
- * @description Moose Tutorial on Input Files
- * @configuration {
- *    "specDump" : "${application} -i ex01.i",
- *    "empty_exec" : false,
- *    "exec" : {
- *        "active_overrides" : ["ex01.i"]
- *        "overrides" : {
- *           "ex01.i" : {
- *              "command-line" : "${application} -i ex01.i"
- *              "name" : "Example 1" 
- *           },
- *        }
- *    }
- * 
- * 
- * }
-*/
->>>>>>> c759b69a2127a9243ffbd81b5e74a4b71e3ba893
-INJECTION_EXECUTABLE(MOOSE_EX01) 
+INJECTION_EXECUTABLE(MOOSE_EX01,"{}") 
 
 
 

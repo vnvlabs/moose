@@ -14,7 +14,7 @@
 #include "AppFactory.h"
 #include "VnV.h"
 
-INJECTION_EXECUTABLE(POROUSFLOW) 
+INJECTION_EXECUTABLE(POROUSFLOW,"{}") 
 INJECTION_SUBPACKAGE(POROUSFLOW,MOOSE)
 
 // Create a performance log

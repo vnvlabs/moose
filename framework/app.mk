@@ -506,7 +506,7 @@ vnv-init: vnv-clean
 
 #Update the vnv file and rebuild. This should be done when you add new VnV components or change comments.  
 vnv-update:   
-	@${VNV_DIR}/bin/vnv-matcher --fix-omp --cache vnv.__cache__ --regFile ${MOOSE_DIR}/vnv.__registration__ --targetFile ${APPLICATION_DIR}/$(APPLICATION_NAME) --package $(APPLICATION_NAME) --output src/vnv.C compile_commands.json
+	@${VNV_DIR}/bin/vnv-matcher --fix-omp --cache vnv.__cache__ --targetFile ${APPLICATION_DIR}/$(APPLICATION_NAME) --package $(APPLICATION_NAME) --output src/vnv.C compile_commands.json
 	@${MAKE}
 
 vnv: vnv-init vnv-update
