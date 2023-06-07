@@ -17,7 +17,7 @@ RUN cd ${SOFTWARE_DIR}/moose/framework\
 ENV MOOSE_DIR=${SOFTWARE_DIR}/moose
 RUN cd ${SOFTWARE_DIR}/moose/examples/ex01_inputfile && make vnv 
 
-ENV VNV_CONFIG=${VNV_CONFIG}:${SOFTWARE_DIR}/moose/gui/vnv.__registration__ 
+RUN ${VNV_REGISTER} gui moose ${SOFTWARE_DIR}/moose/gui/vnv.__registration__ 
 
 
 
