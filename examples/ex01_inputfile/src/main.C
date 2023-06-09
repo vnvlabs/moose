@@ -32,11 +32,9 @@
  * 
  * 
  */
-INJECTION_EXECUTABLE(MOOSE_EX01,"{}") 
+INJECTION_EXECUTABLE(VNV_APP_NAME,"{}") 
 
-
-
-INJECTION_SUBPACKAGE(MOOSE_EX01,MOOSE)
+INJECTION_SUBPACKAGE(VNV_APP_NAME,MOOSE)
 
 // Create a performance log
 PerfLog Moose::perf_log("Example");
@@ -49,7 +47,7 @@ main(int argc, char * argv[])
   MooseInit init(argc, argv);
 
   
-  INJECTION_INITIALIZE(MOOSE_EX01, &argc, &argv, "./vv-input.json" );
+  INJECTION_INITIALIZE(VNV_APP_NAME, &argc, &argv, "./vv-input.json" );
 	  
   // Register this application's MooseApp and any it depends on
   ExampleApp::registerApps();
@@ -64,7 +62,7 @@ main(int argc, char * argv[])
    * This is the conclusion.
    * 
    */ 
-  INJECTION_FINALIZE(MOOSE_EX01);
+  INJECTION_FINALIZE(VNV_APP_NAME);
 
 
   return 0;
