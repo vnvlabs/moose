@@ -9,7 +9,8 @@
 
 #pragma once
 
-#include "MooseFunctionBase.h"
+#include "MooseObject.h"
+#include "SetupInterface.h"
 #include "TransientInterface.h"
 #include "PostprocessorInterface.h"
 #include "UserObjectInterface.h"
@@ -18,6 +19,7 @@
 #include "ScalarCoupleable.h"
 #include "MooseFunctor.h"
 #include "MooseADWrapper.h"
+#include "ChainedReal.h"
 
 // libMesh
 #include "libmesh/vector_value.h"
@@ -32,15 +34,15 @@ class Point;
  * Base class for function objects.  Functions override value to supply a
  * value at a point.
  */
-template <typename T>
-class FunctionTempl : public MooseFunctionBase,
-                      public TransientInterface,
-                      public PostprocessorInterface,
-                      public UserObjectInterface,
-                      public Restartable,
-                      public MeshChangedInterface,
-                      public ScalarCoupleable,
-                      public Moose::FunctorBase<T>
+class Function : public MooseObject,
+                 public SetupInterface,
+                 public TransientInterface,
+                 public PostprocessorInterface,
+                 public UserObjectInterface,
+                 public Restartable,
+                 public MeshChangedInterface,
+                 public ScalarCoupleable,
+                 public Moose::FunctorBase<Real>
 {
 public:
   /**
@@ -49,12 +51,12 @@ public:
    */
   static InputParameters validParams();
 
-  FunctionTempl(const InputParameters & parameters);
+  Function(const InputParameters & parameters);
 
   /**
    * Function destructor
    */
-  virtual ~FunctionTempl();
+  virtual ~Function();
 
   /**
    * Override this to evaluate the scalar function at point (t,x,y,z), by default
@@ -76,6 +78,7 @@ public:
   virtual ADReal value(const ADReal & t, const ADPoint & p) const;
 
   ///@{ Helpers to call value(t,x,y,z)
+  ChainedReal value(const ChainedReal & t) const;
   template <typename U>
   auto value(const U & t) const;
   template <typename U>
@@ -100,7 +103,7 @@ public:
    */
   virtual RealVectorValue vectorCurl(Real t, const Point & p) const;
 
-  using Moose::FunctorBase<T>::gradient;
+  using Moose::FunctorBase<Real>::gradient;
   /**
    * Function objects can optionally provide a gradient at a point. By default
    * this returns 0, you must override it.
@@ -134,49 +137,52 @@ public:
   void timestepSetup() override;
   void residualSetup() override;
   void jacobianSetup() override;
+  void customSetup(const ExecFlagType & exec_type) override;
+
+  bool hasBlocks(SubdomainID) const override { return true; }
 
 private:
-  using typename Moose::FunctorBase<T>::ValueType;
-  using typename Moose::FunctorBase<T>::GradientType;
-  using typename Moose::FunctorBase<T>::DotType;
+  using typename Moose::FunctorBase<Real>::ValueType;
+  using typename Moose::FunctorBase<Real>::GradientType;
+  using typename Moose::FunctorBase<Real>::DotType;
 
   /**
    * @return the time associated with the requested \p state
    */
-  Real getTime(unsigned int state) const;
+  Real getTime(const Moose::StateArg & state) const;
 
   using ElemArg = Moose::ElemArg;
-  using ElemFromFaceArg = Moose::ElemFromFaceArg;
   using ElemQpArg = Moose::ElemQpArg;
   using ElemSideQpArg = Moose::ElemSideQpArg;
   using FaceArg = Moose::FaceArg;
-  using SingleSidedFaceArg = Moose::SingleSidedFaceArg;
+  using ElemPointArg = Moose::ElemPointArg;
 
-  ValueType evaluate(const ElemArg & elem, unsigned int state) const override final;
-  ValueType evaluate(const ElemFromFaceArg & elem_from_face,
-                     unsigned int state) const override final;
-  ValueType evaluate(const FaceArg & face, unsigned int state) const override final;
-  ValueType evaluate(const SingleSidedFaceArg & face, unsigned int state) const override final;
-  ValueType evaluate(const ElemQpArg & qp, unsigned int state) const override final;
-  ValueType evaluate(const ElemSideQpArg & elem_side_qp, unsigned int state) const override final;
+  ValueType evaluate(const ElemArg & elem, const Moose::StateArg & state) const override final;
+  ValueType evaluate(const FaceArg & face, const Moose::StateArg & state) const override final;
+  ValueType evaluate(const ElemQpArg & qp, const Moose::StateArg & state) const override final;
+  ValueType evaluate(const ElemSideQpArg & elem_side_qp,
+                     const Moose::StateArg & state) const override final;
+  ValueType evaluate(const ElemPointArg & elem_point,
+                     const Moose::StateArg & state) const override final;
 
-  GradientType evaluateGradient(const ElemArg & elem, unsigned int state) const override final;
-  GradientType evaluateGradient(const ElemFromFaceArg & elem_from_face,
-                                unsigned int state) const override final;
-  GradientType evaluateGradient(const FaceArg & face, unsigned int state) const override final;
-  GradientType evaluateGradient(const SingleSidedFaceArg & face,
-                                unsigned int state) const override final;
-  GradientType evaluateGradient(const ElemQpArg & qp, unsigned int state) const override final;
+  GradientType evaluateGradient(const ElemArg & elem,
+                                const Moose::StateArg & state) const override final;
+  GradientType evaluateGradient(const FaceArg & face,
+                                const Moose::StateArg & state) const override final;
+  GradientType evaluateGradient(const ElemQpArg & qp,
+                                const Moose::StateArg & state) const override final;
   GradientType evaluateGradient(const ElemSideQpArg & elem_side_qp,
-                                unsigned int state) const override final;
+                                const Moose::StateArg & state) const override final;
+  GradientType evaluateGradient(const ElemPointArg & elem_point,
+                                const Moose::StateArg & state) const override final;
 
-  DotType evaluateDot(const ElemArg & elem, unsigned int state) const override final;
-  DotType evaluateDot(const ElemFromFaceArg & elem_from_face,
-                      unsigned int state) const override final;
-  DotType evaluateDot(const FaceArg & face, unsigned int state) const override final;
-  DotType evaluateDot(const SingleSidedFaceArg & face, unsigned int state) const override final;
-  DotType evaluateDot(const ElemQpArg & qp, unsigned int state) const override final;
-  DotType evaluateDot(const ElemSideQpArg & elem_side_qp, unsigned int state) const override final;
+  DotType evaluateDot(const ElemArg & elem, const Moose::StateArg & state) const override final;
+  DotType evaluateDot(const FaceArg & face, const Moose::StateArg & state) const override final;
+  DotType evaluateDot(const ElemQpArg & qp, const Moose::StateArg & state) const override final;
+  DotType evaluateDot(const ElemSideQpArg & elem_side_qp,
+                      const Moose::StateArg & state) const override final;
+  DotType evaluateDot(const ElemPointArg & elem_point,
+                      const Moose::StateArg & state) const override final;
 
   /**
    * Compute \p _current_elem_qp_functor_xyz if we are on a new element
@@ -208,46 +214,34 @@ private:
   mutable std::vector<Point> _current_elem_side_qp_functor_xyz;
 };
 
-template <typename T>
 template <typename U>
 auto
-FunctionTempl<T>::value(const U & t) const
+Function::value(const U & t) const
 {
   static const MooseADWrapper<Point, MooseIsADType<U>::value> p;
   return value(t, p);
 }
 
-template <typename T>
 template <typename U>
 auto
-FunctionTempl<T>::value(const U & t, const U & x, const U & y, const U & z) const
+Function::value(const U & t, const U & x, const U & y, const U & z) const
 {
   MooseADWrapper<Point, MooseIsADType<U>::value> p(x, y, z);
   return value(t, p);
 }
 
-template <typename T>
 template <typename U>
 auto
-FunctionTempl<T>::timeDerivative(const U & t) const
+Function::timeDerivative(const U & t) const
 {
   static const MooseADWrapper<Point, MooseIsADType<U>::value> p;
   return timeDerivative(t, p);
 }
 
-template <typename T>
 template <typename U>
 auto
-FunctionTempl<T>::timeDerivative(const U & t, const U & x, const U & y, const U & z) const
+Function::timeDerivative(const U & t, const U & x, const U & y, const U & z) const
 {
   MooseADWrapper<Point, MooseIsADType<U>::value> p(x, y, z);
   return timeDerivative(t, p);
 }
-
-class Function : public FunctionTempl<Real>
-{
-public:
-  static InputParameters validParams() { return FunctionTempl<Real>::validParams(); }
-  Function(const InputParameters & params) : FunctionTempl<Real>(params) {}
-};
-

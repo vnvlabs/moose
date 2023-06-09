@@ -38,12 +38,10 @@ AuxiliarySystem::AuxiliarySystem(FEProblemBase & subproblem, const std::string &
     _fe_problem(subproblem),
     _sys(subproblem.es().add_system<ExplicitSystem>(name)),
     _current_solution(_sys.current_local_solution.get()),
-    _serialized_solution(*NumericVector<Number>::build(_fe_problem.comm()).release()),
     _u_dot(NULL),
     _u_dotdot(NULL),
     _u_dot_old(NULL),
     _u_dotdot_old(NULL),
-    _need_serialized_solution(false),
     _aux_scalar_storage(_app.getExecuteOnEnum()),
     _nodal_aux_storage(_app.getExecuteOnEnum()),
     _mortar_nodal_aux_storage(_app.getExecuteOnEnum()),
@@ -54,13 +52,7 @@ AuxiliarySystem::AuxiliarySystem(FEProblemBase & subproblem, const std::string &
     _elemental_array_aux_storage(_app.getExecuteOnEnum())
 {
   _nodal_vars.resize(libMesh::n_threads());
-  _nodal_std_vars.resize(libMesh::n_threads());
-  _nodal_vec_vars.resize(libMesh::n_threads());
-  _nodal_array_vars.resize(libMesh::n_threads());
   _elem_vars.resize(libMesh::n_threads());
-  _elem_std_vars.resize(libMesh::n_threads());
-  _elem_vec_vars.resize(libMesh::n_threads());
-  _elem_array_vars.resize(libMesh::n_threads());
 
   if (!_fe_problem.defaultGhosting())
   {
@@ -70,7 +62,7 @@ AuxiliarySystem::AuxiliarySystem(FEProblemBase & subproblem, const std::string &
   }
 }
 
-AuxiliarySystem::~AuxiliarySystem() { delete &_serialized_solution; }
+AuxiliarySystem::~AuxiliarySystem() = default;
 
 void
 AuxiliarySystem::addDotVectors()
@@ -135,6 +127,24 @@ AuxiliarySystem::timestepSetup()
     _elemental_aux_storage.timestepSetup(tid);
     _elemental_vec_aux_storage.timestepSetup(tid);
     _elemental_array_aux_storage.timestepSetup(tid);
+  }
+}
+
+void
+AuxiliarySystem::customSetup(const ExecFlagType & exec_type)
+{
+  SystemBase::customSetup(exec_type);
+
+  for (unsigned int tid = 0; tid < libMesh::n_threads(); tid++)
+  {
+    _aux_scalar_storage.customSetup(exec_type, tid);
+    _nodal_aux_storage.customSetup(exec_type, tid);
+    _mortar_nodal_aux_storage.customSetup(exec_type, tid);
+    _nodal_vec_aux_storage.customSetup(exec_type, tid);
+    _nodal_array_aux_storage.customSetup(exec_type, tid);
+    _elemental_aux_storage.customSetup(exec_type, tid);
+    _elemental_vec_aux_storage.customSetup(exec_type, tid);
+    _elemental_array_aux_storage.customSetup(exec_type, tid);
   }
 }
 
@@ -227,15 +237,9 @@ AuxiliarySystem::addVariable(const std::string & var_type,
       if (var)
       {
         if (var->feType().family == LAGRANGE_VEC)
-        {
           _nodal_vars[tid].push_back(var);
-          _nodal_vec_vars[tid].push_back(var);
-        }
         else
-        {
           _elem_vars[tid].push_back(var);
-          _elem_vec_vars[tid].push_back(var);
-        }
       }
     }
 
@@ -248,15 +252,9 @@ AuxiliarySystem::addVariable(const std::string & var_type,
       if (var)
       {
         if (var->feType().family == LAGRANGE)
-        {
           _nodal_vars[tid].push_back(var);
-          _nodal_std_vars[tid].push_back(var);
-        }
         else
-        {
           _elem_vars[tid].push_back(var);
-          _elem_std_vars[tid].push_back(var);
-        }
       }
 
       auto * const avar = dynamic_cast<MooseVariableField<RealEigenVector> *>(var_base);
@@ -264,15 +262,9 @@ AuxiliarySystem::addVariable(const std::string & var_type,
       if (avar)
       {
         if (avar->feType().family == LAGRANGE)
-        {
           _nodal_vars[tid].push_back(avar);
-          _nodal_array_vars[tid].push_back(avar);
-        }
         else
-        {
           _elem_vars[tid].push_back(avar);
-          _elem_array_vars[tid].push_back(avar);
-        }
       }
     }
   }
@@ -293,8 +285,6 @@ AuxiliarySystem::addKernel(const std::string & kernel_name,
                            const std::string & name,
                            InputParameters & parameters)
 {
-  parameters.set<AuxiliarySystem *>("_aux_sys") = this;
-
   for (THREAD_ID tid = 0; tid < libMesh::n_threads(); tid++)
   {
     if (parameters.get<std::string>("_moose_base") == "AuxKernel")
@@ -388,26 +378,28 @@ AuxiliarySystem::reinitElemFace(const Elem * /*elem*/,
 NumericVector<Number> &
 AuxiliarySystem::serializedSolution()
 {
-  if (!_serialized_solution.initialized())
-    _serialized_solution.init(_sys.n_dofs(), false, SERIAL);
+  if (!_serialized_solution.get())
+  {
+    _serialized_solution = NumericVector<Number>::build(_fe_problem.comm());
+    _serialized_solution->init(_sys.n_dofs(), false, SERIAL);
+  }
 
-  _need_serialized_solution = true;
-  return _serialized_solution;
+  return *_serialized_solution;
 }
 
 void
 AuxiliarySystem::serializeSolution()
 {
-  if (_need_serialized_solution &&
+  if (_serialized_solution.get() &&
       _sys.n_dofs() > 0) // libMesh does not like serializing of empty vectors
   {
-    if (!_serialized_solution.initialized() || _serialized_solution.size() != _sys.n_dofs())
+    if (!_serialized_solution->initialized() || _serialized_solution->size() != _sys.n_dofs())
     {
-      _serialized_solution.clear();
-      _serialized_solution.init(_sys.n_dofs(), false, SERIAL);
+      _serialized_solution->clear();
+      _serialized_solution->init(_sys.n_dofs(), false, SERIAL);
     }
 
-    solution().localize(_serialized_solution);
+    solution().localize(*_serialized_solution);
   }
 }
 
@@ -449,7 +441,7 @@ AuxiliarySystem::compute(ExecFlagType type)
       _time_integrator->computeTimeDerivatives();
   }
 
-  if (_need_serialized_solution)
+  if (_serialized_solution.get())
     serializeSolution();
 }
 
@@ -697,7 +689,7 @@ AuxiliarySystem::computeNodalVars(ExecFlagType type)
   TIME_SECTION("computeNodalVars", 3);
 
   const MooseObjectWarehouse<AuxKernel> & nodal = _nodal_aux_storage[type];
-  computeNodalVarsHelper<AuxKernel>(nodal, _nodal_std_vars);
+  computeNodalVarsHelper<AuxKernel>(nodal);
 }
 
 void
@@ -706,14 +698,14 @@ AuxiliarySystem::computeNodalVecVars(ExecFlagType type)
   TIME_SECTION("computeNodalVecVars", 3);
 
   const MooseObjectWarehouse<VectorAuxKernel> & nodal = _nodal_vec_aux_storage[type];
-  computeNodalVarsHelper<VectorAuxKernel>(nodal, _nodal_vec_vars);
+  computeNodalVarsHelper<VectorAuxKernel>(nodal);
 }
 
 void
 AuxiliarySystem::computeNodalArrayVars(ExecFlagType type)
 {
   const MooseObjectWarehouse<ArrayAuxKernel> & nodal = _nodal_array_aux_storage[type];
-  computeNodalVarsHelper<ArrayAuxKernel>(nodal, _nodal_array_vars);
+  computeNodalVarsHelper<ArrayAuxKernel>(nodal);
 }
 
 void
@@ -721,25 +713,24 @@ AuxiliarySystem::computeMortarNodalVars(const ExecFlagType type)
 {
   TIME_SECTION("computeMortarNodalVars", 3);
 
-  const MooseObjectWarehouse<AuxKernel> & mortar_nodal = _mortar_nodal_aux_storage[type];
+  const MooseObjectWarehouse<AuxKernel> & mortar_nodal_warehouse = _mortar_nodal_aux_storage[type];
 
-  mooseAssert(!mortar_nodal.hasActiveBlockObjects(),
+  mooseAssert(!mortar_nodal_warehouse.hasActiveBlockObjects(),
               "We don't allow creation of block restricted mortar nodal aux kernels.");
 
-  if (mortar_nodal.hasActiveBoundaryObjects())
+  if (mortar_nodal_warehouse.hasActiveBoundaryObjects())
   {
     ConstBndNodeRange & bnd_nodes = *_mesh.getBoundaryNodeRange();
-    for (const auto & map_pr : mortar_nodal.getActiveBoundaryObjects())
-    {
-      const auto bnd_id = map_pr.first;
-      for (const auto index : index_range(map_pr.second))
+    for (const auto & [bnd_id, mortar_nodal_auxes] :
+         mortar_nodal_warehouse.getActiveBoundaryObjects())
+      for (const auto index : index_range(mortar_nodal_auxes))
       {
         PARALLEL_TRY
         {
           try
           {
             ComputeMortarNodalAuxBndThread<AuxKernel> mnabt(
-                _fe_problem, mortar_nodal, bnd_id, index);
+                _fe_problem, mortar_nodal_warehouse, bnd_id, index);
             Threads::parallel_reduce(bnd_nodes, mnabt);
           }
           catch (MooseException & e)
@@ -748,7 +739,11 @@ AuxiliarySystem::computeMortarNodalVars(const ExecFlagType type)
           }
           catch (libMesh::LogicError & e)
           {
-            _fe_problem.setException("We caught a libMesh::LogicError.");
+            _fe_problem.setException("We caught a libMesh::LogicError:" + std::string(e.what()));
+          }
+          catch (MetaPhysicL::LogicError & e)
+          {
+            moose::translateMetaPhysicLError(e);
           }
         }
         PARALLEL_CATCH;
@@ -758,7 +753,6 @@ AuxiliarySystem::computeMortarNodalVars(const ExecFlagType type)
         solution().close();
         _sys.update();
       }
-    }
   }
 }
 
@@ -768,7 +762,7 @@ AuxiliarySystem::computeElementalVars(ExecFlagType type)
   TIME_SECTION("computeElementalVars", 3);
 
   const MooseObjectWarehouse<AuxKernel> & elemental = _elemental_aux_storage[type];
-  computeElementalVarsHelper<AuxKernel>(elemental, _elem_std_vars);
+  computeElementalVarsHelper<AuxKernel>(elemental);
 }
 
 void
@@ -777,14 +771,14 @@ AuxiliarySystem::computeElementalVecVars(ExecFlagType type)
   TIME_SECTION("computeElementalVecVars", 3);
 
   const MooseObjectWarehouse<VectorAuxKernel> & elemental = _elemental_vec_aux_storage[type];
-  computeElementalVarsHelper<VectorAuxKernel>(elemental, _elem_vec_vars);
+  computeElementalVarsHelper<VectorAuxKernel>(elemental);
 }
 
 void
 AuxiliarySystem::computeElementalArrayVars(ExecFlagType type)
 {
   const MooseObjectWarehouse<ArrayAuxKernel> & elemental = _elemental_array_aux_storage[type];
-  computeElementalVarsHelper<ArrayAuxKernel>(elemental, _elem_array_vars);
+  computeElementalVarsHelper<ArrayAuxKernel>(elemental);
 }
 
 void
@@ -829,9 +823,7 @@ AuxiliarySystem::setPreviousNewtonSolution()
 
 template <typename AuxKernelType>
 void
-AuxiliarySystem::computeElementalVarsHelper(
-    const MooseObjectWarehouse<AuxKernelType> & warehouse,
-    const std::vector<std::vector<MooseVariableFEBase *>> & vars)
+AuxiliarySystem::computeElementalVarsHelper(const MooseObjectWarehouse<AuxKernelType> & warehouse)
 {
   if (warehouse.hasActiveBlockObjects())
   {
@@ -839,7 +831,7 @@ AuxiliarySystem::computeElementalVarsHelper(
     PARALLEL_TRY
     {
       ConstElemRange & range = *_mesh.getActiveLocalElementRange();
-      ComputeElemAuxVarsThread<AuxKernelType> eavt(_fe_problem, warehouse, vars, true);
+      ComputeElemAuxVarsThread<AuxKernelType> eavt(_fe_problem, warehouse, true);
       try
       {
         Threads::parallel_reduce(range, eavt);
@@ -865,7 +857,7 @@ AuxiliarySystem::computeElementalVarsHelper(
     PARALLEL_TRY
     {
       ConstBndElemRange & bnd_elems = *_mesh.getBoundaryElementRange();
-      ComputeElemAuxBcsThread<AuxKernelType> eabt(_fe_problem, warehouse, vars, true);
+      ComputeElemAuxBcsThread<AuxKernelType> eabt(_fe_problem, warehouse, true);
       try
       {
         Threads::parallel_reduce(bnd_elems, eabt);
@@ -886,9 +878,7 @@ AuxiliarySystem::computeElementalVarsHelper(
 
 template <typename AuxKernelType>
 void
-AuxiliarySystem::computeNodalVarsHelper(
-    const MooseObjectWarehouse<AuxKernelType> & warehouse,
-    const std::vector<std::vector<MooseVariableFEBase *>> & vars)
+AuxiliarySystem::computeNodalVarsHelper(const MooseObjectWarehouse<AuxKernelType> & warehouse)
 {
   if (warehouse.hasActiveBlockObjects())
   {
@@ -896,7 +886,7 @@ AuxiliarySystem::computeNodalVarsHelper(
     PARALLEL_TRY
     {
       ConstNodeRange & range = *_mesh.getLocalNodeRange();
-      ComputeNodalAuxVarsThread<AuxKernelType> navt(_fe_problem, warehouse, vars);
+      ComputeNodalAuxVarsThread<AuxKernelType> navt(_fe_problem, warehouse);
       Threads::parallel_reduce(range, navt);
 
       solution().close();
@@ -913,7 +903,7 @@ AuxiliarySystem::computeNodalVarsHelper(
     PARALLEL_TRY
     {
       ConstBndNodeRange & bnd_nodes = *_mesh.getBoundaryNodeRange();
-      ComputeNodalAuxBcsThread<AuxKernelType> nabt(_fe_problem, warehouse, vars);
+      ComputeNodalAuxBcsThread<AuxKernelType> nabt(_fe_problem, warehouse);
       Threads::parallel_reduce(bnd_nodes, nabt);
 
       solution().close();
@@ -923,15 +913,11 @@ AuxiliarySystem::computeNodalVarsHelper(
   }
 }
 
-template void AuxiliarySystem::computeElementalVarsHelper<AuxKernel>(
-    const MooseObjectWarehouse<AuxKernel> &,
-    const std::vector<std::vector<MooseVariableFEBase *>> &);
+template void
+AuxiliarySystem::computeElementalVarsHelper<AuxKernel>(const MooseObjectWarehouse<AuxKernel> &);
 template void AuxiliarySystem::computeElementalVarsHelper<VectorAuxKernel>(
-    const MooseObjectWarehouse<VectorAuxKernel> &,
-    const std::vector<std::vector<MooseVariableFEBase *>> &);
-template void AuxiliarySystem::computeNodalVarsHelper<AuxKernel>(
-    const MooseObjectWarehouse<AuxKernel> &,
-    const std::vector<std::vector<MooseVariableFEBase *>> &);
+    const MooseObjectWarehouse<VectorAuxKernel> &);
+template void
+AuxiliarySystem::computeNodalVarsHelper<AuxKernel>(const MooseObjectWarehouse<AuxKernel> &);
 template void AuxiliarySystem::computeNodalVarsHelper<VectorAuxKernel>(
-    const MooseObjectWarehouse<VectorAuxKernel> &,
-    const std::vector<std::vector<MooseVariableFEBase *>> &);
+    const MooseObjectWarehouse<VectorAuxKernel> &);

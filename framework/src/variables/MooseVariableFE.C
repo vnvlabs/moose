@@ -77,26 +77,6 @@ MooseVariableFE<OutputType>::MooseVariableFE(const InputParameters & parameters)
 }
 
 template <typename OutputType>
-std::string
-MooseVariableFE<OutputType>::componentName(const unsigned int comp) const
-{
-  if (comp >= _count)
-    mooseError("Component index must be less than the number of components of variable ",
-               _var_name);
-  if (std::is_same<OutputType, RealEigenVector>::value)
-    return this->_subproblem.arrayVariableComponent(_var_name, comp);
-  else
-    return _var_name;
-}
-
-template <typename OutputType>
-const std::set<SubdomainID> &
-MooseVariableFE<OutputType>::activeSubdomains() const
-{
-  return this->_sys.system().variable(_var_num).active_subdomains();
-}
-
-template <typename OutputType>
 Moose::VarFieldType
 MooseVariableFE<OutputType>::fieldType() const
 {
@@ -108,13 +88,6 @@ MooseVariableFE<OutputType>::fieldType() const
     return Moose::VarFieldType::VAR_FIELD_ARRAY;
   else
     mooseError("Unknown variable field type");
-}
-
-template <typename OutputType>
-bool
-MooseVariableFE<OutputType>::activeOnSubdomain(SubdomainID subdomain) const
-{
-  return this->_sys.system().variable(_var_num).active_on_subdomain(subdomain);
 }
 
 template <typename OutputType>
@@ -149,9 +122,9 @@ template <typename OutputType>
 void
 MooseVariableFE<OutputType>::prepareAux()
 {
-  _element_data->hasDofValues(false);
-  _neighbor_data->hasDofValues(false);
-  _lower_data->hasDofValues(false);
+  _element_data->prepareAux();
+  _neighbor_data->prepareAux();
+  _lower_data->prepareAux();
 }
 
 template <typename OutputType>
@@ -578,7 +551,7 @@ MooseVariableFE<RealEigenVector>::getGradient(
   {
     for (unsigned int i = 0; i < dof_indices.size(); ++i)
       for (unsigned int j = 0; j < _count; ++j)
-        for (unsigned int k = 0; k < LIBMESH_DIM; ++k)
+        for (const auto k : make_range(Moose::dim))
         {
           // The zero index is because we only have one point that the phis are evaluated at
           value(j, k) += grad_phi[i][0](k) * (*this->_sys.currentSolution())(dof_indices[i] + j);

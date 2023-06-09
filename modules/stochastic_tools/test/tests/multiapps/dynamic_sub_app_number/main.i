@@ -36,14 +36,13 @@
 [Transfers]
   [runner]
     type = SamplerParameterTransfer
-    multi_app = runner
+    to_multi_app = runner
     sampler = mc
     parameters = 'BCs/right/value'
-    to_control = 'stochastic'
   []
   [data]
     type = SamplerPostprocessorTransfer
-    multi_app = runner
+    from_multi_app = runner
     sampler = mc
     to_vector_postprocessor = storage
     from_postprocessor = center
@@ -60,7 +59,6 @@
 [Outputs]
   [out]
     type = JSON
-    execute_system_information_on = NONE
     vectorpostprocessors_as_reporters = true
   []
 []

@@ -19,6 +19,7 @@
 #include "LockFile.h"
 
 #include "libmesh/exodusII_io.h"
+#include "libmesh/libmesh_config.h" // LIBMESH_HAVE_HDF5
 
 registerMooseObject("MooseApp", Exodus);
 
@@ -69,6 +70,18 @@ Exodus::validParams()
   params.addParam<bool>(
       "discontinuous", false, "Enables discontinuous output format for Exodus files.");
 
+  // Flag for outputting added side elements (for side-discontinuous data) to Exodus
+  params.addParam<bool>(
+      "side_discontinuous", false, "Enables adding side-discontinuous output in Exodus files.");
+
+  // Flag for outputting Exodus data in HDF5 format (when libMesh is
+  // configured with HDF5 support).  libMesh wants to do so by default
+  // (for backwards compatibility with libMesh HDF5 users), but we
+  // want to avoid this by default (for backwards compatibility with
+  // most Moose users and to avoid generating regression test gold
+  // files that non-HDF5 Moose builds can't read)
+  params.addParam<bool>("write_hdf5", false, "Enables HDF5 output format for Exodus files.");
+
   // Need a layer of geometric ghosting for mesh serialization
   params.addRelationshipManager("MooseGhostPointNeighbors",
                                 Moose::RelationshipManagerType::GEOMETRIC);
@@ -88,7 +101,9 @@ Exodus::Exodus(const InputParameters & parameters)
                                        : false),
     _overwrite(getParam<bool>("overwrite")),
     _output_dimension(getParam<MooseEnum>("output_dimension").getEnum<OutputDimension>()),
-    _discontinuous(getParam<bool>("discontinuous"))
+    _discontinuous(getParam<bool>("discontinuous")),
+    _side_discontinuous(getParam<bool>("side_discontinuous")),
+    _write_hdf5(getParam<bool>("write_hdf5"))
 {
   if (isParamValid("use_problem_dimension"))
   {
@@ -135,6 +150,13 @@ Exodus::initialSetup()
       !hasScalarOutput())
     mooseError("The current settings results in only the input file and no variables being output "
                "to the Exodus file, this is not supported.");
+
+  // Check if the mesh is contiguously numbered, because exodus output will renumber to force that
+  const auto & mesh = _problem_ptr->mesh().getMesh();
+  if ((mesh.n_nodes() != mesh.max_node_id()) || (mesh.n_elem() != mesh.max_elem_id()))
+    _mesh_contiguous_numbering = false;
+  else
+    _mesh_contiguous_numbering = true;
 }
 
 void
@@ -180,7 +202,7 @@ Exodus::outputSetup()
     // This makes the face information out-of-date on process 0 for distributed meshes, e.g.
     // elements will have neighbors that they didn't previously have
     if ((this->processor_id() == 0) && !lm_mesh.is_replicated())
-      moose_mesh.faceInfoDirty();
+      moose_mesh.finiteVolumeInfoDirty();
   };
   serialize(_problem_ptr->mesh());
 
@@ -199,6 +221,23 @@ Exodus::outputSetup()
   // Create the ExodusII_IO object
   _exodus_io_ptr = std::make_unique<ExodusII_IO>(_es_ptr->get_mesh());
   _exodus_initialized = false;
+
+  if (_write_hdf5)
+  {
+#ifndef LIBMESH_HAVE_HDF5
+    mooseError("Moose input requested HDF Exodus output, but libMesh was built without HDF5.");
+#endif
+
+    // This is redundant unless the libMesh default changes
+    _exodus_io_ptr->set_hdf5_writing(true);
+  }
+  else
+  {
+    _exodus_io_ptr->set_hdf5_writing(false);
+  }
+
+  if (_side_discontinuous)
+    _exodus_io_ptr->write_added_sides(true);
 
   // Increment file number and set appending status, append if all the following conditions are met:
   //   (1) If the application is recovering (not restarting)
@@ -279,6 +318,7 @@ Exodus::outputNodalVariables()
     _exodus_num++;
 
   // This satisfies the initialization of the ExodusII_IO object
+  handleExodusIOMeshRenumbering();
   _exodus_initialized = true;
 }
 
@@ -470,6 +510,7 @@ Exodus::outputEmptyTimestep()
   if (!_overwrite)
     _exodus_num++;
 
+  handleExodusIOMeshRenumbering();
   _exodus_initialized = true;
 }
 
@@ -477,4 +518,16 @@ void
 Exodus::clear()
 {
   _exodus_io_ptr.reset();
+}
+
+void
+Exodus::handleExodusIOMeshRenumbering()
+{
+  // We know exodus_io renumbered on the first write_timestep()
+  if (!_exodus_initialized && !_mesh_contiguous_numbering)
+  {
+    // Objects that depend on element/node ids are no longer valid
+    _problem_ptr->meshChanged();
+    _mesh_contiguous_numbering = true;
+  }
 }

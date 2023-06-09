@@ -25,9 +25,6 @@
 InputParameters
 TableOutput::validParams()
 {
-  // Fit mode selection Enum
-  MooseEnum pps_fit_mode(FormattedTable::getWidthModes());
-
   // Base class parameters
   InputParameters params = AdvancedOutput::validParams();
   params += AdvancedOutput::enableOutputTypes("postprocessor scalar vector_postprocessor reporter");
@@ -35,7 +32,7 @@ TableOutput::validParams()
   // Option for writing vector_postprocessor time file
   params.addParam<bool>("time_data",
                         false,
-                        "When true and VecptorPostprocessor data exists, write "
+                        "When true and VectorPostprocessor data exists, write "
                         "a csv file containing the timestep and time "
                         "information.");
 
@@ -52,6 +49,7 @@ TableOutput::validParams()
                         "The independent variable tolerance for determining when a new row should "
                         "be added to the table (Note: This value must be set independently for "
                         "Postprocessor output to type=Console and type=CSV file separately.");
+  params.addParamNamesToGroup("new_row_tolerance time_data time_column", "Table formatting");
 
   return params;
 }

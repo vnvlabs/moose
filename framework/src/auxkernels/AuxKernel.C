@@ -79,7 +79,7 @@ AuxKernelTempl<ComputeValueType>::AuxKernelTempl(const InputParameters & paramet
   : MooseObject(parameters),
     MooseVariableInterface<ComputeValueType>(
         this,
-        parameters.getCheckedPointerParam<AuxiliarySystem *>("_aux_sys")
+        parameters.getCheckedPointerParam<SystemBase *>("_sys")
             ->getVariable(parameters.get<THREAD_ID>("_tid"),
                           parameters.get<AuxVariableName>("variable"))
             .isNodal(),
@@ -109,12 +109,12 @@ AuxKernelTempl<ComputeValueType>::AuxKernelTempl(const InputParameters & paramet
     MeshChangedInterface(parameters),
     VectorPostprocessorInterface(this),
     ElementIDInterface(this),
-    FunctorInterface(this),
+    NonADFunctorInterface(this),
     _check_boundary_restricted(getParam<bool>("check_boundary_restricted")),
     _subproblem(*getCheckedPointerParam<SubProblem *>("_subproblem")),
     _sys(*getCheckedPointerParam<SystemBase *>("_sys")),
     _nl_sys(*getCheckedPointerParam<SystemBase *>("_nl_sys")),
-    _aux_sys(*getCheckedPointerParam<AuxiliarySystem *>("_aux_sys")),
+    _aux_sys(static_cast<AuxiliarySystem &>(_sys)),
     _tid(parameters.get<THREAD_ID>("_tid")),
     _var(_aux_sys.getActualFieldVariable<ComputeValueType>(
         _tid, parameters.get<AuxVariableName>("variable"))),
@@ -122,7 +122,7 @@ AuxKernelTempl<ComputeValueType>::AuxKernelTempl(const InputParameters & paramet
     _u(_nodal ? _var.nodalValueArray() : _var.sln()),
 
     _test(_var.phi()),
-    _assembly(_subproblem.assembly(_tid)),
+    _assembly(_subproblem.assembly(_tid, 0)),
     _bnd(boundaryRestricted()),
     _mesh(_subproblem.mesh()),
 
@@ -142,11 +142,6 @@ AuxKernelTempl<ComputeValueType>::AuxKernelTempl(const InputParameters & paramet
 {
   addMooseVariableDependency(&_var);
   _supplied_vars.insert(parameters.get<AuxVariableName>("variable"));
-
-  const auto & coupled_vars = getCoupledVars();
-  for (const auto & it : coupled_vars)
-    for (const auto & var : it.second)
-      _depend_vars.insert(var->name());
 
   if (_bnd && !isNodal() && _check_boundary_restricted)
   {
@@ -173,6 +168,17 @@ AuxKernelTempl<ComputeValueType>::AuxKernelTempl(const InputParameters & paramet
       }
     }
   }
+
+  // Check for supported variable types
+  // Any 'nodal' family that actually has DoFs outside of nodes, or gradient dofs at nodes is
+  // not properly set by AuxKernelTempl::compute
+  // NOTE: We could add a few exceptions, lower order from certain unsupported families and on
+  //       certain element types only have value-DoFs on nodes
+  const auto type = _var.feType();
+  if (_var.isNodal() && !((type.family == LAGRANGE) || (type.order <= FIRST)))
+    paramError("variable",
+               "Variable family " + Moose::stringify(type.family) + " is not supported at order " +
+                   Moose::stringify(type.order) + " by the AuxKernel system.");
 }
 
 template <typename ComputeValueType>
@@ -218,11 +224,10 @@ template <typename ComputeValueType>
 void
 AuxKernelTempl<ComputeValueType>::coupledCallback(const std::string & var_name, bool is_old) const
 {
-  if (is_old)
+  if (!is_old)
   {
-    std::vector<VariableName> var_names = getParam<std::vector<VariableName>>(var_name);
-    for (const auto & name : var_names)
-      _depend_vars.erase(name);
+    const auto & var_names = getParam<std::vector<VariableName>>(var_name);
+    _depend_vars.insert(var_names.begin(), var_names.end());
   }
 }
 

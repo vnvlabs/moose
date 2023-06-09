@@ -47,20 +47,20 @@
 [Functions]
   [u] # reaches a maximum value at (0.5, 0.6)
     type = ParsedFunction
-    value = 'sin(pi*x)*sin(pi*y/1.2)'
+    expression = 'sin(pi*x)*sin(pi*y/1.2)'
   []
-  [w] # reaches a minium value at (0.7, 0.8)
+  [w] # reaches a minium expression at (0.7, 0.8)
     type = ParsedFunction
-    value = '-sin(pi*x/1.4)*sin(pi*y/1.6)'
+    expression = '-sin(pi*x/1.4)*sin(pi*y/1.6)'
   []
 
   [v_x]
     type = ParsedFunction
-    value = 'x'
+    expression = 'x'
   []
   [v_y]
     type = ParsedFunction
-    value = 'y'
+    expression = 'y'
   []
 []
 
@@ -68,13 +68,13 @@
   # because we set v_x and v_y equal to the x and y coordinates, these two postprocessors
   # should just return the point at which u reaches a maximum value
   [max_v_from_proxy_x]
-    type = ElementExtremeValue
+    type = NodalExtremeValue
     variable = v_x
     proxy_variable = u
     value_type = max
   []
   [max_v_from_proxy_y]
-    type = ElementExtremeValue
+    type = NodalExtremeValue
     variable = v_y
     proxy_variable = u
     value_type = max
@@ -83,13 +83,13 @@
   # because we set v_x and v_y equal to the x and y coordinates, these two postprocessors
   # should just return the point at which w reaches a minimum value
   [min_v_from_proxy_x]
-    type = ElementExtremeValue
+    type = NodalExtremeValue
     variable = v_x
     proxy_variable = w
     value_type = min
   []
   [min_v_from_proxy_y]
-    type = ElementExtremeValue
+    type = NodalExtremeValue
     variable = v_y
     proxy_variable = w
     value_type = min
@@ -98,13 +98,6 @@
 
 [Executioner]
   type = Steady
-
-  # increase the quadrature order to get more quadrature points so that were closer
-  # to hitting the expect max/min
-  [Quadrature]
-    type = GAUSS
-    order = SECOND
-  []
 []
 
 [Outputs]

@@ -218,14 +218,12 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [simple_fluid]
-      type = SimpleFluidProperties
-      bulk_modulus = 13
-      density0 = 1
-      thermal_expansion = 0
-    []
+[FluidProperties]
+  [simple_fluid]
+    type = SimpleFluidProperties
+    bulk_modulus = 13
+    density0 = 1
+    thermal_expansion = 0
   []
 []
 
@@ -285,9 +283,9 @@
 [Functions]
   [porosity_analytic]
     type = ParsedFunction
-    value = 'biot+(phi0-biot)*exp(pp*(biot-1)/bulk)'
-    vars = 'biot phi0 pp bulk'
-    vals = '0.3 0.1 p0 2'
+    expression = 'biot+(phi0-biot)*exp(pp*(biot-1)/bulk)'
+    symbol_names = 'biot phi0 pp bulk'
+    symbol_values = '0.3 0.1 p0 2'
   []
 []
 

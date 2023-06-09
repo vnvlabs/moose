@@ -20,133 +20,12 @@
 
 template <typename>
 class MooseVariableFV;
+class FaceArgInterface;
 
 namespace Moose
 {
 namespace FV
 {
-/**
- * This creates a structure with info on : an element, \p FaceInfo, skewness correction and
- * subdomain ID. The element returned will correspond to the method argument. The \p FaceInfo part
- * of the structure will simply correspond to the current \p _face_info. The subdomain ID part of
- * the structure will correspond to the subdomain ID of the method's element argument except in the
- * case in which that subdomain ID does not correspond to a subdomain ID that the \p obj is defined
- * on. In that case the subdomain ID of the structure will correspond to the subdomain ID of the
- * element across the face, on which the \p obj *is* defined
- */
-template <typename SubdomainRestrictable>
-ElemFromFaceArg
-makeSidedFace(const SubdomainRestrictable & obj,
-              const Elem * const elem,
-              const FaceInfo & fi,
-              const bool correct_skewness = false)
-{
-  if (elem && obj.hasBlocks(elem->subdomain_id()))
-    return {elem, &fi, correct_skewness, correct_skewness, elem->subdomain_id()};
-  else
-  {
-    const Elem * const elem_across = (elem == &fi.elem()) ? fi.neighborPtr() : &fi.elem();
-    mooseAssert(elem_across && obj.hasBlocks(elem_across->subdomain_id()),
-                "How are there no elements with subs on here!");
-    return {elem, &fi, correct_skewness, correct_skewness, elem_across->subdomain_id()};
-  }
-}
-
-/**
- * @return the value of \p makeSidedFace called with the face info element
- */
-template <typename SubdomainRestrictable>
-ElemFromFaceArg
-elemFromFace(const SubdomainRestrictable & obj,
-             const FaceInfo & fi,
-             const bool correct_skewness = false)
-{
-  return makeSidedFace(obj, &fi.elem(), fi, correct_skewness);
-}
-
-/**
- * @return the value of \p makeSidedFace called with the face info neighbor
- */
-template <typename SubdomainRestrictable>
-ElemFromFaceArg
-neighborFromFace(const SubdomainRestrictable & obj,
-                 const FaceInfo & fi,
-                 const bool correct_skewness = false)
-{
-  return makeSidedFace(obj, fi.neighborPtr(), fi, correct_skewness);
-}
-
-/**
- * Determine the subdomain ID pair that should be used when creating a face argument for a
- * functor. As explained in the doxygen for \p makeSidedFace these
- * subdomain IDs do not simply correspond to the subdomain IDs of the face information element pair;
- * they must respect the block restriction of the \p obj
- */
-template <typename SubdomainRestrictable>
-std::pair<SubdomainID, SubdomainID>
-faceArgSubdomains(const SubdomainRestrictable & obj, const FaceInfo & fi)
-{
-  return std::make_pair(makeSidedFace(obj, &fi.elem(), fi).sub_id,
-                        makeSidedFace(obj, fi.neighborPtr(), fi).sub_id);
-}
-
-/**
- * Make a functor face argument with a central differencing limiter, e.g. compose a face argument
- * that will tell functors to perform (possibly skew-corrected) linear interpolations from cell
- * center values to faces
- * @param fi the face information
- * @param subs the two subdomains that should go into the face argument. The first member of this
- * pair will be the "element" subdomain id and the second member of the pair will be the "neighbor"
- * subdomain id
- * @param skewness_correction whether to apply skew correction weights
- * @param Whether to apply the face gradient when computing a skew corrected face value. A true
- * value for this parameter in conjunction with a false value for \p skewness_correction parameter
- * does not make sense. A false value for this parameter in conjunction with a true value for \p
- * skewness_correction should only be set by someone who really knows what they're doing
- * @return a face argument for functors
- */
-inline FaceArg
-makeCDFace(const FaceInfo & fi,
-           const std::pair<SubdomainID, SubdomainID> & subs,
-           const bool skewness_correction = false,
-           const bool apply_gradient_correction = false)
-{
-  return {&fi,
-          Moose::FV::LimiterType::CentralDifference,
-          true,
-          skewness_correction,
-          apply_gradient_correction,
-          subs.first,
-          subs.second};
-}
-
-/**
- * Make a functor face argument with a central differencing limiter, e.g. compose a face argument
- * that will tell functors to perform (possibly skew-corrected) linear interpolations from cell
- * center values to faces. The subdomain ids for the face argument will be created from the face
- * information object's \p elem() and \p neighbor() subdomain ids. If the latter is null, then an
- * invalid subdomain ID will be used
- * @param fi the face information
- * @param skewness_correction whether to apply skew correction weights
- * @param Whether to apply the face gradient when computing a skew corrected face value. A true
- * value for this parameter in conjunction with a false value for \p skewness_correction parameter
- * does not make sense. A false value for this parameter in conjunction with a true value for \p
- * skewness_correction should only be set by someone who really knows what they're doing
- * @return a face argument for functors
- */
-inline FaceArg
-makeCDFace(const FaceInfo & fi,
-           const bool skewness_correction = false,
-           const bool apply_gradient_correction = false)
-{
-  return makeCDFace(
-      fi,
-      std::make_pair(fi.elem().subdomain_id(),
-                     fi.neighborPtr() ? fi.neighbor().subdomain_id() : Moose::INVALID_BLOCK_ID),
-      skewness_correction,
-      apply_gradient_correction);
-}
-
 /// This codifies a set of available ways to interpolate with elem+neighbor
 /// solution information to calculate values (e.g. solution, material
 /// properties, etc.) at the face (centroid).  These methods are used in the
@@ -155,12 +34,12 @@ makeCDFace(const FaceInfo & fi,
 /// generically applicable.
 enum class InterpMethod
 {
-  /// (elem+neighbor)/2
+  /// gc*elem+(1-gc)*neighbor
   Average,
+  /// 1/(gc/elem+(1-gc)/neighbor)
+  HarmonicAverage,
   /// (gc*elem+(1-gc)*neighbor)+gradient*(rf-rf')
   SkewCorrectedAverage,
-  /// Extended stencil using the vertex values
-  VertexBased,
   /// weighted
   Upwind,
   // Rhie-Chow
@@ -170,6 +49,39 @@ enum class InterpMethod
   SOU,
   QUICK
 };
+
+/**
+ * Returns an enum with all the currently supported interpolation methods and the current default
+ * for FV: first-order upwind
+ * @return MooseEnum with all the face interpolation methods supported
+ */
+MooseEnum interpolationMethods();
+
+/**
+ * @return An input parameters object that contains the \p advected_interp_method parameter, e.g.
+ * the interpolation method to use for an advected quantity
+ */
+InputParameters advectedInterpolationParameter();
+
+/*
+ * Converts from the interpolation method to the interpolation enum.
+ * This routine is here in lieu of using a MooseEnum for InterpMethod
+ * @param interp_method the name of the interpolation method
+ * @return the interpolation method
+ */
+InterpMethod selectInterpolationMethod(const std::string & interp_method);
+
+/**
+ * Sets one interpolation method
+ * @param obj The \p MooseObject with input parameters to query
+ * @param interp_method The interpolation method we will set
+ * @param param_name The name of the parameter setting this interpolation method
+ * @return Whether the interpolation method has indicated that we will need more than the
+ * default level of ghosting
+ */
+bool setInterpolationMethod(const MooseObject & obj,
+                            Moose::FV::InterpMethod & interp_method,
+                            const std::string & param_name);
 
 /**
  * Produce the interpolation coefficients in the equation:
@@ -197,19 +109,12 @@ interpCoeffs(const InterpMethod m,
   switch (m)
   {
     case InterpMethod::Average:
+    case InterpMethod::SkewCorrectedAverage:
     {
       if (one_is_elem)
         return std::make_pair(fi.gC(), 1. - fi.gC());
       else
         return std::make_pair(1. - fi.gC(), fi.gC());
-    }
-
-    case InterpMethod::SkewCorrectedAverage:
-    {
-      if (one_is_elem)
-        return std::make_pair(fi.gCSkewed(), 1. - fi.gCSkewed());
-      else
-        return std::make_pair(1. - fi.gCSkewed(), fi.gCSkewed());
     }
 
     case InterpMethod::Upwind:
@@ -247,6 +152,88 @@ linearInterpolation(const T & value1,
 }
 
 /**
+ * Computes the harmonic mean (1/(gc/value1+(1-gc)/value2)) of Reals, RealVectorValues and
+ * RealTensorValues while accounting for the possibility that one or both of them are AD.
+ * For tensors, we use a component-wise mean instead of the matrix-inverse based option.
+ * @param value1 Reference to value1 in the (1/(gc/value1+(1-gc)/value2)) expression
+ * @param value2 Reference to value2 in the (1/(gc/value1+(1-gc)/value2)) expression
+ * @param fi Reference to the FaceInfo of the face on which the interpolation is requested
+ * @param one_is_elem Boolean indicating if the interpolation weight on FaceInfo belongs to the
+ * elementcorresponding to value1
+ * @return The interpolated value
+ */
+template <typename T1, typename T2>
+typename libMesh::CompareTypes<T1, T2>::supertype
+harmonicInterpolation(const T1 & value1,
+                      const T2 & value2,
+                      const FaceInfo & fi,
+                      const bool one_is_elem)
+{
+  // We check if the base values of the given template types match, if not we throw a compile-time
+  // error
+  static_assert(std::is_same<typename MetaPhysicL::RawType<T1>::value_type,
+                             typename MetaPhysicL::RawType<T2>::value_type>::value,
+                "The input values for harmonic interpolation need to have the same raw-value!");
+
+  // Fetch the interpolation coefficients, we use the exact same coefficients as for a simple
+  // weighted average
+  const auto coeffs = interpCoeffs(InterpMethod::Average, fi, one_is_elem);
+
+  // We check if the types are fit to compute the harmonic mean of. This is done compile-time
+  // using constexpr. We start with Real/ADReal which is straightforward if the input values are
+  // positive.
+  if constexpr (libMesh::TensorTools::TensorTraits<T1>::rank == 0)
+  {
+    // The harmonic mean of mixed positive and negative numbers (and 0 as well) is not well-defined
+    // so we assert that the input values shall be positive.
+#ifndef NDEBUG
+    if (value1 * value2 <= 0)
+      mooseWarning("Input values must be of the same sign for harmonic interpolation");
+#endif
+    return 1.0 / (coeffs.first / value1 + coeffs.second / value2);
+  }
+  // For vectors (ADRealVectorValue, VectorValue), we take the component-wise harmonic mean
+  else if constexpr (libMesh::TensorTools::TensorTraits<T1>::rank == 1)
+  {
+    typename libMesh::CompareTypes<T1, T2>::supertype result;
+    for (const auto i : make_range(Moose::dim))
+    {
+#ifndef NDEBUG
+      if (value1(i) * value2(i) <= 0)
+        mooseWarning("Component " + std::to_string(i) +
+                     "of input values must be of the same sign for harmonic interpolation");
+#endif
+      result(i) = 1.0 / (coeffs.first / value1(i) + coeffs.second / value2(i));
+    }
+    return result;
+  }
+  // For tensors (ADRealTensorValue, TensorValue), similarly to the vectors,
+  // we take the component-wise harmonic mean instead of the matrix-inverse approach
+  else if constexpr (libMesh::TensorTools::TensorTraits<T1>::rank == 2)
+  {
+    typename libMesh::CompareTypes<T1, T2>::supertype result;
+    for (const auto i : make_range(Moose::dim))
+      for (const auto j : make_range(Moose::dim))
+      {
+#ifndef NDEBUG
+        if (value1(i, j) * value2(i, j) <= 0)
+          mooseWarning("Component (" + std::to_string(i) + "," + std::to_string(j) +
+                       ") of input values must be of the same sign for harmonic interpolation");
+#endif
+        result(i, j) = 1.0 / (coeffs.first / value1(i, j) + coeffs.second / value2(i, j));
+      }
+    return result;
+  }
+  // We ran out of options, harmonic mean is not supported for other types at the moment
+  else
+    // This line is supposed to throw an error when the user tries to compile this function with
+    // types that are not supported. This is the reason we needed the always_false function. Hope as
+    // C++ gets nicer, we can do this in a nicer way.
+    static_assert(Moose::always_false<T1>,
+                  "Harmonic interpolation is not implemented for the used type!");
+}
+
+/**
  * Linear interpolation with skewness correction using the face gradient.
  * See more info in Moukalled Chapter 9. The correction involves a first order
  * Taylor expansion around the intersection of the cell face and the line
@@ -263,7 +250,7 @@ skewCorrectedLinearInterpolation(const T & value1,
   const auto coeffs = interpCoeffs(InterpMethod::SkewCorrectedAverage, fi, one_is_elem);
 
   auto value = (coeffs.first * value1 + coeffs.second * value2) +
-               face_gradient * (fi.faceCentroid() - fi.rIntersection());
+               face_gradient * fi.skewnessCorrectionVector();
   return value;
 }
 
@@ -285,19 +272,14 @@ interpolate(InterpMethod m,
   switch (m)
   {
     case InterpMethod::Average:
+    case InterpMethod::SkewCorrectedAverage:
       result = linearInterpolation(value1, value2, fi, one_is_elem);
       break;
-    case InterpMethod::SkewCorrectedAverage:
-    {
-      // We create a zero gradient to ensure that the skewness-corrected
-      // weights are used, but no correction is applied. This will change when the
-      // old weights are replaced by the ones used with skewness-correction
-      typename TensorTools::IncrementRank<T2>::type surface_gradient;
-      result = skewCorrectedLinearInterpolation(value1, value2, surface_gradient, fi, one_is_elem);
+    case InterpMethod::HarmonicAverage:
+      result = harmonicInterpolation(value1, value2, fi, one_is_elem);
       break;
-    }
     default:
-      mooseError("unsupported interpolation method for FVFaceInterface::interpolate");
+      mooseError("unsupported interpolation method for interpolate() function");
   }
 }
 
@@ -307,7 +289,7 @@ interpolate(InterpMethod m,
  */
 template <typename T>
 T
-linearInterpolation(const FunctorBase<T> & functor, const FaceArg & face)
+linearInterpolation(const FunctorBase<T> & functor, const FaceArg & face, const StateArg & time)
 {
   mooseAssert(face.limiter_type == LimiterType::CentralDifference,
               "this interpolation method is meant for linear interpolations");
@@ -315,27 +297,25 @@ linearInterpolation(const FunctorBase<T> & functor, const FaceArg & face)
   mooseAssert(face.fi,
               "We must have a non-null face_info in order to prepare our ElemFromFace tuples");
 
-  const auto elem_from_face = face.elemFromFace();
-  const auto neighbor_from_face = face.neighborFromFace();
+  const auto elem_arg = face.makeElem();
+  const auto neighbor_arg = face.makeNeighbor();
 
   if (face.correct_skewness)
   {
-    typedef typename TensorTools::IncrementRank<T>::type GradientType;
     // This condition ensures that the recursive algorithm (face_center->
     // face_gradient -> cell_gradient -> face_center -> ...) terminates after
     // one loop. It is hardcoded to one loop at this point since it yields
     // 2nd order accuracy on skewed meshes with the minimum additional effort.
     FaceArg new_face(face);
-    new_face.apply_gradient_to_skewness = false;
-    const auto surface_gradient =
-        face.apply_gradient_to_skewness ? functor.gradient(new_face) : GradientType(0);
+    new_face.correct_skewness = false;
+    const auto surface_gradient = functor.gradient(new_face, time);
 
     return skewCorrectedLinearInterpolation(
-        functor(elem_from_face), functor(neighbor_from_face), surface_gradient, *face.fi, true);
+        functor(elem_arg, time), functor(neighbor_arg, time), surface_gradient, *face.fi, true);
   }
   else
     return linearInterpolation(
-        functor(elem_from_face), functor(neighbor_from_face), *face.fi, true);
+        functor(elem_arg, time), functor(neighbor_arg, time), *face.fi, true);
 }
 
 /**
@@ -411,11 +391,9 @@ interpolate(InterpMethod m,
 /// Calculates and returns "grad_u dot normal" on the face to be used for
 /// diffusive terms.  If using any cross-diffusion corrections, etc. all
 /// those calculations should be handled appropriately by this function.
-template <typename T, typename T2>
-ADReal gradUDotNormal(const T & elem_value,
-                      const T2 & neighbor_value,
-                      const FaceInfo & face_info,
+ADReal gradUDotNormal(const FaceInfo & face_info,
                       const MooseVariableFV<Real> & fv_var,
+                      const Moose::StateArg & time,
                       bool correct_skewness = false);
 
 /**
@@ -443,8 +421,14 @@ template <typename Scalar, typename Vector>
 Scalar
 rF(const Scalar & phiC, const Scalar & phiD, const Vector & gradC, const RealVectorValue & dCD)
 {
+  static const auto zero_vec = RealVectorValue(0);
   if ((phiD - phiC) == 0)
-    return 1e6 * MathUtils::sign(gradC * dCD) + 0 * (gradC * dCD + phiD + phiC);
+    // Handle zero denominator case. Note that MathUtils::sign returns 1 for sign(0) so we can omit
+    // that operation here (e.g. sign(phiD - phiC) = sign(0) = 1). The second term preserves the
+    // same sparsity pattern as the else branch; we want to add this so that we don't risk PETSc
+    // shrinking the matrix now and then potentially reallocating nonzeros later (which is very
+    // slow)
+    return 1e6 * MathUtils::sign(gradC * dCD) + zero_vec * gradC;
 
   return 2. * gradC * dCD / (phiD - phiC) - 1.;
 }
@@ -470,10 +454,8 @@ interpCoeffs(const Limiter<T> & limiter,
              const bool fi_elem_is_upwind)
 {
   // Using beta, w_f, g nomenclature from Greenshields
-  const auto beta = limiter(phi_upwind,
-                            phi_downwind,
-                            grad_phi_upwind,
-                            fi_elem_is_upwind ? fi.dCF() : RealVectorValue(-fi.dCF()));
+  const auto beta = limiter(
+      phi_upwind, phi_downwind, grad_phi_upwind, fi_elem_is_upwind ? fi.dCN() : Point(-fi.dCN()));
 
   const auto w_f = fi_elem_is_upwind ? fi.gC() : (1. - fi.gC());
 
@@ -481,11 +463,6 @@ interpCoeffs(const Limiter<T> & limiter,
 
   return std::make_pair(1. - g, g);
 }
-
-template <typename T>
-struct GradientType
-{
-};
 
 /**
  * Interpolates with a limiter
@@ -513,21 +490,204 @@ VectorValue<T>
 interpolate(const Limiter & limiter,
             const TypeVector<T> & phi_upwind,
             const TypeVector<T> & phi_downwind,
-            const Tensor * const /*grad_phi_upwind*/,
+            const Tensor * const grad_phi_upwind,
             const FaceInfo & fi,
             const bool fi_elem_is_upwind)
 {
-  mooseAssert(limiter.constant(),
-              "Non-constant limiters are not currently supported in the vector overload of the "
-              "limited interpolate method");
-  static const VectorValue<T> example_gradient(0);
+  mooseAssert(limiter.constant() || grad_phi_upwind,
+              "Non-null gradient only supported for constant limiters.");
 
+  const VectorValue<T> * const gradient_example = nullptr;
   VectorValue<T> ret;
   for (const auto i : make_range(unsigned(LIBMESH_DIM)))
-    ret(i) = interpolate(
-        limiter, phi_upwind(i), phi_downwind(i), &example_gradient, fi, fi_elem_is_upwind);
+  {
+    if (grad_phi_upwind)
+    {
+      const VectorValue<T> gradient = grad_phi_upwind->row(i);
+      ret(i) =
+          interpolate(limiter, phi_upwind(i), phi_downwind(i), &gradient, fi, fi_elem_is_upwind);
+    }
+    else
+      ret(i) = interpolate(
+          limiter, phi_upwind(i), phi_downwind(i), gradient_example, fi, fi_elem_is_upwind);
+  }
 
   return ret;
+}
+
+/**
+ * Interpolates with a limiter and a face argument
+ * @return a pair of pairs. The first pair corresponds to the interpolation coefficients with the
+ * first corresponding to the face information element and the second corresponding to the face
+ * information neighbor. This pair should sum to unity. The second pair corresponds to the face
+ * information functor element value and neighbor
+ */
+template <typename T, typename Enable = typename std::enable_if<ScalarTraits<T>::value>::type>
+std::pair<std::pair<T, T>, std::pair<T, T>>
+interpCoeffsAndAdvected(const FunctorBase<T> & functor, const FaceArg & face, const StateArg & time)
+{
+  typedef typename FunctorBase<T>::GradientType GradientType;
+  static const GradientType zero(0);
+
+  mooseAssert(face.fi, "this must be non-null");
+  const auto limiter = Limiter<typename LimiterValueType<T>::value_type>::build(face.limiter_type);
+
+  const auto upwind_arg = face.elem_is_upwind ? face.makeElem() : face.makeNeighbor();
+  const auto downwind_arg = face.elem_is_upwind ? face.makeNeighbor() : face.makeElem();
+  auto phi_upwind = functor(upwind_arg, time);
+  auto phi_downwind = functor(downwind_arg, time);
+
+  std::pair<T, T> interp_coeffs;
+  if (face.limiter_type == LimiterType::Upwind ||
+      face.limiter_type == LimiterType::CentralDifference)
+    interp_coeffs =
+        interpCoeffs(*limiter, phi_upwind, phi_downwind, &zero, *face.fi, face.elem_is_upwind);
+  else
+  {
+    const auto grad_phi_upwind = functor.gradient(upwind_arg, time);
+    interp_coeffs = interpCoeffs(
+        *limiter, phi_upwind, phi_downwind, &grad_phi_upwind, *face.fi, face.elem_is_upwind);
+  }
+
+  if (face.elem_is_upwind)
+    return std::make_pair(std::move(interp_coeffs),
+                          std::make_pair(std::move(phi_upwind), std::move(phi_downwind)));
+  else
+    return std::make_pair(
+        std::make_pair(std::move(interp_coeffs.second), std::move(interp_coeffs.first)),
+        std::make_pair(std::move(phi_downwind), std::move(phi_upwind)));
+}
+
+template <typename T, typename Enable = typename std::enable_if<ScalarTraits<T>::value>::type>
+T
+interpolate(const FunctorBase<T> & functor, const FaceArg & face, const StateArg & time)
+{
+  // Special handling for central differencing as it is the only interpolation method which
+  // currently supports skew correction
+  if (face.limiter_type == LimiterType::CentralDifference)
+    return linearInterpolation(functor, face, time);
+
+  const auto [interp_coeffs, advected] = interpCoeffsAndAdvected(functor, face, time);
+  return interp_coeffs.first * advected.first + interp_coeffs.second * advected.second;
+}
+
+template <typename T>
+VectorValue<T>
+interpolate(const FunctorBase<VectorValue<T>> & functor,
+            const FaceArg & face,
+            const StateArg & time)
+{
+  static const VectorValue<T> grad_zero(0);
+
+  mooseAssert(face.fi, "this must be non-null");
+  const auto limiter = Limiter<typename LimiterValueType<T>::value_type>::build(face.limiter_type);
+
+  const auto upwind_arg = face.elem_is_upwind ? face.makeElem() : face.makeNeighbor();
+  const auto downwind_arg = face.elem_is_upwind ? face.makeNeighbor() : face.makeElem();
+  auto phi_upwind = functor(upwind_arg, time);
+  auto phi_downwind = functor(downwind_arg, time);
+
+  VectorValue<T> ret;
+  T coeff_upwind, coeff_downwind;
+
+  if (face.limiter_type == LimiterType::Upwind ||
+      face.limiter_type == LimiterType::CentralDifference)
+  {
+    for (unsigned int i = 0; i < LIBMESH_DIM; ++i)
+    {
+      const auto &component_upwind = phi_upwind(i), component_downwind = phi_downwind(i);
+      std::tie(coeff_upwind, coeff_downwind) = interpCoeffs(*limiter,
+                                                            component_upwind,
+                                                            component_downwind,
+                                                            &grad_zero,
+                                                            *face.fi,
+                                                            face.elem_is_upwind);
+      ret(i) = coeff_upwind * component_upwind + coeff_downwind * component_downwind;
+    }
+  }
+  else
+  {
+    const auto grad_phi_upwind = functor.gradient(upwind_arg, time);
+    for (unsigned int i = 0; i < LIBMESH_DIM; ++i)
+    {
+      const auto &component_upwind = phi_upwind(i), component_downwind = phi_downwind(i);
+      const VectorValue<T> grad = grad_phi_upwind.row(i);
+      std::tie(coeff_upwind, coeff_downwind) = interpCoeffs(
+          *limiter, component_upwind, component_downwind, &grad, *face.fi, face.elem_is_upwind);
+      ret(i) = coeff_upwind * component_upwind + coeff_downwind * component_downwind;
+    }
+  }
+
+  return ret;
+}
+
+template <typename T>
+T
+containerInterpolate(const FunctorBase<T> & functor, const FaceArg & face, const StateArg & time)
+{
+  typedef typename FunctorBase<T>::GradientType ContainerGradientType;
+  typedef typename ContainerGradientType::value_type GradientType;
+  const GradientType * const example_gradient = nullptr;
+
+  mooseAssert(face.fi, "this must be non-null");
+  const auto limiter = Limiter<typename T::value_type>::build(face.limiter_type);
+
+  const auto upwind_arg = face.elem_is_upwind ? face.makeElem() : face.makeNeighbor();
+  const auto downwind_arg = face.elem_is_upwind ? face.makeNeighbor() : face.makeElem();
+  const auto phi_upwind = functor(upwind_arg, time);
+  const auto phi_downwind = functor(downwind_arg, time);
+
+  // initialize in order to get proper size
+  T ret = phi_upwind;
+  typename T::value_type coeff_upwind, coeff_downwind;
+
+  if (face.limiter_type == LimiterType::Upwind ||
+      face.limiter_type == LimiterType::CentralDifference)
+  {
+    for (const auto i : index_range(ret))
+    {
+      const auto &component_upwind = phi_upwind[i], component_downwind = phi_downwind[i];
+      std::tie(coeff_upwind, coeff_downwind) = interpCoeffs(*limiter,
+                                                            component_upwind,
+                                                            component_downwind,
+                                                            example_gradient,
+                                                            *face.fi,
+                                                            face.elem_is_upwind);
+      ret[i] = coeff_upwind * component_upwind + coeff_downwind * component_downwind;
+    }
+  }
+  else
+  {
+    const auto grad_phi_upwind = functor.gradient(upwind_arg, time);
+    for (const auto i : index_range(ret))
+    {
+      const auto &component_upwind = phi_upwind[i], component_downwind = phi_downwind[i];
+      const auto & grad = grad_phi_upwind[i];
+      std::tie(coeff_upwind, coeff_downwind) = interpCoeffs(
+          *limiter, component_upwind, component_downwind, &grad, *face.fi, face.elem_is_upwind);
+      ret[i] = coeff_upwind * component_upwind + coeff_downwind * component_downwind;
+    }
+  }
+
+  return ret;
+}
+
+template <typename T>
+std::vector<T>
+interpolate(const FunctorBase<std::vector<T>> & functor,
+            const FaceArg & face,
+            const StateArg & time)
+{
+  return containerInterpolate(functor, face, time);
+}
+
+template <typename T, std::size_t N>
+std::array<T, N>
+interpolate(const FunctorBase<std::array<T, N>> & functor,
+            const FaceArg & face,
+            const StateArg & time)
+{
+  return containerInterpolate(functor, face, time);
 }
 
 /**

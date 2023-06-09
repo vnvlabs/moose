@@ -1,6 +1,16 @@
-{% set build = 0 %}
+# Making a Change to this package?
+# REMEMBER TO UPDATE the .yaml files for the following packages:
+#   petsc/
+#   libmesh-vtk/
+#   libmesh/
+#   template/
+#   moose/
+#   moose-dev/
+#
+# ALSO: Follow the directions in scripts/tests/versioner_hashes.yaml
+{% set build = 8 %}
 {% set strbuild = "build_" + build|string %}
-{% set version = "4.0.1" %}
+{% set version = "4.0.2" %}
 
 package:
   name: moose-mpich
@@ -12,7 +22,8 @@ source:
 build:
   number: {{ build }}
   string: {{ strbuild }}
-  skip: True  # [win]
+  skip: True                    # [win]
+  pin_depends: strict
   run_exports:
     - {{ pin_subpackage('moose-mpich', max_pin='x.x') }}
 
@@ -22,23 +33,45 @@ requirements:
     - {{ base_mpicc }}
     - {{ base_mpicxx }}
     - {{ base_mpifort }}
-    - autoconf                  # [unix]
-    - automake                  # [unix]
-    - libtool                   # [unix]
-    - make                      # [unix]
-    - gnuconfig                 # [arm64]
+    - {{ moose_libgfortran }}
+    - {{ moose_libgfortran5 }}
+    - {{ moose_hdf5 }}
+    - {{ moose_ld64 }}          # [osx]
+    - make
+    - libtool
+    - autoconf
+    - automake 1.16.1
+    - m4
   host: []
   run:
     - {{ base_mpich }}
     - {{ base_mpicc }}
     - {{ base_mpicxx }}
     - {{ base_mpifort }}
-    - autoconf                  # [osx]
-    - automake                  # [osx]
-    - libtool                   # [osx]
-    - make                      # [osx]
-    - {{ pin_compatible('setuptools', lower_bound='58', upper_bound='60') }}
+    - {{ moose_libgfortran }}
+    - {{ moose_libgfortran5 }}
+    - {{ moose_hdf5 }}
+    - {{ moose_ld64 }}          # [osx]
+    - cmake
+    - make
+    - libtool
+    - autoconf
+    - automake 1.16.1
+    - m4
+    - {{ moose_libxt }}         # [linux]
+    - {{ moose_libsm }}         # [linux]
+    - {{ moose_libx11 }}        # [linux]
+    - {{ moose_libice }}        # [linux]
+    - {{ moose_libxext }}       # [linux]
+    - {{ moose_mesa_libgl }}    # [linux]
+    - {{ moose_xorg_x11 }}      # [linux]
+    - {{ moose_libglu }}        # [linux]
+    - {{ moose_mesalib }}       # [linux]
     - mpi 1.0 mpich
+  # Python min/max constraints
+  run_constrained:
+    - python <{{3.11}}
+
 test:
   commands:
     - test -f $PREFIX/etc/conda/activate.d/activate_moose-mpich.sh

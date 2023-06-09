@@ -12,6 +12,8 @@
 #include "ActionWarehouse.h"
 #include "AddAuxVariableAction.h"
 #include "MooseEnum.h"
+#include "MooseApp.h"
+#include "InputParameterWarehouse.h"
 
 // map vector name shortcuts to tensor material property names
 const std::map<std::string, std::string>
@@ -41,6 +43,9 @@ CohesiveZoneActionBase::validParams()
   params.addParam<MooseEnum>("strain", strainType, "Strain formulation");
 
   // Advanced
+  params.addParam<bool>("use_automatic_differentiation",
+                        false,
+                        "Whether to use automatic differentiation to compute the Jacobian");
   params.addParam<std::string>("base_name", "Material property base name");
   params.addParam<std::vector<AuxVariableName>>("save_in_master",
                                                 "The displacement residuals on the  master side");
@@ -53,6 +58,7 @@ CohesiveZoneActionBase::validParams()
   params.addParamNamesToGroup("save_in_master diag_save_in_master save_in_slave diag_save_in_slave",
                               "Advanced");
   params.addParam<bool>("verbose", false, "Display extra information.");
+
   // Output
   params.addParam<MultiMooseEnum>("generate_output",
                                   CohesiveZoneActionBase::outputPropertiesType(),
@@ -89,10 +95,15 @@ CohesiveZoneActionBase::validParams()
 
 CohesiveZoneActionBase::CohesiveZoneActionBase(const InputParameters & params) : Action(params)
 {
+  // FIXME: suggest to use action of action to add this to avoid changing the input parameters in
+  // the warehouse.
+  const auto & parameters = _app.getInputParameterWarehouse().getInputParameters();
+  InputParameters & pars(*(parameters.find(uniqueActionName())->second.get()));
+
   // check if a container block with common parameters is found
   auto action = _awh.getActions<CommonCohesiveZoneAction>();
   if (action.size() == 1)
-    _pars.applyParameters(action[0]->parameters());
+    pars.applyParameters(action[0]->parameters());
 
   // append additional_generate_output to generate_output
   if (isParamValid("additional_generate_output"))
@@ -116,9 +127,9 @@ CohesiveZoneActionBase::CohesiveZoneActionBase(const InputParameters & params) :
     for (auto & family : additional_material_output_family)
       material_output_family.push_back(family);
 
-    _pars.set<MultiMooseEnum>("generate_output") = generate_output;
-    _pars.set<MultiMooseEnum>("material_output_order") = material_output_order;
-    _pars.set<MultiMooseEnum>("material_output_family") = material_output_family;
+    pars.set<MultiMooseEnum>("generate_output") = generate_output;
+    pars.set<MultiMooseEnum>("material_output_order") = material_output_order;
+    pars.set<MultiMooseEnum>("material_output_family") = material_output_family;
   }
 }
 

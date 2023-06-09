@@ -24,7 +24,7 @@ public:
 
   virtual void initialSetup() override;
 
-  using Function::value;
+  using PiecewiseTabularBase::value;
   virtual Real value(Real t, const Point & p) const override;
   virtual ADReal value(const ADReal & t, const ADPoint & p) const override;
 

@@ -22,7 +22,6 @@
 #include "MeshChangedInterface.h"
 #include "TaggingInterface.h"
 #include "SystemBase.h"
-#include "FunctorInterface.h"
 
 class FEProblemBase;
 class MooseMesh;
@@ -45,8 +44,7 @@ class ResidualObject : public MooseObject,
                        public RandomInterface,
                        public Restartable,
                        public MeshChangedInterface,
-                       public TaggingInterface,
-                       public FunctorInterface
+                       public TaggingInterface
 {
 public:
   static InputParameters validParams();
@@ -63,6 +61,9 @@ public:
 
   /// Compute this object's contribution to the diagonal Jacobian entries
   virtual void computeJacobian() = 0;
+
+  /// Compute this object's contribution to the residual and Jacobian simultaneously
+  virtual void computeResidualAndJacobian();
 
   /**
    * Computes this object's contribution to off-diagonal blocks of the system Jacobian matrix

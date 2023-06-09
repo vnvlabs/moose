@@ -39,6 +39,12 @@ protected:
 
   virtual ADReal computeQpResidual() override final;
 
+  /// Unused method to enable downstream generic object creation
+  virtual Real precomputeQpJacobian()
+  {
+    mooseError("precomputeQpJacobian should not be called for AD methods");
+  }
+
   using ADKernelTempl<T>::_assembly;
   using ADKernelTempl<T>::_var;
   using ADKernelTempl<T>::precalculateResidual;
@@ -66,4 +72,5 @@ protected:
   using ADKernelTempl<T>::prepareMatrixTag;
   using ADKernelTempl<T>::_test;
   using ADKernelTempl<T>::_residuals;
+  using ADKernelTempl<T>::getVar;
 };

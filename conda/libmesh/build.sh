@@ -23,18 +23,6 @@ function sed_replace(){
     fi
 }
 
-# Bootstrap libmesh and it's contribs
-if [[ $target_platform == osx-arm64 ]]; then
-    ./bootstrap
-    cd contrib/metaphysicl
-    ./bootstrap
-    cd ../timpi
-    ./bootstrap
-    cd ../netcdf/netcdf*
-    autoreconf
-    cd ../../../
-fi
-
 mkdir -p build; cd build
 
 if [[ $(uname) == Darwin ]]; then
@@ -64,19 +52,13 @@ else
     export LDFLAGS="-Wl,-S"
 fi
 
-if [[ $mpi == "openmpi" ]]; then
-  export OMPI_MCA_plm=isolated
-  export OMPI_MCA_rmaps_base_oversubscribe=yes
-  export OMPI_MCA_btl_vader_single_copy_mechanism=none
-elif [[ $mpi == "moose-mpich" ]]; then
-  export HYDRA_LAUNCHER=fork
-fi
+export HYDRA_LAUNCHER=fork
 
 source $SRC_DIR/configure_libmesh.sh
 export INSTALL_BINARY="${SRC_DIR}/build-aux/install-sh -C"
 LIBMESH_DIR=${PREFIX}/libmesh \
   configure_libmesh --with-vtk-lib=${BUILD_PREFIX}/libmesh-vtk/lib \
-                    --with-vtk-include=${BUILD_PREFIX}/libmesh-vtk/include/vtk-${SHORT_VTK_NAME} \
+                    --with-vtk-include=${BUILD_PREFIX}/libmesh-vtk/include/vtk-${vtk_friendly_version} \
                     $*
 
 CORES=${MOOSE_JOBS:-2}
@@ -84,12 +66,14 @@ make -j $CORES
 make install
 sed_replace
 
-# Set LIBMESH_DIR environment variable for those that need it
+# Set LIBMESH_DIR, Eigen3_DIR
 mkdir -p "${PREFIX}/etc/conda/activate.d" "${PREFIX}/etc/conda/deactivate.d"
 cat <<EOF > "${PREFIX}/etc/conda/activate.d/activate_${PKG_NAME}.sh"
 export LIBMESH_DIR=${PREFIX}/libmesh
+export Eigen3_DIR=${PREFIX}/libmesh/include/Eigen
 EOF
+# Unset previously set variables
 cat <<EOF > "${PREFIX}/etc/conda/deactivate.d/deactivate_${PKG_NAME}.sh"
 unset LIBMESH_DIR
-unset MOOSE_NO_CODESIGN
+unset Eigen3_DIR
 EOF

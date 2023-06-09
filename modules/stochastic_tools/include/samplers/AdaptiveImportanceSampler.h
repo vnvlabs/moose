@@ -22,17 +22,34 @@ public:
 
   AdaptiveImportanceSampler(const InputParameters & parameters);
 
-  /// Access the initial values vector
-  const std::vector<Real> & getInitialValues() const;
+  // Access the initial values vector
+  const std::vector<Real> & getInitialValues() const { return _initial_values; }
 
-  /// Access the number of training samples
-  const int & getNumSamplesTrain() const;
+  // Access the number of training samples
+  const int & getNumSamplesTrain() const { return _num_samples_train; }
 
-  /// Access use absolute value bool
-  const bool & getUseAbsoluteValue() const;
+  // Access use absolute value bool
+  const bool & getUseAbsoluteValue() const { return _use_absolute_value; }
 
-  /// Access the output limit
-  const Real & getOutputLimit() const;
+  // Access the output limit
+  const Real & getOutputLimit() const { return _output_limit; }
+
+  // Access the mean vector of the importance distribution
+  const std::vector<Real> & getImportanceVectorMean() const { return _mean_sto; }
+
+  // Access the std vector of the importance distribution
+  const std::vector<Real> & getImportanceVectorStd() const { return _std_sto; }
+
+  // Access the std vector of the importance distribution
+  const std::vector<const Distribution *> & getDistributionNames() const { return _distributions; }
+
+  // Access the output limit
+  const Real & getStdFactor() const { return _std_factor; }
+
+  /**
+   * Returns true if the adaptive sampling is completed
+   */
+  virtual bool isAdaptiveSamplingCompleted() const override { return _is_sampling_completed; }
 
 protected:
   /// Return the sample for the given row (the sample index) and column (the parameter index)
@@ -53,6 +70,9 @@ protected:
   /// Number of samples to train the importance sampler
   const int & _num_samples_train;
 
+  /// Number of importance sampling steps (after the importance distribution has been trained)
+  const int & _num_importance_sampling_steps;
+
   /// Factor to be multiplied to the standard deviation of the proposal distribution
   const Real & _std_factor;
 
@@ -61,6 +81,9 @@ protected:
 
   /// Initialize a certain number of random seeds. Change from the default only if you have to.
   const unsigned int & _num_random_seeds;
+
+  /// True if the sampling is completed
+  bool _is_sampling_completed;
 
 private:
   /// Track the current step of the main App

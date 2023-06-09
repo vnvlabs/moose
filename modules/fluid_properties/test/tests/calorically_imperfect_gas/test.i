@@ -9,11 +9,11 @@
 [Functions]
   [f_fn]
     type = ParsedFunction
-    value = -4
+    expression = -4
   []
   [bc_fn]
     type = ParsedFunction
-    value = 'x*x+y*y'
+    expression = 'x*x+y*y'
   []
 
   [e_fn]
@@ -128,23 +128,21 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [h2]
-      type = CaloricallyImperfectGas
-      molar_mass = 0.002
-      e = e_fn
-      k = k_fn
-      mu = mu_fn
-      min_temperature = 100
-      max_temperature = 5000
-    []
+[FluidProperties]
+  [h2]
+    type = CaloricallyImperfectGas
+    molar_mass = 0.002
+    e = e_fn
+    k = k_fn
+    mu = mu_fn
+    min_temperature = 100
+    max_temperature = 5000
   []
 []
 
 [Materials]
   [fp_mat]
-    type = FluidPropertiesMaterial
+    type = FluidPropertiesMaterialVE
     e = e
     v = v
     fp = h2

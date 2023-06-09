@@ -23,8 +23,7 @@ PINSFVMomentumPressureFlux::validParams()
                              "incompressible Navier-Stokes momentum equation. This kernel "
                              "is also executed on boundaries.");
   params.addRequiredParam<MooseFunctorName>(NS::porosity, "Porosity functor");
-  params.addRequiredCoupledVar(NS::pressure, "Pressure variable");
-  params.addDeprecatedCoupledVar("p", NS::pressure, "1/1/2022");
+  params.addRequiredParam<MooseFunctorName>(NS::pressure, "The pressure");
   MooseEnum momentum_component("x=0 y=1 z=2");
   params.addRequiredParam<MooseEnum>("momentum_component",
                                      momentum_component,
@@ -38,15 +37,9 @@ PINSFVMomentumPressureFlux::PINSFVMomentumPressureFlux(const InputParameters & p
   : FVFluxKernel(params),
     INSFVMomentumResidualObject(*this),
     _eps(getFunctor<ADReal>(NS::porosity)),
-    _p_elem(adCoupledValue(NS::pressure)),
-    _p_neighbor(adCoupledNeighborValue(NS::pressure)),
+    _p(getFunctor<ADReal>(NS::pressure)),
     _index(getParam<MooseEnum>("momentum_component"))
 {
-#ifndef MOOSE_GLOBAL_AD_INDEXING
-  mooseError("PINSFV is not supported by local AD indexing. In order to use PINSFV, please run "
-             "the configure script in the root MOOSE directory with the configure option "
-             "'--with-ad-indexing-type=global'");
-#endif
   if (!dynamic_cast<PINSFVSuperficialVelocityVariable *>(&_var))
     mooseError("PINSFVMomentumPressureFlux may only be used with a superficial velocity, "
                "of variable type PINSFVSuperficialVelocityVariable.");
@@ -60,22 +53,25 @@ PINSFVMomentumPressureFlux::computeQpResidual()
   const auto & face_type = _face_info->faceType(_var.name());
   const bool use_elem = (face_type == FaceInfo::VarFaceNeighbors::ELEM) ||
                         (face_type == FaceInfo::VarFaceNeighbors::BOTH);
+
   const auto * const elem_ptr = use_elem ? &_face_info->elem() : _face_info->neighborPtr();
-  const auto * neighbor_ptr = use_elem ? _face_info->neighborPtr() : &_face_info->elem();
+  const auto & elem = makeElemArg(elem_ptr);
+  const auto state = determineState();
 
-  // At an external boundary, use the element where porosity is defined
-  if (!neighbor_ptr)
-    neighbor_ptr = elem_ptr;
-  // At a block restriction boundary for porosity, use porosity where it's defined
-  else if (face_type == FaceInfo::VarFaceNeighbors::ELEM)
-    neighbor_ptr = elem_ptr;
+  if (onBoundary(*_face_info))
+    eps_p_interface = _eps(elem, state) * _p(singleSidedFaceArg(), state);
+  else
+  {
+    const auto * neighbor_ptr = use_elem ? _face_info->neighborPtr() : &_face_info->elem();
+    const auto & neighbor = makeElemArg(neighbor_ptr);
 
-  // This could be simplified if eps * P was a functor, or if we returned eps(face) * P(face)
-  Moose::FV::interpolate(Moose::FV::InterpMethod::Average,
-                         eps_p_interface,
-                         _eps(makeElemArg(elem_ptr)) * _p_elem[_qp],
-                         _eps(makeElemArg(neighbor_ptr)) * _p_neighbor[_qp],
-                         *_face_info,
-                         true);
+    Moose::FV::interpolate(Moose::FV::InterpMethod::Average,
+                           eps_p_interface,
+                           _eps(elem, state) * _p(elem, state),
+                           _eps(neighbor, state) * _p(neighbor, state),
+                           *_face_info,
+                           true);
+  }
+
   return eps_p_interface * _normal(_index);
 }

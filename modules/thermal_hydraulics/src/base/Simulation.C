@@ -13,7 +13,7 @@
 #include "MooseObjectAction.h"
 #include "Transient.h"
 #include "HeatConductionModel.h"
-#include "HeatStructureBase.h"
+#include "HeatStructureInterface.h"
 #include "FlowChannelBase.h"
 #include "FlowJunction.h"
 
@@ -35,11 +35,11 @@
 Simulation::Simulation(FEProblemBase & fe_problem, const InputParameters & pars)
   : ParallelObject(fe_problem.comm()),
     LoggingInterface(_log),
-    _mesh(*static_cast<THMMesh *>(pars.get<MooseMesh *>("mesh"))),
+    _thm_mesh(*static_cast<THMMesh *>(pars.get<MooseMesh *>("mesh"))),
     _fe_problem(fe_problem),
-    _app(static_cast<ThermalHydraulicsApp &>(*pars.get<MooseApp *>("_moose_app"))),
-    _factory(_app.getFactory()),
-    _pars(pars),
+    _thm_app(static_cast<ThermalHydraulicsApp &>(*pars.get<MooseApp *>("_moose_app"))),
+    _thm_factory(_thm_app.getFactory()),
+    _thm_pars(pars),
     _flow_fe_type(FEType(CONSTANT, MONOMIAL)),
     _implicit_time_integration(true),
     _check_jacobian(false),
@@ -90,8 +90,8 @@ Simulation::buildMesh()
   for (auto && comp : _components)
     comp->executeSetupMesh();
   // Make sure all node sets have their corresponding side sets
-  if (_mesh.getMesh().get_boundary_info().n_nodeset_conds() > 0)
-    _mesh.getMesh().get_boundary_info().build_side_list_from_node_list();
+  if (_thm_mesh.getMesh().get_boundary_info().n_nodeset_conds() > 0)
+    _thm_mesh.getMesh().get_boundary_info().build_side_list_from_node_list();
 }
 
 void
@@ -110,8 +110,8 @@ Simulation::setupQuadrature()
     if (flow_channel != nullptr)
       n_flow_channels++;
 
-    auto heat_structure = dynamic_cast<HeatStructureBase *>(comp.get());
-    if (heat_structure != nullptr)
+    auto hs_interface = dynamic_cast<HeatStructureInterface *>(comp.get());
+    if (hs_interface)
       n_heat_structures++;
   }
 
@@ -138,15 +138,13 @@ Simulation::initSimulation()
   DependencyResolver<std::shared_ptr<Component>> dependency_resolver;
   for (const auto & comp : _components)
   {
-    dependency_resolver.addItem(comp);
+    dependency_resolver.addNode(comp);
     for (const auto & dep : comp->getDependencies())
-    {
       if (hasComponent(dep))
-        dependency_resolver.insertDependency(comp, _comp_by_name[dep]);
-    }
+        dependency_resolver.addEdge(_comp_by_name[dep], comp);
   }
 
-  std::sort(_components.begin(), _components.end(), dependency_resolver);
+  _components = dependency_resolver.dfs();
 }
 
 void
@@ -169,7 +167,7 @@ Simulation::identifyLoops()
   for (const auto & component : _components)
   {
     const auto flow_connection =
-        MooseSharedNamespace::dynamic_pointer_cast<FlowConnection>(component);
+        MooseSharedNamespace::dynamic_pointer_cast<Component1DConnection>(component);
     if (flow_connection)
     {
       // create vector of names of this component and its connected flow channels, and then sort
@@ -270,58 +268,226 @@ Simulation::printComponentLoops() const
 }
 
 void
-Simulation::addSimVariable(bool nl, const VariableName & name, FEType type, Real scaling_factor)
+Simulation::addSimVariable(bool nl, const VariableName & name, FEType fe_type, Real scaling_factor)
 {
-  if (_vars.find(name) == _vars.end())
+  checkVariableNameLength(name);
+
+  if (fe_type.family != SCALAR)
+    mooseError("This method should only be used for scalar variables.");
+
+  if (_vars.find(name) == _vars.end()) // variable is new
   {
     VariableInfo vi;
+    InputParameters & params = vi._params;
+
     vi._nl = nl;
-    vi._type = type;
-    vi._scaling_factor = scaling_factor;
+    vi._var_type = "MooseVariableScalar";
+    params = _thm_factory.getValidParams(vi._var_type);
+
+    auto family = AddVariableAction::getNonlinearVariableFamilies();
+    family = Utility::enum_to_string(fe_type.family);
+    params.set<MooseEnum>("family") = family;
+
+    auto order = AddVariableAction::getNonlinearVariableOrders();
+    order = Utility::enum_to_string<Order>(fe_type.order);
+    params.set<MooseEnum>("order") = order;
+
+    if (nl)
+      params.set<std::vector<Real>>("scaling") = {scaling_factor};
+    else if (!MooseUtils::absoluteFuzzyEqual(scaling_factor, 1.0))
+      mooseError("Aux variables cannot be provided a residual scaling factor.");
+
     _vars[name] = vi;
   }
   else
-  {
-    VariableInfo & vi = _vars[name];
-    if (vi._type != type)
-      mooseError(
-          "A component is trying to add variable of the same name but with different order/type");
-  }
+    // One of the two cases is true:
+    // - This variable was previously added as a scalar variable, and scalar
+    //   variables should not be added more than once, since there is no block
+    //   restriction to extend, as there is in the field variable version of this
+    //   method.
+    // - This variable was previously added as a field variable, and a variable
+    //   may have only one type (this method is used for scalar variables only).
+    mooseError("The variable '", name, "' was already added.");
 }
 
 void
 Simulation::addSimVariable(bool nl,
                            const VariableName & name,
-                           FEType type,
+                           FEType fe_type,
                            const std::vector<SubdomainName> & subdomain_names,
-                           Real scaling_factor /* = 1.*/)
+                           Real scaling_factor)
 {
-  if (_vars.find(name) == _vars.end())
+  checkVariableNameLength(name);
+
+  if (fe_type.family == SCALAR)
+    mooseDeprecated(
+        "The version of Simulation::addSimVariable() with subdomain names can no longer be used "
+        "with scalar variables since scalar variables cannot be block-restricted. Use the version "
+        "of Simulation::addSimVariable() without subdomain names instead.");
+
+#ifdef DEBUG
+  for (const auto & subdomain_name : subdomain_names)
+    mooseAssert(subdomain_name != "ANY_BLOCK_ID",
+                "'ANY_BLOCK_ID' cannot be used for adding field variables in components.");
+#endif
+
+  if (_vars.find(name) == _vars.end()) // variable is new
+  {
+    VariableInfo vi;
+    InputParameters & params = vi._params;
+
+    vi._nl = nl;
+    vi._var_type = "MooseVariable";
+    params = _thm_factory.getValidParams(vi._var_type);
+    params.set<std::vector<SubdomainName>>("block") = subdomain_names;
+
+    auto family = AddVariableAction::getNonlinearVariableFamilies();
+    family = Utility::enum_to_string(fe_type.family);
+    params.set<MooseEnum>("family") = family;
+
+    auto order = AddVariableAction::getNonlinearVariableOrders();
+    order = Utility::enum_to_string<Order>(fe_type.order);
+    params.set<MooseEnum>("order") = order;
+
+    if (nl)
+      params.set<std::vector<Real>>("scaling") = {scaling_factor};
+    else if (!MooseUtils::absoluteFuzzyEqual(scaling_factor, 1.0))
+      mooseError("Aux variables cannot be provided a residual scaling factor.");
+
+    _vars[name] = vi;
+  }
+  else // variable was previously added
+  {
+    VariableInfo & vi = _vars[name];
+    InputParameters & params = vi._params;
+
+    if (vi._nl != nl)
+      mooseError("The variable '",
+                 name,
+                 "' has already been added in a different system (nonlinear or aux).");
+
+    if (vi._var_type != "MooseVariable")
+      mooseError("The variable '",
+                 name,
+                 "' has already been added with a different type than 'MooseVariable'.");
+
+    auto family = AddVariableAction::getNonlinearVariableFamilies();
+    family = Utility::enum_to_string(fe_type.family);
+    if (!params.get<MooseEnum>("family").compareCurrent(family))
+      mooseError("The variable '", name, "' has already been added with a different FE family.");
+
+    auto order = AddVariableAction::getNonlinearVariableOrders();
+    order = Utility::enum_to_string<Order>(fe_type.order);
+    if (!params.get<MooseEnum>("order").compareCurrent(order))
+      mooseError("The variable '", name, "' has already been added with a different FE order.");
+
+    // If already block-restricted, extend the block restriction
+    if (params.isParamValid("block"))
+    {
+      auto blocks = params.get<std::vector<SubdomainName>>("block");
+      for (const auto & subdomain_name : subdomain_names)
+        if (std::find(blocks.begin(), blocks.end(), subdomain_name) == blocks.end())
+          blocks.push_back(subdomain_name);
+      params.set<std::vector<SubdomainName>>("block") = blocks;
+    }
+    else
+      params.set<std::vector<SubdomainName>>("block") = subdomain_names;
+
+    if (params.isParamValid("scaling"))
+      if (!MooseUtils::absoluteFuzzyEqual(params.get<std::vector<Real>>("scaling")[0],
+                                          scaling_factor))
+        mooseError(
+            "The variable '", name, "' has already been added with a different scaling factor.");
+  }
+}
+
+void
+Simulation::addSimVariable(bool nl,
+                           const std::string & var_type,
+                           const VariableName & name,
+                           const InputParameters & params)
+{
+  checkVariableNameLength(name);
+
+  if (_vars.find(name) == _vars.end()) // variable is new
   {
     VariableInfo vi;
     vi._nl = nl;
-    vi._type = type;
-    for (auto && sdn : subdomain_names)
-      vi._subdomain.insert(sdn);
-    vi._scaling_factor = scaling_factor;
+    vi._var_type = var_type;
+    vi._params = params;
+
     _vars[name] = vi;
   }
-  else
+  else // variable was previously added
   {
     VariableInfo & vi = _vars[name];
-    if (vi._type != type)
-      mooseError(
-          "A component is trying to add variable of the same name but with different order/type");
-    for (auto && sdn : subdomain_names)
-      vi._subdomain.insert(sdn);
+    InputParameters & vi_params = vi._params;
+
+    if (vi._nl != nl)
+      mooseError("The variable '",
+                 name,
+                 "' has already been added in a different system (nonlinear or aux).");
+
+    if (vi._var_type != var_type)
+      mooseError("The variable '",
+                 name,
+                 "' has already been added with a different type than '",
+                 var_type,
+                 "'.");
+
+    // Check that all valid parameters (other than 'block') are consistent
+    for (auto it = params.begin(); it != params.end(); it++)
+    {
+      const std::string param_name = it->first;
+      if (param_name == "block")
+      {
+        if (vi_params.isParamValid("block"))
+        {
+          auto blocks = vi_params.get<std::vector<SubdomainName>>("block");
+          const auto new_blocks = params.get<std::vector<SubdomainName>>("block");
+          for (const auto & subdomain_name : new_blocks)
+            if (std::find(blocks.begin(), blocks.end(), subdomain_name) == blocks.end())
+              blocks.push_back(subdomain_name);
+          vi_params.set<std::vector<SubdomainName>>("block") = blocks;
+        }
+        else
+          mooseError("The variable '", name, "' was added previously without block restriction.");
+      }
+      else if (params.isParamValid(param_name))
+      {
+        if (vi_params.isParamValid(param_name))
+        {
+          if (params.rawParamVal(param_name) != vi_params.rawParamVal(param_name))
+            mooseError("The variable '",
+                       name,
+                       "' was added previously with a different value for the parameter '",
+                       param_name,
+                       "'.");
+        }
+        else
+          mooseError("The variable '",
+                     name,
+                     "' was added previously without the parameter '",
+                     param_name,
+                     "'.");
+      }
+    }
   }
+}
+
+void
+Simulation::checkVariableNameLength(const std::string & name) const
+{
+  if (name.size() > THM::MAX_VARIABLE_LENGTH)
+    mooseError(
+        "Variable name '", name, "' is too long. The limit is ", THM::MAX_VARIABLE_LENGTH, ".");
 }
 
 void
 Simulation::addControl(const std::string & type, const std::string & name, InputParameters params)
 {
   params.addPrivateParam<FEProblemBase *>("_fe_problem_base", &_fe_problem);
-  std::shared_ptr<Control> control = _factory.create<Control>(type, name, params);
+  std::shared_ptr<Control> control = _thm_factory.create<Control>(type, name, params);
   _fe_problem.getControlWarehouse().addObject(control);
 }
 
@@ -355,7 +521,7 @@ Simulation::addConstantIC(const VariableName & var_name,
     blk_str += ":" + block_names[i];
 
   std::string class_name = "ConstantIC";
-  InputParameters params = _factory.getValidParams(class_name);
+  InputParameters params = _thm_factory.getValidParams(class_name);
   params.set<VariableName>("variable") = var_name;
   params.set<Real>("value") = value;
   params.set<std::vector<SubdomainName>>("block") = block_names;
@@ -375,7 +541,7 @@ Simulation::addFunctionIC(const VariableName & var_name,
     blk_str += ":" + block_names[i];
 
   std::string class_name = "FunctionIC";
-  InputParameters params = _factory.getValidParams(class_name);
+  InputParameters params = _thm_factory.getValidParams(class_name);
   params.set<VariableName>("variable") = var_name;
   params.set<std::vector<SubdomainName>>("block") = block_names;
   params.set<FunctionName>("function") = func_name;
@@ -389,7 +555,7 @@ Simulation::addConstantScalarIC(const VariableName & var_name, Real value)
     return;
 
   std::string class_name = "ScalarConstantIC";
-  InputParameters params = _factory.getValidParams(class_name);
+  InputParameters params = _thm_factory.getValidParams(class_name);
   params.set<VariableName>("variable") = var_name;
   params.set<Real>("value") = value;
   addSimInitialCondition(class_name, genName(var_name, "ic"), params);
@@ -402,7 +568,7 @@ Simulation::addComponentScalarIC(const VariableName & var_name, const std::vecto
     return;
 
   std::string class_name = "ScalarComponentIC";
-  InputParameters params = _factory.getValidParams(class_name);
+  InputParameters params = _thm_factory.getValidParams(class_name);
   params.set<VariableName>("variable") = var_name;
   params.set<std::vector<Real>>("values") = value;
   addSimInitialCondition(class_name, genName(var_name, "ic"), params);
@@ -433,69 +599,13 @@ Simulation::addVariables()
   // pass the variables to MOOSE
   for (auto && v : _vars)
   {
-    VariableName name = v.first;
-    if (name.size() > THM::MAX_VARIABLE_LENGTH)
-      mooseError(
-          "Variable name '", name, "' is too long. The limit is ", THM::MAX_VARIABLE_LENGTH, ".");
-
+    const VariableName & name = v.first;
     VariableInfo & vi = v.second;
 
-    if (vi._type.family != SCALAR)
-    {
-      auto order = AddVariableAction::getNonlinearVariableOrders();
-      order = Utility::enum_to_string<Order>(vi._type.order);
-      auto family = AddVariableAction::getNonlinearVariableFamilies();
-      family = Utility::enum_to_string(vi._type.family);
-
-      auto var_type = "MooseVariable";
-      InputParameters params = _factory.getValidParams(var_type);
-      params.set<MooseEnum>("order") = order;
-      params.set<MooseEnum>("family") = family;
-      if (!vi._subdomain.empty())
-      {
-        std::vector<SubdomainName> subdomains(vi._subdomain.begin(), vi._subdomain.end());
-        params.set<std::vector<SubdomainName>>("block") = subdomains;
-      }
-
-      if (vi._nl)
-      {
-        params.set<std::vector<Real>>("scaling") = {vi._scaling_factor};
-        _fe_problem.addVariable(var_type, name, params);
-      }
-      else
-        _fe_problem.addAuxVariable(var_type, name, params);
-    }
-  }
-
-  // pass the scalar variables to MOOSE
-  for (auto && v : _vars)
-  {
-    const VariableName & name = v.first;
-    if (name.size() > THM::MAX_VARIABLE_LENGTH)
-      mooseError(
-          "Variable name '", name, "' is too long. The limit is ", THM::MAX_VARIABLE_LENGTH, ".");
-    const VariableInfo & vi = v.second;
-
-    if (vi._type.family == SCALAR)
-    {
-      auto order = AddVariableAction::getNonlinearVariableOrders();
-      order = Utility::enum_to_string<Order>(vi._type.order);
-      auto family = AddVariableAction::getNonlinearVariableFamilies();
-      family = Utility::enum_to_string(vi._type.family);
-
-      auto var_type = "MooseVariableScalar";
-      InputParameters params = _factory.getValidParams(var_type);
-      params.set<MooseEnum>("order") = order;
-      params.set<MooseEnum>("family") = family;
-
-      if (vi._nl)
-      {
-        params.set<std::vector<Real>>("scaling") = {vi._scaling_factor};
-        _fe_problem.addVariable(var_type, name, params);
-      }
-      else
-        _fe_problem.addAuxVariable(var_type, name, params);
-    }
+    if (vi._nl)
+      _fe_problem.addVariable(vi._var_type, name, vi._params);
+    else
+      _fe_problem.addAuxVariable(vi._var_type, name, vi._params);
   }
 
   if (hasInitialConditionsFromFile())
@@ -510,21 +620,21 @@ Simulation::setupInitialConditionsFromFile()
   const UserObjectName suo_name = genName("thm", "suo");
   {
     const std::string class_name = "SolutionUserObject";
-    InputParameters params = _factory.getValidParams(class_name);
-    params.set<MeshFileName>("mesh") = _pars.get<FileName>("initial_from_file");
-    params.set<std::string>("timestep") = _pars.get<std::string>("initial_from_file_timestep");
+    InputParameters params = _thm_factory.getValidParams(class_name);
+    params.set<MeshFileName>("mesh") = _thm_pars.get<FileName>("initial_from_file");
+    params.set<std::string>("timestep") = _thm_pars.get<std::string>("initial_from_file_timestep");
     _fe_problem.addUserObject(class_name, suo_name, params);
   }
 
   for (auto && v : _vars)
   {
     const VariableName & var_name = v.first;
-    VariableInfo & vi = v.second;
+    const VariableInfo & vi = v.second;
 
-    if (vi._type.family == SCALAR)
+    if (vi._var_type == "MooseVariableScalar")
     {
-      std::string class_name = "ScalarSolutionInitialCondition";
-      InputParameters params = _factory.getValidParams(class_name);
+      std::string class_name = "ScalarSolutionIC";
+      InputParameters params = _thm_factory.getValidParams(class_name);
       params.set<VariableName>("variable") = var_name;
       params.set<VariableName>("from_variable") = var_name;
       params.set<UserObjectName>("solution_uo") = suo_name;
@@ -532,16 +642,14 @@ Simulation::setupInitialConditionsFromFile()
     }
     else
     {
-      std::string class_name = "SolutionInitialCondition";
-      InputParameters params = _factory.getValidParams(class_name);
+      std::string class_name = "SolutionIC";
+      InputParameters params = _thm_factory.getValidParams(class_name);
       params.set<VariableName>("variable") = var_name;
       params.set<VariableName>("from_variable") = var_name;
       params.set<UserObjectName>("solution_uo") = suo_name;
-      if (vi._subdomain.size() > 0)
-      {
-        std::vector<SubdomainName> subdomains(vi._subdomain.begin(), vi._subdomain.end());
-        params.set<std::vector<SubdomainName>>("block") = subdomains;
-      }
+      if (vi._params.isParamValid("block"))
+        params.set<std::vector<SubdomainName>>("block") =
+            vi._params.get<std::vector<SubdomainName>>("block");
       _fe_problem.addInitialCondition(class_name, genName(var_name, "ic"), params);
     }
   }
@@ -559,11 +667,35 @@ Simulation::setupInitialConditionObjects()
 }
 
 void
-Simulation::addComponentPhysics()
+Simulation::addMooseObjects()
 {
-  // let all components add their own
   for (auto && comp : _components)
     comp->addMooseObjects();
+}
+
+void
+Simulation::addRelationshipManagers()
+{
+  {
+    const std::string class_name = "AugmentSparsityBetweenElements";
+    auto params = _thm_factory.getValidParams(class_name);
+    params.set<Moose::RelationshipManagerType>("rm_type") =
+        Moose::RelationshipManagerType::COUPLING | Moose::RelationshipManagerType::ALGEBRAIC |
+        Moose::RelationshipManagerType::GEOMETRIC;
+    params.set<std::string>("for_whom") = _fe_problem.name();
+    params.set<MooseMesh *>("mesh") = &_thm_mesh;
+    params.set<std::map<dof_id_type, std::vector<dof_id_type>> *>("_elem_map") =
+        &_sparsity_elem_augmentation;
+    auto rm =
+        _thm_factory.create<RelationshipManager>(class_name, "thm:sparsity_btw_elems", params);
+    if (!_thm_app.addRelationshipManager(rm))
+      _thm_factory.releaseSharedObjects(*rm);
+  }
+
+  for (auto && comp : _components)
+    comp->addRelationshipManagers(Moose::RelationshipManagerType::COUPLING |
+                                  Moose::RelationshipManagerType::ALGEBRAIC |
+                                  Moose::RelationshipManagerType::GEOMETRIC);
 }
 
 void
@@ -598,10 +730,6 @@ Simulation::setupCoordinateSystem()
 void
 Simulation::setupMesh()
 {
-  // _fe_problem = dynamic_cast<FEProblem *>(_action_warehouse.problemBase().get());
-  // if (_fe_problem == nullptr)
-  //   mooseError("You need to be running with FEProblem derived class.");
-
   if (_components.size() == 0)
     return;
 
@@ -670,18 +798,18 @@ Simulation::integrityCheck() const
     flow_channel_outlets[comp->name()] = 0;
   }
 
-  // mark connections of any FlowConnection components
+  // mark connections of any Component1DConnection components
   for (const auto & comp : _components)
   {
-    auto pc_comp = dynamic_cast<FlowConnection *>(comp.get());
+    auto pc_comp = dynamic_cast<Component1DConnection *>(comp.get());
     if (pc_comp != nullptr)
     {
       for (const auto & connection : pc_comp->getConnections())
       {
-        if (connection._end_type == FlowConnection::IN)
-          flow_channel_inlets[connection._geometrical_component_name]++;
-        else if (connection._end_type == FlowConnection::OUT)
-          flow_channel_outlets[connection._geometrical_component_name]++;
+        if (connection._end_type == Component1DConnection::IN)
+          flow_channel_inlets[connection._component_name]++;
+        else if (connection._end_type == Component1DConnection::OUT)
+          flow_channel_outlets[connection._component_name]++;
       }
     }
   }
@@ -819,7 +947,7 @@ Simulation::run()
 void
 Simulation::addComponent(const std::string & type, const std::string & name, InputParameters params)
 {
-  std::shared_ptr<Component> comp = _factory.create<Component>(type, name, params);
+  std::shared_ptr<Component> comp = _thm_factory.create<Component>(type, name, params);
   if (_comp_by_name.find(name) == _comp_by_name.end())
     _comp_by_name[name] = comp;
   else
@@ -837,7 +965,7 @@ Simulation::hasComponent(const std::string & name) const
 void
 Simulation::addClosures(const std::string & type, const std::string & name, InputParameters params)
 {
-  std::shared_ptr<ClosuresBase> obj_ptr = _factory.create<ClosuresBase>(type, name, params);
+  std::shared_ptr<ClosuresBase> obj_ptr = _thm_factory.create<ClosuresBase>(type, name, params);
   if (_closures_by_name.find(name) == _closures_by_name.end())
     _closures_by_name[name] = obj_ptr;
   else
@@ -896,9 +1024,9 @@ Simulation::getOutputsVector(const std::string & key) const
 }
 
 bool
-Simulation::hasInitialConditionsFromFile()
+Simulation::hasInitialConditionsFromFile() const
 {
-  return _pars.isParamValid("initial_from_file");
+  return _thm_pars.isParamValid("initial_from_file");
 }
 
 void

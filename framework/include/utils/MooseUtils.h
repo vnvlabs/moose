@@ -16,14 +16,17 @@
 #include "MooseError.h"
 #include "MooseADWrapper.h"
 #include "Moose.h"
-#include "DualReal.h"
+#include "ADReal.h"
 #include "ExecutablePath.h"
+#include "ConsoleUtils.h"
 
 #include "libmesh/compare_types.h"
 #include "libmesh/bounding_box.h"
 #include "libmesh/int_range.h"
+#include "libmesh/tensor_tools.h"
 #include "metaphysicl/raw_type.h"
 #include "metaphysicl/metaphysicl_version.h"
+#include "metaphysicl/dualnumber_decl.h"
 #include "metaphysicl/dynamic_std_array_wrapper.h"
 #include "timpi/standard_type.h"
 
@@ -50,29 +53,6 @@ class Communicator;
 }
 }
 class MultiMooseEnum;
-namespace MetaPhysicL
-{
-#if METAPHYSICL_MAJOR_VERSION < 1
-template <typename, typename>
-class DualNumber;
-#else
-#include "metaphysicl/dualnumber_forward.h"
-#endif
-}
-namespace std
-{
-#if METAPHYSICL_MAJOR_VERSION < 1
-template <typename T, typename D>
-MetaPhysicL::DualNumber<T, D> abs(const MetaPhysicL::DualNumber<T, D> & in);
-template <typename T, typename D>
-MetaPhysicL::DualNumber<T, D> abs(MetaPhysicL::DualNumber<T, D> && in);
-#else
-template <typename T, typename D, bool asd>
-MetaPhysicL::DualNumber<T, D, asd> abs(const MetaPhysicL::DualNumber<T, D, asd> & in);
-template <typename T, typename D, bool asd>
-MetaPhysicL::DualNumber<T, D, asd> abs(MetaPhysicL::DualNumber<T, D, asd> && in);
-#endif
-}
 
 namespace MooseUtils
 {
@@ -88,6 +68,9 @@ pathjoin(const std::string & s, Args... args)
   return s + "/" + pathjoin(args...);
 }
 
+/// Check if the input string can be parsed into a Real
+bool parsesToReal(const std::string & input);
+
 /// Returns the location of either a local repo run_tests script - or an
 /// installed test executor script if run_tests isn't found.
 std::string runTestsExecutable();
@@ -98,7 +81,9 @@ std::string runTestsExecutable();
 std::string findTestRoot();
 
 /// Returns the directory of any installed inputs or the empty string if none are found.
-std::string installedInputsDir(const std::string & app_name, const std::string & dir_name);
+std::string installedInputsDir(const std::string & app_name,
+                               const std::string & dir_name,
+                               const std::string & extra_error_msg = "");
 
 /// Returns the directory of any installed docs/site.
 std::string docsDir(const std::string & app_name);
@@ -145,7 +130,14 @@ std::vector<std::string> rsplit(const std::string & str,
  * Python like join function for strings.
  */
 template <typename T>
-std::string join(const T & strings, const std::string & delimiter);
+std::string
+join(const T & strings, const std::string & delimiter)
+{
+  std::ostringstream oss;
+  std::copy(
+      strings.begin(), strings.end(), infix_ostream_iterator<std::string>(oss, delimiter.c_str()));
+  return oss.str();
+}
 
 /**
  * Check the file size.
@@ -226,7 +218,7 @@ void serialEnd(const libMesh::Parallel::Communicator & comm, bool warn = true);
 bool hasExtension(const std::string & filename, std::string ext, bool strip_exodus_ext = false);
 
 /**
- * Removes any file extension from the fiven string s (i.e. any ".[extension]" suffix of s) and
+ * Removes any file extension from the given string s (i.e. any ".[extension]" suffix of s) and
  * returns the result.
  */
 std::string stripExtension(const std::string & s);
@@ -445,21 +437,51 @@ absoluteFuzzyLessThan(const T & var1,
  * @param tol The relative tolerance to be used
  * @return true if var1 and var2 are equal within relative tol
  */
-template <typename T,
-          typename T2,
-          typename T3 = T,
-          typename std::enable_if<ScalarTraits<T>::value && ScalarTraits<T2>::value &&
-                                      ScalarTraits<T3>::value,
-                                  int>::type = 0>
+template <typename T, typename T2, typename T3 = Real>
 bool
 relativeFuzzyEqual(const T & var1,
                    const T2 & var2,
                    const T3 & tol = libMesh::TOLERANCE * libMesh::TOLERANCE)
 {
-  return (absoluteFuzzyEqual(
-      var1,
-      var2,
-      tol * (std::abs(MetaPhysicL::raw_value(var1)) + std::abs(MetaPhysicL::raw_value(var2)))));
+  if constexpr (libMesh::ScalarTraits<T>::value ||
+                libMesh::TensorTools::MathWrapperTraits<T>::value)
+  {
+    static_assert(libMesh::TensorTools::TensorTraits<T>::rank ==
+                      libMesh::TensorTools::TensorTraits<T2>::rank,
+                  "Mathematical types must be same for arguments to relativelyFuzzEqual");
+    if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 0)
+      return absoluteFuzzyEqual(
+          var1,
+          var2,
+          tol * (std::abs(MetaPhysicL::raw_value(var1)) + std::abs(MetaPhysicL::raw_value(var2))));
+    else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 1)
+    {
+      for (const auto i : make_range(Moose::dim))
+        if (!relativeFuzzyEqual(var1(i), var2(i), tol))
+          return false;
+
+      return true;
+    }
+    else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 2)
+    {
+      for (const auto i : make_range(Moose::dim))
+        for (const auto j : make_range(Moose::dim))
+          if (!relativeFuzzyEqual(var1(i, j), var2(i, j), tol))
+            return false;
+
+      return true;
+    }
+  }
+  else
+  {
+    // We dare to dream
+    mooseAssert(var1.size() == var2.size(), "These must be the same size");
+    for (const auto i : index_range(var1))
+      if (!relativeFuzzyEqual(var1(i), var2(i), tol))
+        return false;
+
+    return true;
+  }
 }
 
 /**
@@ -561,6 +583,68 @@ relativeFuzzyLessThan(const T & var1,
 }
 
 /**
+ * Taken from https://stackoverflow.com/a/257382
+ * Evaluating constexpr (Has_size<T>::value) in a templated method over class T will
+ * return whether T is a standard container or a singleton
+ */
+template <typename T>
+class Has_size
+{
+  using Yes = char;
+  struct No
+  {
+    char x[2];
+  };
+
+  template <typename C>
+  static Yes test(decltype(&C::size));
+  template <typename C>
+  static No test(...);
+
+public:
+  static constexpr bool value = sizeof(test<T>(0)) == sizeof(Yes);
+};
+
+/**
+ * @param value The quantity to test for zero-ness
+ * @param tolerance The tolerance for testing zero-ness. The default is 1e-18 for double precision
+ * configurations of libMesh/MOOSE
+ * @return whether the L_infty norm of the value is (close enough to) zero
+ */
+template <typename T>
+bool
+isZero(const T & value, const Real tolerance = TOLERANCE * TOLERANCE * TOLERANCE)
+{
+  if constexpr (Has_size<T>::value)
+  {
+    for (const auto & element : value)
+      if (!isZero(element, tolerance))
+        return false;
+
+    return true;
+  }
+  else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 0)
+    return MooseUtils::absoluteFuzzyEqual(MetaPhysicL::raw_value(value), 0, tolerance);
+  else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 1)
+  {
+    for (const auto i : make_range(Moose::dim))
+      if (!MooseUtils::absoluteFuzzyEqual(MetaPhysicL::raw_value(value(i)), 0, tolerance))
+        return false;
+
+    return true;
+  }
+  else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 2)
+  {
+    for (const auto i : make_range(Moose::dim))
+      for (const auto j : make_range(Moose::dim))
+        if (!MooseUtils::absoluteFuzzyEqual(MetaPhysicL::raw_value(value(i, j)), 0, tolerance))
+          return false;
+
+    return true;
+  }
+}
+
+/**
  * Function to dump the contents of MaterialPropertyStorage for debugging purposes
  * @param props The storage item to dump, this should be
  * MaterialPropertyStorage.props()/propsOld()/propsOlder().
@@ -578,10 +662,11 @@ void MaterialPropertyStorageDump(
  * @param message The message that will be indented
  * @param color The color to apply to the prefix (default CYAN)
  * @param indent_first_line If true this will indent the first line too (default)
+ * @param post_prefix A string to append right after the prefix, defaults to a column and a space
  *
  * Takes a message like the following and indents it with another color code (see below)
  *
- * Input messsage:
+ * Input message:
  * COLOR_YELLOW
  * *** Warning ***
  * Something bad has happened and we want to draw attention to it with color
@@ -595,7 +680,7 @@ void MaterialPropertyStorageDump(
  * COLOR_DEFAULT
  *
  * Also handles single line color codes
- * COLOR_CYAN sub_app: 0 Nonline |R| = COLOR_GREEN 1.0e-10 COLOR_DEFAULT
+ * COLOR_CYAN sub_app: 0 Nonlinear |R| = COLOR_GREEN 1.0e-10 COLOR_DEFAULT
  *
  * Not indenting the first line is useful in the case where the first line is actually finishing
  * the line before it.
@@ -603,21 +688,23 @@ void MaterialPropertyStorageDump(
 void indentMessage(const std::string & prefix,
                    std::string & message,
                    const char * color = COLOR_CYAN,
-                   bool dont_indent_first_line = true);
+                   bool dont_indent_first_line = true,
+                   const std::string & post_prefix = ": ");
 
 /**
- * remove ANSI escape sequences for teminal color from msg
+ * remove ANSI escape sequences for terminal color from msg
  */
 std::string & removeColor(std::string & msg);
 
 std::list<std::string> listDir(const std::string path, bool files_only = false);
 
 bool pathExists(const std::string & path);
+bool pathIsDirectory(const std::string & path);
 
 /**
- * Retrieves the names of all of the files contained within the list of directories passed into the
- * routine.
- * The names returned will be the paths to the files relative to the current directory.
+ * Retrieves the names of all of the files contained within the list of directories passed into
+ * the routine. The names returned will be the paths to the files relative to the current
+ * directory.
  * @param directory_list The list of directories to retrieve files from.
  */
 std::list<std::string> getFilesInDirs(const std::list<std::string> & directory_list);
@@ -922,13 +1009,7 @@ template <typename T>
 struct canBroadcast
 {
   static constexpr bool value = std::is_base_of<TIMPI::DataType, TIMPI::StandardType<T>>::value ||
-                                std::is_same<T, std::string>::value;
-};
-template <typename T>
-struct canBroadcast<std::vector<T>>
-{
-  static constexpr bool value = std::is_base_of<TIMPI::DataType, TIMPI::StandardType<T>>::value ||
-                                std::is_same<T, std::string>::value;
+                                TIMPI::Has_buffer_type<TIMPI::Packing<T>>::value;
 };
 
 ///@{ Comparison helpers that support the MooseUtils::Any wildcard which will match any value
@@ -989,52 +1070,138 @@ findPair(C & container, const M1 & first, const M2 & second)
  */
 BoundingBox buildBoundingBox(const Point & p1, const Point & p2);
 
-template <typename Consumers>
-std::deque<MaterialBase *>
-buildRequiredMaterials(const Consumers & mat_consumers,
-                       const std::vector<std::shared_ptr<MaterialBase>> & mats,
-                       const bool allow_stateful);
-
 /**
  * Utility class template for a semidynamic vector with a maximum size N
  * and a chosen dynamic size. This container avoids heap allocation and
  * is meant as a replacement for small local std::vector variables.
- * Note: this class uses default initialization, which will not initialize built-in types.
- * Note: due to an assertion bug in DynamicStdArrayWrapper we have to allocate one element more
- * until https://github.com/libMesh/MetaPhysicL/pull/8 in MetaPhysicL is available in MOOSE.
+ * By default this class uses `value initialization`. This can be disabled
+ * using the third template parameter if uninitialized storage is acceptable,
  */
-template <typename T, std::size_t N>
-class SemidynamicVector
-  : public MetaPhysicL::DynamicStdArrayWrapper<T, MetaPhysicL::NWrapper<N + 1>>
+template <typename T, std::size_t N, bool value_init = true>
+class SemidynamicVector : public MetaPhysicL::DynamicStdArrayWrapper<T, MetaPhysicL::NWrapper<N>>
 {
-  typedef MetaPhysicL::DynamicStdArrayWrapper<T, MetaPhysicL::NWrapper<N + 1>> Parent;
+  typedef MetaPhysicL::DynamicStdArrayWrapper<T, MetaPhysicL::NWrapper<N>> Parent;
 
 public:
   SemidynamicVector(std::size_t size) : Parent()
   {
     Parent::resize(size);
-    // TODO: uncomment this once https://github.com/libMesh/MetaPhysicL/pull/8
-    //       makes it all the way into MOOSE.
-    // for (const auto i : make_range(size))
-    //   _data[i] = {};
+    if constexpr (value_init)
+      for (const auto i : make_range(size))
+        _data[i] = T{};
   }
 
   void resize(std::size_t new_size)
   {
-    // const auto old_dynamic_n = Parent::size();
+    [[maybe_unused]] const auto old_dynamic_n = Parent::size();
+
     Parent::resize(new_size);
-    // TODO: uncomment this once https://github.com/libMesh/MetaPhysicL/pull/8
-    //       makes it all the way into MOOSE.
-    // for (const auto i : make_range(old_dynamic_n, _dynamic_n))
-    //   _data[i] = {};
+
+    if constexpr (value_init)
+      for (const auto i : make_range(old_dynamic_n, _dynamic_n))
+        _data[i] = T{};
+  }
+
+  void push_back(const T & v)
+  {
+    const auto old_dynamic_n = Parent::size();
+    Parent::resize(old_dynamic_n + 1);
+    _data[old_dynamic_n] = v;
+  }
+
+  template <typename... Args>
+  void emplace_back(Args &&... args)
+  {
+    const auto old_dynamic_n = Parent::size();
+    Parent::resize(old_dynamic_n + 1);
+    (::new (&_data[old_dynamic_n]) T(std::forward<Args>(args)...));
   }
 
   std::size_t max_size() const { return N; }
+
+  using Parent::_data;
+  using Parent::_dynamic_n;
 };
 
+/**
+ * The MooseUtils::get() specializations are used to support making
+ * forwards-compatible code changes from dumb pointers to smart pointers.
+ * The same line of code, e.g.
+ *
+ * libMesh::Parameters::Value * value = MooseUtils::get(map_iter->second);
+ *
+ * will then work regardless of whether map_iter->second is a dumb pointer
+ * or a smart pointer. Note that the smart pointer get() functions are const
+ * so they can be (ab)used to get a non-const pointer to the underlying
+ * resource. We are simply following this convention here.
+ */
+template <typename T>
+T *
+get(const std::unique_ptr<T> & u)
+{
+  return u.get();
+}
+
+template <typename T>
+T *
+get(T * p)
+{
+  return p;
+}
+
+template <typename T>
+T *
+get(const std::shared_ptr<T> & s)
+{
+  return s.get();
+}
+
+/**
+ * This method detects whether two sets intersect without building a result set.
+ * It exits as soon as any intersection is detected.
+ */
+template <class InputIterator>
+bool
+setsIntersect(InputIterator first1, InputIterator last1, InputIterator first2, InputIterator last2)
+{
+  while (first1 != last1 && first2 != last2)
+  {
+    if (*first1 == *first2)
+      return true;
+
+    if (*first1 < *first2)
+      ++first1;
+    else if (*first1 > *first2)
+      ++first2;
+  }
+  return false;
+}
+
+template <class T>
+bool
+setsIntersect(const T & s1, const T & s2)
+{
+  return setsIntersect(s1.begin(), s1.end(), s2.begin(), s2.end());
+}
+
+/**
+ * Courtesy https://stackoverflow.com/a/8889045 and
+ * https://en.cppreference.com/w/cpp/string/byte/isdigit
+ * @return Whether every character in the string is a digit
+ */
+inline bool
+isDigits(const std::string & str)
+{
+  return std::all_of(str.begin(), str.end(), [](unsigned char c) { return std::isdigit(c); });
+}
 } // MooseUtils namespace
 
 /**
  * find, erase, length algorithm for removing a substring from a string
  */
 void removeSubstring(std::string & main, const std::string & sub);
+
+/**
+ * find, erase, length algorithm for removing a substring from a copy of a string
+ */
+std::string removeSubstring(const std::string & main, const std::string & sub);

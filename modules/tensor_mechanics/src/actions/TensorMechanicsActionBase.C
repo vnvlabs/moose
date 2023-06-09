@@ -12,6 +12,8 @@
 #include "ActionWarehouse.h"
 #include "AddAuxVariableAction.h"
 #include "ComputeFiniteStrain.h"
+#include "MooseApp.h"
+#include "InputParameterWarehouse.h"
 
 // map tensor name shortcuts to tensor material property names
 std::map<std::string, std::string> TensorMechanicsActionBase::_rank_two_cartesian_component_table =
@@ -141,7 +143,9 @@ TensorMechanicsActionBase::validParams()
 
   MooseEnum strainType("SMALL FINITE", "SMALL");
   params.addParam<MooseEnum>("strain", strainType, "Strain formulation");
-  params.addParam<bool>("incremental", "Use incremental or total strain");
+  params.addParam<bool>("incremental",
+                        "Use incremental or total strain (if not explicitly specified this "
+                        "defaults to incremental for finite strain and total for small strain)");
 
   params.addParam<std::string>("base_name", "Material property base name");
   params.addParam<bool>(
@@ -223,16 +227,31 @@ TensorMechanicsActionBase::validParams()
                               "Output");
   params.addParam<bool>("verbose", false, "Display extra information.");
 
+  params.addParam<bool>("new_system",
+                        false,
+                        "If true use the new "
+                        "LagrangianStressDiverence kernels.");
+
+  MooseEnum formulationType("TOTAL UPDATED", "TOTAL");
+  params.addParam<MooseEnum>("formulation",
+                             formulationType,
+                             "Select between the total Lagrangian (TOTAL) "
+                             "and updated Lagrangian (UPDATED) formulations "
+                             "for the new kernel system.");
+
   return params;
 }
 
 TensorMechanicsActionBase::TensorMechanicsActionBase(const InputParameters & parameters)
   : Action(parameters), _use_ad(getParam<bool>("use_automatic_differentiation"))
 {
+  const auto & params = _app.getInputParameterWarehouse().getInputParameters();
+  InputParameters & pars(*(params.find(uniqueActionName())->second.get()));
+
   // check if a container block with common parameters is found
   auto action = _awh.getActions<CommonTensorMechanicsAction>();
   if (action.size() == 1)
-    _pars.applyParameters(action[0]->parameters());
+    pars.applyParameters(action[0]->parameters());
 
   // append additional_generate_output
   if (isParamValid("additional_generate_output"))
@@ -256,9 +275,9 @@ TensorMechanicsActionBase::TensorMechanicsActionBase(const InputParameters & par
     for (auto & family : additional_material_output_family)
       material_output_family.push_back(family);
 
-    _pars.set<MultiMooseEnum>("generate_output") = generate_output;
-    _pars.set<MultiMooseEnum>("material_output_order") = material_output_order;
-    _pars.set<MultiMooseEnum>("material_output_family") = material_output_family;
+    pars.set<MultiMooseEnum>("generate_output") = generate_output;
+    pars.set<MultiMooseEnum>("material_output_order") = material_output_order;
+    pars.set<MultiMooseEnum>("material_output_family") = material_output_family;
   }
 }
 

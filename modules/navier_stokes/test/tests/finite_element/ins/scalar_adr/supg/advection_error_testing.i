@@ -49,11 +49,11 @@ velocity=1
 [Functions]
   [./ffn]
     type = ParsedFunction
-    value = '1-x^2'
+    expression = '1-x^2'
   [../]
   [./c_func]
     type = ParsedFunction
-    value = 'x-x^3/3'
+    expression = 'x-x^3/3'
   [../]
 []
 
@@ -77,15 +77,13 @@ velocity=1
     type = ElementL2Error
     variable = c
     function = c_func
-    outputs = 'console csv'
-    execute_on = 'timestep_end'
+    outputs = 'console'    execute_on = 'timestep_end'
   [../]
   [./L2cx]
     type = ElementL2Error
     variable = cx
     function = ffn
-    outputs = 'console csv'
-    execute_on = 'timestep_end'
+    outputs = 'console'    execute_on = 'timestep_end'
   [../]
 []
 

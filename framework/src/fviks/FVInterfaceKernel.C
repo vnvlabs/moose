@@ -30,7 +30,7 @@ FVInterfaceKernel::validParams()
   params += TaggingInterface::validParams();
   params += NeighborCoupleableMooseVariableDependencyIntermediateInterface::validParams();
   params += TwoMaterialPropertyInterface::validParams();
-  params += FunctorInterface::validParams();
+  params += ADFunctorInterface::validParams();
 
   params.addRequiredParam<std::vector<SubdomainName>>(
       "subdomain1", "The subdomains on the 1st side of the boundary.");
@@ -55,6 +55,7 @@ FVInterfaceKernel::validParams()
                         false,
                         "Whether to use point neighbors, which introduces additional ghosting to "
                         "that used for simple face neighbors.");
+  params.addParamNamesToGroup("ghost_layers use_point_neighbors", "Parallel ghosting");
 
   // FV Interface Kernels always need one layer of ghosting because the elements
   // on each side of the interface may be on different MPI ranks, but we still
@@ -94,11 +95,11 @@ FVInterfaceKernel::FVInterfaceKernel(const InputParameters & parameters)
     NeighborCoupleableMooseVariableDependencyIntermediateInterface(
         this, /*nodal=*/false, /*neighbor_nodal=*/false, /*is_fv=*/true),
     TwoMaterialPropertyInterface(this, Moose::EMPTY_BLOCK_IDS, boundaryIDs()),
-    FunctorInterface(this),
+    ADFunctorInterface(this),
     _tid(getParam<THREAD_ID>("_tid")),
     _subproblem(*getCheckedPointerParam<SubProblem *>("_subproblem")),
-    _assembly(_subproblem.assembly(_tid)),
     _sys(*getCheckedPointerParam<SystemBase *>("_sys")),
+    _assembly(_subproblem.assembly(_tid, _sys.number())),
     _var1(_sys.getFVVariable<Real>(_tid, getParam<NonlinearVariableName>("variable1"))),
     _var2(_sys.getFVVariable<Real>(_tid,
                                    isParamValid("variable2")
@@ -106,13 +107,6 @@ FVInterfaceKernel::FVInterfaceKernel(const InputParameters & parameters)
                                        : getParam<NonlinearVariableName>("variable1"))),
     _mesh(_subproblem.mesh())
 {
-#ifndef MOOSE_GLOBAL_AD_INDEXING
-  mooseError("FVInterfaceKernels are not supported by local AD indexing. In order to use "
-             "FVInterfaceKernels, please run the "
-             "configure script in the root MOOSE directory with the configure option "
-             "'--with-ad-indexing-type=global'");
-#endif
-
   if (getParam<bool>("use_displaced_mesh"))
     paramError("use_displaced_mesh", "FV interface kernels do not yet support displaced mesh");
 
@@ -154,17 +148,16 @@ FVInterfaceKernel::setupData(const FaceInfo & fi)
   constexpr auto ft_both = FaceInfo::VarFaceNeighbors::BOTH;
   constexpr auto ft_elem = FaceInfo::VarFaceNeighbors::ELEM;
   constexpr auto ft_neigh = FaceInfo::VarFaceNeighbors::NEIGHBOR;
-  mooseAssert(((ft1 == ft_both) && (ft2 == ft_both)) ||
-                  (_elem_is_one && (ft1 == ft_elem) && (ft2 == ft_neigh)) ||
-                  (!_elem_is_one && (ft1 == ft_neigh) && (ft2 == ft_elem)),
-              "Face type was not recognized. Check that the specified boundaries are interfaces.");
+  mooseAssert(
+      (_elem_is_one && (ft1 == ft_elem || ft1 == ft_both) && (ft2 == ft_neigh || ft2 == ft_both)) ||
+          (!_elem_is_one && (ft1 == ft_neigh || ft1 == ft_both) &&
+           (ft2 == ft_elem || ft2 == ft_both)),
+      "Face type was not recognized. Check that the specified boundaries are interfaces.");
 #endif
 }
 
 void
-FVInterfaceKernel::processResidual(const Real resid,
-                                   const unsigned int var_num,
-                                   const bool neighbor)
+FVInterfaceKernel::addResidual(const Real resid, const unsigned int var_num, const bool neighbor)
 {
   neighbor ? prepareVectorTagNeighbor(_assembly, var_num) : prepareVectorTag(_assembly, var_num);
   _local_re(0) = resid;
@@ -172,9 +165,14 @@ FVInterfaceKernel::processResidual(const Real resid,
 }
 
 void
-FVInterfaceKernel::processDerivatives(const ADReal & resid, const dof_id_type dof_index)
+FVInterfaceKernel::addJacobian(const ADReal & resid,
+                               const dof_id_type dof_index,
+                               const Real scaling_factor)
 {
-  _assembly.processDerivatives(resid, dof_index, _matrix_tags);
+  addJacobian(_assembly,
+              std::array<ADReal, 1>{{resid}},
+              std::array<dof_id_type, 1>{{dof_index}},
+              scaling_factor);
 }
 
 void
@@ -187,8 +185,14 @@ FVInterfaceKernel::computeResidual(const FaceInfo & fi)
 
   const auto r = MetaPhysicL::raw_value(fi.faceArea() * fi.faceCoord() * computeQpResidual());
 
-  processResidual(r, var_elem_num, false);
-  processResidual(-r, var_neigh_num, true);
+  addResidual(r, var_elem_num, false);
+  addResidual(-r, var_neigh_num, true);
+}
+
+void
+FVInterfaceKernel::computeResidualAndJacobian(const FaceInfo & fi)
+{
+  computeJacobian(fi);
 }
 
 void
@@ -201,29 +205,45 @@ FVInterfaceKernel::computeJacobian(const FaceInfo & fi)
       _elem_is_one ? _var2.dofIndicesNeighbor() : _var1.dofIndicesNeighbor();
   mooseAssert((elem_dof_indices.size() == 1) && (neigh_dof_indices.size() == 1),
               "We're currently built to use CONSTANT MONOMIALS");
+  const auto elem_scaling_factor = _elem_is_one ? _var1.scalingFactor() : _var2.scalingFactor();
+  const auto neigh_scaling_factor = _elem_is_one ? _var2.scalingFactor() : _var1.scalingFactor();
 
   const auto r = fi.faceArea() * fi.faceCoord() * computeQpResidual();
 
-  processDerivatives(r, elem_dof_indices[0]);
-  processDerivatives(-r, neigh_dof_indices[0]);
+  addResidualsAndJacobian(
+      _assembly, std::array<ADReal, 1>{{r}}, elem_dof_indices, elem_scaling_factor);
+  addResidualsAndJacobian(
+      _assembly, std::array<ADReal, 1>{{-r}}, neigh_dof_indices, neigh_scaling_factor);
 }
 
-Moose::ElemFromFaceArg
-FVInterfaceKernel::elemFromFace(const bool correct_skewness) const
+Moose::ElemArg
+FVInterfaceKernel::elemArg(const bool correct_skewness) const
 {
-  return {&_face_info->elem(),
-          _face_info,
-          correct_skewness,
-          correct_skewness,
-          _face_info->elem().subdomain_id()};
+  return {_face_info->elemPtr(), correct_skewness};
 }
 
-Moose::ElemFromFaceArg
-FVInterfaceKernel::neighborFromFace(const bool correct_skewness) const
+Moose::ElemArg
+FVInterfaceKernel::neighborArg(const bool correct_skewness) const
 {
-  return {_face_info->neighborPtr(),
-          _face_info,
-          correct_skewness,
-          correct_skewness,
-          _face_info->neighborPtr()->subdomain_id()};
+  return {_face_info->neighborPtr(), correct_skewness};
+}
+
+Moose::FaceArg
+FVInterfaceKernel::singleSidedFaceArg(const MooseVariableFV<Real> & /*variable*/,
+                                      const FaceInfo * fi,
+                                      const Moose::FV::LimiterType limiter_type,
+                                      const bool correct_skewness) const
+{
+  if (!fi)
+    fi = _face_info;
+  return makeFace(*fi, limiter_type, true, correct_skewness);
+}
+
+bool
+FVInterfaceKernel::hasFaceSide(const FaceInfo &, bool) const
+{
+  // Our default interface kernel treats elem and neighbor sides equivalently so we will assume for
+  // now that we will happily consume functor evaluations on either side of a face and any
+  // interpolation between said evaluations
+  return true;
 }

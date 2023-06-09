@@ -33,7 +33,7 @@ delta_t_open = 0.1
   initial_vel = 0
 []
 
-[Modules/FluidProperties]
+[FluidProperties]
   [fp]
     type = IdealGasFluidProperties
     gamma = 1.4
@@ -57,9 +57,9 @@ delta_t_open = 0.1
   []
   [pipe2_open_fn]
     type = ParsedFunction
-    value = '1 - pipe3_phi'
-    vars = 'pipe3_phi'
-    vals = 'pipe3_open_fn'
+    expression = '1 - pipe3_phi'
+    symbol_names = 'pipe3_phi'
+    symbol_values = 'pipe3_open_fn'
   []
 []
 

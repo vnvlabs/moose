@@ -22,11 +22,12 @@ MooseObjectAction::validParams()
   params.addRequiredParam<std::string>(
       "type", "A string representing the Moose Object that will be built by this Action");
   params.addParam<bool>("isObjectAction", true, "Indicates that this is a MooseObjectAction.");
+  params.addParamNamesToGroup("isObjectAction", "Advanced");
   params.addClassDescription("Base class for all the actions creating a MOOSE object");
   return params;
 }
 
-MooseObjectAction::MooseObjectAction(InputParameters params)
+MooseObjectAction::MooseObjectAction(const InputParameters & params)
   : Action(params),
     _type(getParam<std::string>("type")),
     // We will create a second parameters object from the main factory unless instructed otherwise

@@ -11,6 +11,7 @@
 #include "LayeredSideDiffusiveFluxAverage.h"
 #include "Executioner.h"
 #include "Transient.h"
+#include "Console.h"
 
 // libMesh
 #include "libmesh/mesh_tools.h"
@@ -124,9 +125,25 @@ FullSolveMultiApp::solveStep(Real /*dt*/, Real /*target_time*/, bool auto_advanc
 
     Executioner * ex = _executioners[i];
     ex->execute();
-    if (!ex->lastSolveConverged())
-      last_solve_converged = false;
+
+    last_solve_converged = last_solve_converged && ex->lastSolveConverged();
+
+    showStatusMessage(i);
   }
 
   return last_solve_converged || _ignore_diverge;
+}
+
+void
+FullSolveMultiApp::showStatusMessage(unsigned int i) const
+{
+  if (!_fe_problem.verboseMultiApps() &&
+      _apps[i]->getOutputWarehouse().getOutputs<Console>().size() > 0)
+    return;
+  else if (!_executioners[i]->lastSolveConverged())
+    _console << COLOR_RED << "Subapp " << _apps[i]->name() << " solve Did NOT Converge!"
+             << COLOR_DEFAULT << std::endl;
+  else
+    _console << COLOR_GREEN << "Subapp " << _apps[i]->name() << " solve converged!" << COLOR_DEFAULT
+             << std::endl;
 }

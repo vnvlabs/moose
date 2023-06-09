@@ -13,6 +13,7 @@
 #include "HeatStructureCylindricalBase.h"
 #include "FlowModelSinglePhase.h"
 #include "THMMesh.h"
+#include "MooseUtils.h"
 
 registerMooseObject("ThermalHydraulicsApp", HeatTransferFromHeatStructure1Phase);
 
@@ -29,7 +30,9 @@ HeatTransferFromHeatStructure1Phase::validParams()
 
 HeatTransferFromHeatStructure1Phase::HeatTransferFromHeatStructure1Phase(
     const InputParameters & parameters)
-  : HeatTransferFromTemperature1Phase(parameters), HSBoundaryInterface(this), _fch_alignment(_mesh)
+  : HeatTransferFromTemperature1Phase(parameters),
+    HSBoundaryInterface(this),
+    _mesh_alignment(constMesh())
 {
 }
 
@@ -59,13 +62,12 @@ HeatTransferFromHeatStructure1Phase::setupMesh()
     const FlowChannel1Phase & flow_channel =
         getComponentByName<FlowChannel1Phase>(_flow_channel_name);
 
-    _fch_alignment.build(hs.getBoundaryInfo(_hs_side), flow_channel.getElementIDs());
+    _mesh_alignment.initialize(flow_channel.getElementIDs(), hs.getBoundaryInfo(_hs_side));
 
     for (auto & elem_id : flow_channel.getElementIDs())
     {
-      dof_id_type nearest_elem_id = _fch_alignment.getNearestElemID(elem_id);
-      if (nearest_elem_id != DofObject::invalid_id)
-        _sim.augmentSparsity(elem_id, nearest_elem_id);
+      if (_mesh_alignment.hasCoupledElemID(elem_id))
+        getTHMProblem().augmentSparsity(elem_id, _mesh_alignment.getCoupledElemID(elem_id));
     }
   }
 }
@@ -94,7 +96,7 @@ HeatTransferFromHeatStructure1Phase::check() const
                hs.getNumElems(),
                ". They must be the same.");
 
-    if (hs.getLength() != flow_channel.getLength())
+    if (!MooseUtils::absoluteFuzzyEqual(hs.getLength(), flow_channel.getLength()))
       logError("The length of component '",
                _flow_channel_name,
                "' is ",
@@ -107,7 +109,7 @@ HeatTransferFromHeatStructure1Phase::check() const
 
     if (_hs_side_valid)
     {
-      if (!_fch_alignment.check(flow_channel.getElementIDs()))
+      if (!_mesh_alignment.meshesAreAligned())
         logError("The centers of the elements of flow channel '",
                  _flow_channel_name,
                  "' do not align with the centers of the specified heat structure side.");
@@ -121,10 +123,10 @@ HeatTransferFromHeatStructure1Phase::addVariables()
   HeatTransferFromTemperature1Phase::addVariables();
 
   // wall temperature initial condition
-  if (!_sim.hasInitialConditionsFromFile() && !_app.isRestarting())
+  if (!getTHMProblem().hasInitialConditionsFromFile() && !_app.isRestarting())
   {
     const HeatStructureBase & hs = getComponentByName<HeatStructureBase>(_hs_name);
-    _sim.addFunctionIC(_T_wall_name, hs.getInitialT(), _flow_channel_subdomains);
+    getTHMProblem().addFunctionIC(_T_wall_name, hs.getInitialT(), _flow_channel_subdomains);
   }
 }
 
@@ -146,13 +148,13 @@ HeatTransferFromHeatStructure1Phase::addMooseObjects()
     const std::string class_name = "ADHeatFluxFromHeatStructure3EqnUserObject";
     InputParameters params = _factory.getValidParams(class_name);
     params.set<std::vector<SubdomainName>>("block") = flow_channel.getSubdomainNames();
-    params.set<FlowChannelAlignment *>("_fch_alignment") = &_fch_alignment;
+    params.set<MeshAlignment *>("_mesh_alignment") = &_mesh_alignment;
     params.set<MaterialPropertyName>("T_wall") = _T_wall_name + "_coupled";
     params.set<std::vector<VariableName>>("P_hf") = {_P_hf_name};
     params.set<MaterialPropertyName>("Hw") = _Hw_1phase_name;
     params.set<MaterialPropertyName>("T") = FlowModelSinglePhase::TEMPERATURE;
     params.set<ExecFlagEnum>("execute_on") = execute_on;
-    _sim.addUserObject(class_name, heat_flux_uo_name, params);
+    getTHMProblem().addUserObject(class_name, heat_flux_uo_name, params);
   }
 
   {
@@ -161,7 +163,7 @@ HeatTransferFromHeatStructure1Phase::addMooseObjects()
     params.set<std::vector<SubdomainName>>("block") = flow_channel.getSubdomainNames();
     params.set<NonlinearVariableName>("variable") = FlowModelSinglePhase::RHOEA;
     params.set<UserObjectName>("q_uo") = heat_flux_uo_name;
-    _sim.addKernel(class_name, genName(name(), "heat_flux_kernel"), params);
+    getTHMProblem().addKernel(class_name, genName(name(), "heat_flux_kernel"), params);
   }
 
   {
@@ -173,19 +175,18 @@ HeatTransferFromHeatStructure1Phase::addMooseObjects()
     params.set<Real>("P_hs_unit") = hs.getUnitPerimeter(_hs_side);
     params.set<unsigned int>("n_unit") = hs.getNumberOfUnits();
     params.set<bool>("hs_coord_system_is_cylindrical") = is_cylindrical;
-    _sim.addBoundaryCondition(class_name, genName(name(), "heat_flux_bc"), params);
+    getTHMProblem().addBoundaryCondition(class_name, genName(name(), "heat_flux_bc"), params);
   }
 
   // Transfer the temperature of the solid onto the flow channel
   {
-    std::string class_name = "VariableValueTransferMaterial";
+    std::string class_name = "MeshAlignmentVariableTransferMaterial";
     InputParameters params = _factory.getValidParams(class_name);
     params.set<std::vector<SubdomainName>>("block") = flow_channel.getSubdomainNames();
     params.set<MaterialPropertyName>("property_name") = _T_wall_name + "_coupled";
-    params.set<BoundaryName>("secondary_boundary") = {getSlaveSideName()};
-    params.set<BoundaryName>("primary_boundary") = getMasterSideName();
     params.set<std::string>("paired_variable") = HeatConductionModel::TEMPERATURE;
-    _sim.addMaterial(class_name, genName(name(), "T_wall_transfer_mat"), params);
+    params.set<MeshAlignment *>("_mesh_alignment") = &_mesh_alignment;
+    getTHMProblem().addMaterial(class_name, genName(name(), "T_wall_transfer_mat"), params);
   }
 
   // Transfer the temperature of the solid onto the flow channel as aux varaible for visualization
@@ -197,7 +198,7 @@ HeatTransferFromHeatStructure1Phase::addMooseObjects()
     params.set<BoundaryName>("paired_boundary") = getMasterSideName();
     params.set<std::vector<VariableName>>("paired_variable") =
         std::vector<VariableName>(1, HeatConductionModel::TEMPERATURE);
-    _sim.addAuxKernel(class_name, genName(name(), "T_wall_transfer"), params);
+    getTHMProblem().addAuxKernel(class_name, genName(name(), "T_wall_transfer"), params);
   }
 }
 

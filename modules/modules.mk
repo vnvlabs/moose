@@ -17,6 +17,7 @@ endif
 ifeq ($(ALL_MODULES),yes)
         CHEMICAL_REACTIONS          := yes
         CONTACT                     := yes
+        ELECTROMAGNETICS            := yes
         EXTERNAL_PETSC_SOLVER       := yes
         FLUID_PROPERTIES            := yes
         FSI                         := yes
@@ -25,6 +26,7 @@ ifeq ($(ALL_MODULES),yes)
         HEAT_CONDUCTION             := yes
         LEVEL_SET                   := yes
         MISC                        := yes
+        OPTIMIZATION                := yes
         NAVIER_STOKES               := yes
         PERIDYNAMICS                := yes
         PHASE_FIELD                 := yes
@@ -33,6 +35,8 @@ ifeq ($(ALL_MODULES),yes)
         RDG                         := yes
         REACTOR                     := yes
         RICHARDS                    := yes
+        SCALAR_TRANSPORT            := yes
+        SOLID_PROPERTIES            := yes
         STOCHASTIC_TOOLS            := yes
         TENSOR_MECHANICS            := yes
         THERMAL_HYDRAULICS          := yes
@@ -47,6 +51,7 @@ ifeq ($(THERMAL_HYDRAULICS),yes)
         HEAT_CONDUCTION             := yes
         RAY_TRACING                 := yes
         RDG                         := yes
+        SOLID_PROPERTIES            := yes
         MISC                        := yes
 endif
 
@@ -61,6 +66,10 @@ ifeq ($(NAVIER_STOKES),yes)
         RDG                         := yes
 endif
 
+ifeq ($(SOLID_PROPERTIES),yes)
+        HEAT_CONDUCTION             := yes
+endif
+
 ifeq ($(CONTACT),yes)
         TENSOR_MECHANICS            := yes
 endif
@@ -70,7 +79,7 @@ ifeq ($(HEAT_CONDUCTION),yes)
 endif
 
 ifeq ($(PERIDYNAMICS),yes)
-        TENSOR_MECHANICS           := yes
+        TENSOR_MECHANICS            := yes
 endif
 
 ifeq ($(PHASE_FIELD),yes)
@@ -87,8 +96,20 @@ ifeq ($(XFEM),yes)
         TENSOR_MECHANICS            := yes
 endif
 
+ifeq ($(SCALAR_TRANSPORT),yes)
+        CHEMICAL_REACTIONS          := yes
+        NAVIER_STOKES               := yes
+        THERMAL_HYDRAULICS          := yes
+        FLUID_PROPERTIES            := yes
+        HEAT_CONDUCTION             := yes
+        RDG                         := yes
+        RAY_TRACING                 := yes
+        SOLID_PROPERTIES            := yes
+        MISC                        := yes
+endif
+
 # The master list of all moose modules
-MODULE_NAMES := "chemical_reactions contact external_petsc_solver fluid_properties fsi functional_expansion_tools geochemistry heat_conduction level_set misc navier_stokes peridynamics phase_field porous_flow ray_tracing rdg reactor richards stochastic_tools tensor_mechanics thermal_hydraulics xfem"
+MODULE_NAMES := "chemical_reactions contact electromagnetics external_petsc_solver fluid_properties fsi functional_expansion_tools geochemistry heat_conduction level_set misc navier_stokes optimization peridynamics phase_field porous_flow ray_tracing rdg reactor richards scalar_transport solid_properties stochastic_tools tensor_mechanics thermal_hydraulics xfem"
 
 ################################################################################
 ########################## MODULE REGISTRATION #################################
@@ -106,6 +127,13 @@ ifeq ($(CHEMICAL_REACTIONS),yes)
   APPLICATION_DIR    := $(MOOSE_DIR)/modules/chemical_reactions
   APPLICATION_NAME   := chemical_reactions
   SUFFIX             := cr
+  include $(FRAMEWORK_DIR)/app.mk
+endif
+
+ifeq ($(ELECTROMAGNETICS),yes)
+  APPLICATION_DIR    := $(MOOSE_DIR)/modules/electromagnetics
+  APPLICATION_NAME   := electromagnetics
+  SUFFIX             := em
   include $(FRAMEWORK_DIR)/app.mk
 endif
 
@@ -182,12 +210,20 @@ endif
 # The modules that follow are purposefully ordered such that all of their
 # dependencies are defined first
 
-# Depended on by navier_stokes and fsi (through navier_stokes)
+# Depended on by navier_stokes, fsi (through navier_stokes)
 ifeq ($(HEAT_CONDUCTION),yes)
   APPLICATION_DIR    := $(MOOSE_DIR)/modules/heat_conduction
   APPLICATION_NAME   := heat_conduction
   DEPEND_MODULES     := ray_tracing
   SUFFIX             := hc
+  include $(FRAMEWORK_DIR)/app.mk
+endif
+
+ifeq ($(SOLID_PROPERTIES),yes)
+  APPLICATION_DIR    := $(MOOSE_DIR)/modules/solid_properties
+  APPLICATION_NAME   := solid_properties
+  DEPEND_MODULES     := heat_conduction
+  SUFFIX             := sp
   include $(FRAMEWORK_DIR)/app.mk
 endif
 
@@ -234,6 +270,13 @@ ifeq ($(MISC),yes)
   include $(FRAMEWORK_DIR)/app.mk
 endif
 
+ifeq ($(OPTIMIZATION),yes)
+  APPLICATION_DIR    := $(MOOSE_DIR)/modules/optimization
+  APPLICATION_NAME   := optimization
+  SUFFIX             := opt
+  include $(FRAMEWORK_DIR)/app.mk
+endif
+
 ifeq ($(PERIDYNAMICS),yes)
   APPLICATION_DIR    := $(MOOSE_DIR)/modules/peridynamics
   APPLICATION_NAME   := peridynamics
@@ -261,8 +304,16 @@ endif
 ifeq ($(THERMAL_HYDRAULICS),yes)
   APPLICATION_DIR    := $(MOOSE_DIR)/modules/thermal_hydraulics
   APPLICATION_NAME   := thermal_hydraulics
-  DEPEND_MODULES     := navier_stokes fluid_properties heat_conduction rdg ray_tracing misc
+  DEPEND_MODULES     := navier_stokes fluid_properties heat_conduction rdg ray_tracing solid_properties misc
   SUFFIX             := th
+  include $(FRAMEWORK_DIR)/app.mk
+endif
+
+ifeq ($(SCALAR_TRANSPORT),yes)
+  APPLICATION_DIR    := $(MOOSE_DIR)/modules/scalar_transport
+  APPLICATION_NAME   := scalar_transport
+  DEPEND_MODULES     := chemical_reactions navier_stokes thermal_hydraulics fluid_properties heat_conduction rdg ray_tracing solid_properties misc
+  SUFFIX             := st
   include $(FRAMEWORK_DIR)/app.mk
 endif
 

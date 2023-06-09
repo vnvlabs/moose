@@ -31,15 +31,6 @@ InletFunction1Phase::InletFunction1Phase(const InputParameters & params)
 }
 
 void
-InletFunction1Phase::check() const
-{
-  FlowBoundary1Phase::check();
-
-  if (_flow_model_id != THM::FM_SINGLE_PHASE)
-    logModelNotImplementedError(_flow_model_id);
-}
-
-void
 InletFunction1Phase::addMooseObjects()
 {
   ExecFlagEnum execute_on(MooseUtils::getDefaultExecFlagEnum());
@@ -54,7 +45,7 @@ InletFunction1Phase::addMooseObjects()
     params.set<FunctionName>("p") = getParam<FunctionName>("p");
     params.set<UserObjectName>("fluid_properties") = _fp_name;
     params.set<ExecFlagEnum>("execute_on") = execute_on;
-    _sim.addUserObject(class_name, _boundary_uo_name, params);
+    getTHMProblem().addUserObject(class_name, _boundary_uo_name, params);
   }
 
   // BCs

@@ -36,7 +36,7 @@ The basic capabilities include:
 Get started running your own THM simulations by exploring the introductory tutorial.
 Use the modeling guide to explore how to piece your models together:
 
-- [Getting Started](getting_started.md) -- how to install the code.
+- [Getting Started](modules/thermal_hydraulics/getting_started.md) -- how to install the code.
 - Tutorials
 
   - [Basics](tutorials/basics/index.md) -- learn the basics.
@@ -51,6 +51,14 @@ Use the modeling guide to explore how to piece your models together:
 !row-end!
 
 ## Announcements and News
+
+#### April 20, 2022
+
+The [Thermal hydraulics module](modules/thermal_hydraulics/index.md) can now run with distributed memory parallelism (MPI).
+Note that [HeatTransferFromHeatStructure1Phase.md] currently requires a replicated mesh; see [issue](https://github.com/idaholab/moose/issues/20798).
+
+[Benchmarks](https://thm-benchmarks.readthedocs.io/en/latest/index.html) are available.
+
 
 #### December 7, 2021
 
@@ -83,4 +91,4 @@ Please use the [migration guide](howto/thm_ad_migration_guide.md) to update your
 
 ### Developed by class=center style=font-size:90%;margin-bottom:0.5em;font-weight:100
 
-!media media/inl_blue.png style=width:20%;display:block;margin-left:auto;margin-right:auto;
+!media large_media/framework/inl_blue.png style=width:20%;display:block;margin-left:auto;margin-right:auto;

@@ -9,7 +9,7 @@
   closures = simple_closures
 []
 
-[Modules/FluidProperties]
+[FluidProperties]
   [fp]
     type = StiffenedGasFluidProperties
     gamma = 2.35
@@ -40,7 +40,7 @@
 [Functions]
   [Ts_init]
     type = ParsedFunction
-    value = '2*sin(x*pi)+507'
+    expression = '2*sin(x*pi)+507'
   []
 []
 
@@ -68,6 +68,7 @@
     n_part_elems = 1
     materials = 'mat1'
     inner_radius = 0.01
+    offset_mesh_by_inner_radius = true
     widths = 0.1
     initial_T = Ts_init
   []
@@ -124,6 +125,9 @@
 
   l_tol = 1e-3
   l_max_its = 100
+
+  petsc_options_iname = '-pc_type'
+  petsc_options_value = ' lu'
 []
 
 [Outputs]

@@ -52,7 +52,10 @@ THM::stringToEnum(const std::string & s)
 InputParameters
 FlowChannelBase::validParams()
 {
-  InputParameters params = GeometricalFlowComponent::validParams();
+  InputParameters params = Component1D::validParams();
+  params += GravityInterface::validParams();
+
+  params.addRequiredParam<UserObjectName>("fp", "Fluid properties user object");
   params.addRequiredParam<FunctionName>(
       "A", "Area of the flow channel, can be a constant or a function");
   params.addParam<Real>("roughness", 0.0, "Roughness [m]");
@@ -68,16 +71,28 @@ FlowChannelBase::validParams()
   params.addParam<bool>("lump_mass_matrix", false, "Lump the mass matrix");
   params.addRequiredParam<std::string>("closures", "Closures type");
 
-  params.addPrivateParam<std::string>("component_type", "pipe");
+  params.setDocString(
+      "orientation",
+      "Direction of flow channel from start position to end position (no need to normalize). For "
+      "curved flow channels, it is the (tangent) direction at the start position.");
 
+  params.addPrivateParam<std::string>("component_type", "pipe");
   params.declareControllable("A f");
+  params.addParamNamesToGroup("lump_mass_matrix", "Numerical scheme");
 
   return params;
 }
 
 FlowChannelBase::FlowChannelBase(const InputParameters & params)
-  : GeometricalFlowComponent(params),
+  : Component1D(params),
+    GravityInterface(params),
+
     _flow_model(nullptr),
+    _fp_name(getParam<UserObjectName>("fp")),
+    _gravity_angle(MooseUtils::absoluteFuzzyEqual(_gravity_magnitude, 0.0)
+                       ? 0.0
+                       : std::acos(_dir * _gravity_vector / (_dir.norm() * _gravity_magnitude)) *
+                             180 / M_PI),
     _closures_name(getParam<std::string>("closures")),
     _pipe_pars_transferred(getParam<bool>("pipe_pars_transferred")),
     _roughness(getParam<Real>("roughness")),
@@ -115,7 +130,7 @@ FlowChannelBase::createAreaFunctionAndGetName()
 void
 FlowChannelBase::init()
 {
-  GeometricalFlowComponent::init();
+  Component1D::init();
 
   _area_function = createAreaFunctionAndGetName();
 
@@ -124,8 +139,8 @@ FlowChannelBase::init()
   {
     _flow_model->init();
 
-    if (_sim.hasClosures(_closures_name))
-      _closures = _sim.getClosures(_closures_name);
+    if (getTHMProblem().hasClosures(_closures_name))
+      _closures = getTHMProblem().getClosures(_closures_name);
     else
       _closures = buildClosures();
   }
@@ -137,8 +152,8 @@ FlowChannelBase::buildClosures()
   const std::string class_name =
       ThermalHydraulicsApp::getClosuresClassName(_closures_name, getFlowModelID());
   InputParameters params = _factory.getValidParams(class_name);
-  params.set<THMProblem *>("_thm_problem") = &_sim;
-  params.set<Logger *>("_logger") = &_sim.log();
+  params.set<THMProblem *>("_thm_problem") = &getTHMProblem();
+  params.set<Logger *>("_logger") = &getTHMProblem().log();
   return _factory.create<ClosuresBase>(
       class_name, genName(name(), "closure", _closures_name), params);
 }
@@ -146,7 +161,7 @@ FlowChannelBase::buildClosures()
 void
 FlowChannelBase::initSecondary()
 {
-  GeometricalFlowComponent::initSecondary();
+  Component1D::initSecondary();
 
   // Determine heat transfer mode based on connected heat transfer components;
   // if at least one heat transfer component of temperature component is
@@ -165,7 +180,7 @@ FlowChannelBase::initSecondary()
 void
 FlowChannelBase::check() const
 {
-  GeometricalFlowComponent::check();
+  Component1D::check();
 
   if (_closures)
     _closures->checkFlowChannel(*this);
@@ -180,115 +195,6 @@ FlowChannelBase::check() const
         logError("Heat sources for a flow channel must be all of temperature type or all of heat "
                  "flux type");
     }
-}
-
-void
-FlowChannelBase::buildMeshNodes()
-{
-  Point p(0, 0, 0);
-  for (unsigned int i = 0; i < _node_locations.size(); i++)
-  {
-    p(0) = _node_locations[i];
-    addNode(p);
-  }
-}
-
-void
-FlowChannelBase::buildMesh()
-{
-  buildMeshNodes();
-
-  MeshBase & the_mesh = _mesh.getMesh();
-  BoundaryInfo & boundary_info = the_mesh.get_boundary_info();
-
-  // create nodeset for all nodes for this component
-  _nodeset_id = _mesh.getNextBoundaryId();
-  _nodeset_name = name();
-  boundary_info.nodeset_name(_nodeset_id) = _nodeset_name;
-
-  // Check that the number of nodes is consistent with the number of nodes in case component
-  // developers screw up (typically in buildMeshNodes() call)
-  if (usingSecondOrderMesh())
-  {
-    if (_node_ids.size() != (2 * _n_elem + 1))
-      mooseError(name(),
-                 ": Inconsistent number of nodes and elements. You have ",
-                 _n_elem,
-                 " elements and ",
-                 _node_ids.size(),
-                 " nodes.");
-  }
-  else
-  {
-    if (_node_ids.size() != _n_elem + 1)
-      mooseError(name(),
-                 ": Inconsistent number of nodes and elements. You have ",
-                 _n_elem,
-                 " elements and ",
-                 _node_ids.size(),
-                 " nodes.");
-  }
-
-  for (auto & node_id : _node_ids)
-  {
-    const Node * nd = the_mesh.node_ptr(node_id);
-    boundary_info.add_node(nd, _nodeset_id);
-  }
-
-  // elems
-  BoundaryID bc_id_inlet = _mesh.getNextBoundaryId();
-  BoundaryID bc_id_outlet = _mesh.getNextBoundaryId();
-  for (unsigned int i = 0; i < _n_elem; i++)
-  {
-    Elem * elem = nullptr;
-    if (usingSecondOrderMesh())
-      elem = addElementEdge3(_node_ids[2 * i], _node_ids[2 * i + 2], _node_ids[2 * i + 1]);
-    else
-      elem = addElementEdge2(_node_ids[i], _node_ids[i + 1]);
-
-    // BCs
-    if (i == 0)
-    {
-      Point pt = _position;
-      _connections[FlowConnection::IN].push_back(
-          Connection(pt, elem->node_ptr(0), bc_id_inlet, -1));
-      boundary_info.add_side(elem, 0, bc_id_inlet);
-      _mesh.setBoundaryName(bc_id_inlet, genName(name(), "in"));
-    }
-    if (i == (_n_elem - 1))
-    {
-      Point pt = _position + _length * _dir;
-      _connections[FlowConnection::OUT].push_back(
-          Connection(pt, elem->node_ptr(1), bc_id_outlet, 1));
-      boundary_info.add_side(elem, 1, bc_id_outlet);
-      _mesh.setBoundaryName(bc_id_outlet, genName(name(), "out"));
-    }
-  }
-
-  if (_axial_region_names.size() > 0)
-  {
-    unsigned int k = 0;
-    for (unsigned int i = 0; i < _axial_region_names.size(); i++)
-    {
-      const std::string & region_name = _axial_region_names[i];
-      SubdomainID subdomain_id = _mesh.getNextSubdomainId();
-      setSubdomainInfo(subdomain_id, genName(name(), region_name));
-
-      for (unsigned int j = 0; j < _n_elems[i]; j++, k++)
-      {
-        dof_id_type elem_id = _elem_ids[k];
-        _mesh.elemPtr(elem_id)->subdomain_id() = subdomain_id;
-      }
-    }
-  }
-  else
-  {
-    SubdomainID subdomain_id = _mesh.getNextSubdomainId();
-    setSubdomainInfo(subdomain_id, name());
-
-    for (auto && id : _elem_ids)
-      _mesh.elemPtr(id)->subdomain_id() = subdomain_id;
-  }
 }
 
 void
@@ -308,7 +214,7 @@ FlowChannelBase::addVariables()
     params.set<VariableName>("variable") = FlowModel::HEAT_FLUX_PERIMETER;
     params.set<std::vector<SubdomainName>>("block") = getSubdomainNames();
     params.set<std::vector<VariableName>>("values") = _P_hf_names;
-    _sim.addSimInitialCondition(class_name, genName(name(), "P_hf_ic"), params);
+    getTHMProblem().addSimInitialCondition(class_name, genName(name(), "P_hf_ic"), params);
   }
 
   _flow_model->addInitialConditions();
@@ -324,7 +230,7 @@ FlowChannelBase::addCommonObjects()
     std::string class_name = "DirectionMaterial";
     InputParameters params = _factory.getValidParams(class_name);
     params.set<std::vector<SubdomainName>>("block") = getSubdomainNames();
-    _sim.addMaterial(class_name, genName(name(), "dir_mat"), params);
+    getTHMProblem().addMaterial(class_name, genName(name(), "dir_mat"), params);
   }
 
   if (!_pipe_pars_transferred)
@@ -338,18 +244,18 @@ FlowChannelBase::addCommonObjects()
       params.set<FunctionName>("function") = _area_function;
       params.set<ExecFlagEnum>("execute_on") = ts_execute_on;
       const std::string aux_kernel_name = genName(name(), "area_linear_aux");
-      _sim.addAuxKernel(class_name, aux_kernel_name, params);
+      getTHMProblem().addAuxKernel(class_name, aux_kernel_name, params);
       makeFunctionControllableIfConstant(_area_function, "Area");
     }
     {
-      const std::string class_name = "CopyValueAux";
+      const std::string class_name = "ProjectionAux";
       InputParameters params = _factory.getValidParams(class_name);
       params.set<AuxVariableName>("variable") = FlowModel::AREA;
       params.set<std::vector<SubdomainName>>("block") = getSubdomainNames();
-      params.set<std::vector<VariableName>>("source") = {FlowModel::AREA_LINEAR};
+      params.set<std::vector<VariableName>>("v") = {FlowModel::AREA_LINEAR};
       params.set<ExecFlagEnum>("execute_on") = ts_execute_on;
       const std::string aux_kernel_name = genName(name(), "area_aux");
-      _sim.addAuxKernel(class_name, aux_kernel_name, params);
+      getTHMProblem().addAuxKernel(class_name, aux_kernel_name, params);
       makeFunctionControllableIfConstant(_area_function, "Area");
     }
   }
@@ -372,7 +278,7 @@ FlowChannelBase::addMooseObjects()
     params.set<std::vector<SubdomainName>>("block") = getSubdomainNames();
     params.set<std::vector<VariableName>>("values") = _P_hf_names;
     params.set<ExecFlagEnum>("execute_on") = execute_on_initial_linear;
-    _sim.addAuxKernel(class_name, genName(name(), "P_hf_auxkernel"), params);
+    getTHMProblem().addAuxKernel(class_name, genName(name(), "P_hf_auxkernel"), params);
   }
 
   // weighted average wall heat flux aux kernel
@@ -386,7 +292,8 @@ FlowChannelBase::addMooseObjects()
       params.set<std::vector<SubdomainName>>("block") = getSubdomainNames();
       params.set<std::vector<MaterialPropertyName>>("values") = _q_wall_names;
       params.set<std::vector<VariableName>>("weights") = _P_hf_names;
-      _sim.addMaterial(class_name, genName(name(), FlowModel::HEAT_FLUX_WALL, "w_avg_mat"), params);
+      getTHMProblem().addMaterial(
+          class_name, genName(name(), FlowModel::HEAT_FLUX_WALL, "w_avg_mat"), params);
     }
     else if (_n_heat_transfer_connections == 0)
     {
@@ -395,7 +302,8 @@ FlowChannelBase::addMooseObjects()
       params.set<std::string>("property_name") = FlowModel::HEAT_FLUX_WALL;
       params.set<std::vector<SubdomainName>>("block") = getSubdomainNames();
       params.set<Real>("value") = 0;
-      _sim.addMaterial(class_name, genName(name(), FlowModel::HEAT_FLUX_WALL, "zero_mat"), params);
+      getTHMProblem().addMaterial(
+          class_name, genName(name(), FlowModel::HEAT_FLUX_WALL, "zero_mat"), params);
     }
   }
 
@@ -420,6 +328,7 @@ FlowChannelBase::getHeatTransferVariableNames()
 
     _P_hf_names.push_back(heat_transfer.getHeatedPerimeterName());
     _T_wall_names.push_back(heat_transfer.getWallTemperatureName());
+    _T_wall_mat_names.push_back(heat_transfer.getWallTemperatureMatName());
     _q_wall_names.push_back(heat_transfer.getWallHeatFluxName());
   }
 }
@@ -455,20 +364,4 @@ FlowChannelBase::getHeatTransferNames() const
   checkSetupStatus(INITIALIZED_PRIMARY);
 
   return _heat_transfer_names;
-}
-
-unsigned int
-FlowChannelBase::getNodesetID() const
-{
-  checkSetupStatus(MESH_PREPARED);
-
-  return _nodeset_id;
-}
-
-const BoundaryName &
-FlowChannelBase::getNodesetName() const
-{
-  checkSetupStatus(MESH_PREPARED);
-
-  return _nodeset_name;
 }

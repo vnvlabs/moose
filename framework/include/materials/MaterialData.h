@@ -120,15 +120,13 @@ public:
   template <typename T>
   bool haveADProperty(const std::string & prop_name) const;
 
-  template <typename T, bool is_ad, typename std::enable_if<is_ad, int>::type = 0>
+  template <typename T, bool is_ad>
   bool haveGenericProperty(const std::string & prop_name) const
   {
-    return haveADProperty<T>(prop_name);
-  }
-  template <typename T, bool is_ad, typename std::enable_if<!is_ad, int>::type = 0>
-  bool haveGenericProperty(const std::string & prop_name) const
-  {
-    return haveProperty<T>(prop_name);
+    if constexpr (is_ad)
+      return haveADProperty<T>(prop_name);
+    else
+      return haveProperty<T>(prop_name);
   }
 
   /**
@@ -137,15 +135,13 @@ public:
    * @param prop_name The name of the property
    * @return The property for the supplied type and name
    */
-  template <typename T, bool is_ad, typename std::enable_if<is_ad, int>::type = 0>
-  ADMaterialProperty<T> & getGenericProperty(const std::string & prop_name)
+  template <typename T, bool is_ad>
+  auto & getGenericProperty(const std::string & prop_name)
   {
-    return getADProperty<T>(prop_name);
-  }
-  template <typename T, bool is_ad, typename std::enable_if<!is_ad, int>::type = 0>
-  MaterialProperty<T> & getGenericProperty(const std::string & prop_name)
-  {
-    return getProperty<T>(prop_name);
+    if constexpr (is_ad)
+      return getADProperty<T>(prop_name);
+    else
+      return getProperty<T>(prop_name);
   }
   template <typename T>
   MaterialProperty<T> & getProperty(const std::string & prop_name);
@@ -405,7 +401,7 @@ MaterialData::getProperty(const std::string & name)
     if (ad_prop)
       mooseError("The requested regular material property " + name +
                  " is declared as an AD property. Either retrieve it as an AD property with "
-                 "getADMaterialProperty or declare it as a regular property wtih declareProperty");
+                 "getADMaterialProperty or declare it as a regular property with declareProperty");
     else
       mooseError("Material has no property named: " + name);
   }
@@ -428,7 +424,7 @@ MaterialData::getADProperty(const std::string & name)
     if (regular_prop)
       mooseError("The requested AD material property " + name +
                  " is declared as a regular material property. Either retrieve it as a regular "
-                 "material property with getMaterialProperty or declare it as an AD property wtih "
+                 "material property with getMaterialProperty or declare it as an AD property with "
                  "declareADProperty");
     else
       mooseError("Material has no property named: " + name);

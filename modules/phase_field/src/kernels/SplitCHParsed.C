@@ -19,7 +19,9 @@ SplitCHParsed::validParams()
       "Split formulation Cahn-Hilliard Kernel that uses a DerivativeMaterial Free Energy");
   params.addRequiredParam<MaterialPropertyName>(
       "f_name", "Base name of the free energy function F defined in a DerivativeParsedMaterial");
-  params.addCoupledVar("args", "Vector of additional arguments to F");
+  params.addCoupledVar("args", "Vector of additional variable arguments to F");
+  params.deprecateCoupledVar("args", "coupled_variables", "02/27/2024");
+
   return params;
 }
 

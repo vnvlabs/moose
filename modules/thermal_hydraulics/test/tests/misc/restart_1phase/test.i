@@ -4,7 +4,7 @@
   closures = simple_closures
 []
 
-[Modules/FluidProperties]
+[FluidProperties]
   [eos]
     type = StiffenedGasFluidProperties
     gamma = 2.35
@@ -33,7 +33,7 @@
 [Functions]
   [Ts_init]
     type = ParsedFunction
-    value = '2*sin(x*pi)+507'
+    expression = '2*sin(x*pi)+507'
   []
 []
 
@@ -156,6 +156,9 @@
   l_max_its = 100
 
   automatic_scaling = true
+
+  petsc_options_iname = '-pc_type'
+  petsc_options_value = ' lu'
 []
 
 [Outputs]

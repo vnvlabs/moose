@@ -92,6 +92,16 @@ public:
    */
   const std::set<MooseEnumItem> & items() const { return _items; }
 
+  /**
+   * Add an item documentation string
+   */
+  void addDocumentation(const std::string & name, const std::string & doc);
+
+  /**
+   * Get the map containing each item's documentation string
+   */
+  const std::map<MooseEnumItem, std::string> & getItemDocumentation() const;
+
   ///@{
   /**
    * Locate an item.
@@ -128,9 +138,9 @@ protected:
    * ExecFlagEnum to allow users to modify the available execute flags for their object.
    */
   void addEnumerationNames(const std::string & names);
-  void addEnumerationName(const std::string & raw_name);
-  void addEnumerationName(const std::string & name, const int & value);
-  void addEnumerationItem(const MooseEnumItem & item);
+  const MooseEnumItem & addEnumerationName(const std::string & raw_name);
+  const MooseEnumItem & addEnumerationName(const std::string & name, const int & value);
+  const MooseEnumItem & addEnumerationItem(const MooseEnumItem & item);
   ///@}
 
   /**
@@ -151,4 +161,7 @@ protected:
 
   /// Flag to enable enumeration items not previously defined
   bool _allow_out_of_range;
+
+  /// The map of items and their respective documentation strings
+  std::map<MooseEnumItem, std::string> _item_documentation;
 };

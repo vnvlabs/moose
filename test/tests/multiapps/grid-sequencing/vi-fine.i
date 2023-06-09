@@ -144,9 +144,8 @@ num_steps=2
 
 [Transfers]
   [./mesh_function_begin]
-    type = MultiAppMeshFunctionTransfer
-    direction = from_multiapp
-    multi_app = coarse
+    type = MultiAppShapeEvaluationTransfer
+    from_multi_app = coarse
     source_variable = u
     variable = u
     execute_on = timestep_begin

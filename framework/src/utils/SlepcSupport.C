@@ -115,6 +115,11 @@ getSlepcEigenProblemValidParams()
   params.addParam<unsigned int>(
       "extra_power_iterations", 0, "The number of extra free power iterations");
 
+  params.addParamNamesToGroup(
+      "eigen_problem_type which_eigen_pairs n_eigen_pairs n_basis_vectors eigen_tol eigen_max_its "
+      "free_power_iterations extra_power_iterations",
+      "Eigen Solver");
+
   return params;
 }
 
@@ -509,7 +514,13 @@ mooseEPSFormMatrices(EigenProblem & eigen_problem, EPS eps, Vec x, void * ctx)
   if (eigen_problem.constantMatrices() && eigen_problem.wereMatricesFormed())
     PetscFunctionReturn(0);
 
-  NonlinearEigenSystem & eigen_nl = eigen_problem.getNonlinearEigenSystem();
+  if (eigen_problem.onLinearSolver())
+    // We reach here during linear iteration when solve type is PJFNKMO.
+    // We will use the matrices assembled at the beginning of this Newton
+    // iteration for the following residual evaluation.
+    PetscFunctionReturn(0);
+
+  NonlinearEigenSystem & eigen_nl = eigen_problem.getCurrentNonlinearEigenSystem();
   SNES snes = eigen_nl.getSNES();
   // Rest ST state so that we can retrieve matrices
   ierr = EPSGetST(eps, &st);
@@ -540,7 +551,7 @@ void
 moosePetscSNESFormMatrixTag(SNES /*snes*/, Vec x, Mat mat, void * ctx, TagID tag)
 {
   EigenProblem * eigen_problem = static_cast<EigenProblem *>(ctx);
-  NonlinearSystemBase & nl = eigen_problem->getNonlinearSystemBase();
+  NonlinearSystemBase & nl = eigen_problem->currentNonlinearSystem();
   System & sys = nl.system();
 
   PetscVector<Number> X_global(x, sys.comm());
@@ -571,7 +582,7 @@ moosePetscSNESFormMatricesTags(
     SNES /*snes*/, Vec x, std::vector<Mat> & mats, void * ctx, const std::set<TagID> & tags)
 {
   EigenProblem * eigen_problem = static_cast<EigenProblem *>(ctx);
-  NonlinearSystemBase & nl = eigen_problem->getNonlinearSystemBase();
+  NonlinearSystemBase & nl = eigen_problem->currentNonlinearSystem();
   System & sys = nl.system();
 
   PetscVector<Number> X_global(x, sys.comm());
@@ -608,7 +619,7 @@ mooseSlepcEigenFormFunctionMFFD(void * ctx, Vec x, Vec r)
   PetscFunctionBegin;
 
   EigenProblem * eigen_problem = static_cast<EigenProblem *>(ctx);
-  NonlinearEigenSystem & eigen_nl = eigen_problem->getNonlinearEigenSystem();
+  NonlinearEigenSystem & eigen_nl = eigen_problem->getCurrentNonlinearEigenSystem();
   SNES snes = eigen_nl.getSNES();
 
   eigen_problem->onLinearSolver(true);
@@ -638,7 +649,7 @@ mooseSlepcEigenFormJacobianA(SNES snes, Vec x, Mat jac, Mat pc, void * ctx)
   PetscFunctionBegin;
 
   EigenProblem * eigen_problem = static_cast<EigenProblem *>(ctx);
-  NonlinearEigenSystem & eigen_nl = eigen_problem->getNonlinearEigenSystem();
+  NonlinearEigenSystem & eigen_nl = eigen_problem->getCurrentNonlinearEigenSystem();
 
   // If both jacobian and preconditioning are shell matrices,
   // and then assemble them and return
@@ -733,7 +744,7 @@ mooseSlepcEigenFormJacobianB(SNES snes, Vec x, Mat jac, Mat pc, void * ctx)
   PetscFunctionBegin;
 
   EigenProblem * eigen_problem = static_cast<EigenProblem *>(ctx);
-  NonlinearEigenSystem & eigen_nl = eigen_problem->getNonlinearEigenSystem();
+  NonlinearEigenSystem & eigen_nl = eigen_problem->getCurrentNonlinearEigenSystem();
 
   // If both jacobian and preconditioning are shell matrices,
   // and then assemble them and return
@@ -775,7 +786,7 @@ void
 moosePetscSNESFormFunction(SNES /*snes*/, Vec x, Vec r, void * ctx, TagID tag)
 {
   EigenProblem * eigen_problem = static_cast<EigenProblem *>(ctx);
-  NonlinearSystemBase & nl = eigen_problem->getNonlinearSystemBase();
+  NonlinearSystemBase & nl = eigen_problem->currentNonlinearSystem();
   System & sys = nl.system();
 
   PetscVector<Number> X_global(x, sys.comm()), R(r, sys.comm());
@@ -805,7 +816,7 @@ mooseSlepcEigenFormFunctionA(SNES snes, Vec x, Vec r, void * ctx)
   PetscFunctionBegin;
 
   EigenProblem * eigen_problem = static_cast<EigenProblem *>(ctx);
-  NonlinearEigenSystem & eigen_nl = eigen_problem->getNonlinearEigenSystem();
+  NonlinearEigenSystem & eigen_nl = eigen_problem->getCurrentNonlinearEigenSystem();
 
   if (eigen_problem->solverParams()._eigen_matrix_vector_mult &&
       (eigen_problem->onLinearSolver() || eigen_problem->constantMatrices()))
@@ -844,7 +855,7 @@ mooseSlepcEigenFormFunctionB(SNES snes, Vec x, Vec r, void * ctx)
   PetscFunctionBegin;
 
   EigenProblem * eigen_problem = static_cast<EigenProblem *>(ctx);
-  NonlinearEigenSystem & eigen_nl = eigen_problem->getNonlinearEigenSystem();
+  NonlinearEigenSystem & eigen_nl = eigen_problem->getCurrentNonlinearEigenSystem();
 
   if (eigen_problem->solverParams()._eigen_matrix_vector_mult &&
       (eigen_problem->onLinearSolver() || eigen_problem->constantMatrices()))
@@ -884,7 +895,7 @@ mooseSlepcEigenFormFunctionAB(SNES /*snes*/, Vec x, Vec Ax, Vec Bx, void * ctx)
   PetscFunctionBegin;
 
   EigenProblem * eigen_problem = static_cast<EigenProblem *>(ctx);
-  NonlinearEigenSystem & eigen_nl = eigen_problem->getNonlinearEigenSystem();
+  NonlinearEigenSystem & eigen_nl = eigen_problem->getCurrentNonlinearEigenSystem();
   System & sys = eigen_nl.system();
 
   if (eigen_problem->solverParams()._eigen_matrix_vector_mult &&
@@ -978,7 +989,7 @@ attachCallbacksToMat(EigenProblem & eigen_problem, Mat mat, bool eigen)
 void
 mooseMatMult(EigenProblem & eigen_problem, Vec x, Vec r, TagID tag)
 {
-  NonlinearSystemBase & nl = eigen_problem.getNonlinearSystemBase();
+  NonlinearSystemBase & nl = eigen_problem.currentNonlinearSystem();
   System & sys = nl.system();
 
   PetscVector<Number> X_global(x, sys.comm()), R(r, sys.comm());
@@ -1011,7 +1022,7 @@ mooseMatMult_Eigen(Mat mat, Vec x, Vec r)
     mooseError("No context is set for shell matrix ");
 
   EigenProblem * eigen_problem = static_cast<EigenProblem *>(ctx);
-  NonlinearEigenSystem & eigen_nl = eigen_problem->getNonlinearEigenSystem();
+  NonlinearEigenSystem & eigen_nl = eigen_problem->getCurrentNonlinearEigenSystem();
 
   mooseMatMult(*eigen_problem, x, r, eigen_nl.eigenVectorTag());
 
@@ -1032,7 +1043,7 @@ mooseMatMult_NonEigen(Mat mat, Vec x, Vec r)
     mooseError("No context is set for shell matrix ");
 
   EigenProblem * eigen_problem = static_cast<EigenProblem *>(ctx);
-  NonlinearEigenSystem & eigen_nl = eigen_problem->getNonlinearEigenSystem();
+  NonlinearEigenSystem & eigen_nl = eigen_problem->getCurrentNonlinearEigenSystem();
 
   mooseMatMult(*eigen_problem, x, r, eigen_nl.nonEigenVectorTag());
 
@@ -1122,7 +1133,7 @@ PCApply_MoosePC(PC pc, Vec x, Vec y)
   }
 
   EigenProblem * eigen_problem = static_cast<EigenProblem *>(ctx);
-  NonlinearEigenSystem & nl_eigen = eigen_problem->getNonlinearEigenSystem();
+  NonlinearEigenSystem & nl_eigen = eigen_problem->getCurrentNonlinearEigenSystem();
   auto preconditioner = nl_eigen.preconditioner();
 
   if (!preconditioner)
@@ -1158,7 +1169,7 @@ PCSetUp_MoosePC(PC pc)
     mooseError(" Can not find a context \n");
   }
   EigenProblem * eigen_problem = static_cast<EigenProblem *>(ctx);
-  NonlinearEigenSystem & nl_eigen = eigen_problem->getNonlinearEigenSystem();
+  NonlinearEigenSystem & nl_eigen = eigen_problem->getCurrentNonlinearEigenSystem();
   Preconditioner<Number> * preconditioner = nl_eigen.preconditioner();
 
   if (!preconditioner)

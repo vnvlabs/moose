@@ -37,7 +37,7 @@
 [Functions]
   [source_func]
     type = ParsedFunction
-    value = 'x + y^2'
+    expression = 'x + y^2'
   []
 []
 
@@ -45,8 +45,4 @@
   type = Transient
   solve_type = NEWTON
   num_steps = 1
-[]
-
-[Outputs]
-  exodus = true
 []

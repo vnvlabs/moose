@@ -67,7 +67,7 @@ offset = 0.01
 [Functions]
   [./horizontal_movement]
     type = ParsedFunction
-    value = t/10.0
+    expression = t/10.0
   [../]
 []
 
@@ -182,8 +182,4 @@ offset = 0.01
   nl_rel_tol = 1e-10
   nl_abs_tol = 1e-6
   nl_max_its = 100
-[]
-
-[Outputs]
-  exodus = true
 []

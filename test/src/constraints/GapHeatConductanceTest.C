@@ -11,6 +11,8 @@
 #include "Function.h"
 #include "Assembly.h"
 
+using namespace Moose;
+
 registerMooseObject("MooseTestApp", GapHeatConductanceTest);
 
 InputParameters
@@ -29,6 +31,10 @@ GapHeatConductanceTest::validParams()
       "secondary_mms_function", 0, "An mms function to apply to the secondary side");
   params.addParam<FunctionName>(
       "primary_mms_function", 0, "An mms function to apply to the primary side");
+  params.addParam<bool>("functor_evals_for_primal",
+                        false,
+                        "Whether to perform elem-point functor evaluations of the primal variables "
+                        "as opposed to indexing pre-evaluated quadrature point data");
   return params;
 }
 
@@ -36,25 +42,26 @@ GapHeatConductanceTest::GapHeatConductanceTest(const InputParameters & parameter
   : ADMortarConstraint(parameters),
     _secondary_gap_conductance(getADMaterialProperty<Real>("secondary_gap_conductance")),
     _primary_gap_conductance(getNeighborADMaterialProperty<Real>("primary_gap_conductance")),
-    _secondary_mms_function(getFunction<Real>("secondary_mms_function")),
-    _primary_mms_function(getFunctionByName<Real>(getParam<FunctionName>("primary_mms_function")))
+    _secondary_mms_function(getFunction("secondary_mms_function")),
+    _primary_mms_function(getFunctionByName(getParam<FunctionName>("primary_mms_function"))),
+    _functor_evals_for_primal(getParam<bool>("functor_evals_for_primal"))
 {
 }
 
 ADReal
-GapHeatConductanceTest::computeQpResidual(Moose::MortarType type)
+GapHeatConductanceTest::computeQpResidual(MortarType type)
 {
   switch (type)
   {
-    case Moose::MortarType::Secondary:
+    case MortarType::Secondary:
       return (_lambda[_qp] + _secondary_mms_function.value(_t, _phys_points_secondary[_qp])) *
              _test_secondary[_i][_qp];
 
-    case Moose::MortarType::Primary:
+    case MortarType::Primary:
       return (-_lambda[_qp] + _primary_mms_function.value(_t, _phys_points_primary[_qp])) *
              _test_primary[_i][_qp];
 
-    case Moose::MortarType::Lower:
+    case MortarType::Lower:
     {
       ADReal heat_transfer_coeff(0);
       auto gap = (_phys_points_secondary[_qp] - _phys_points_primary[_qp]).norm();
@@ -64,8 +71,19 @@ GapHeatConductanceTest::computeQpResidual(Moose::MortarType type)
       heat_transfer_coeff =
           (0.5 * (_secondary_gap_conductance[_qp] + _primary_gap_conductance[_qp])) / gap;
 
-      return _test[_i][_qp] *
-             (_lambda[_qp] - heat_transfer_coeff * (_u_secondary[_qp] - _u_primary[_qp]));
+      const auto u_secondary =
+          _functor_evals_for_primal
+              ? _secondary_var(
+                    ElemPointArg({_interior_secondary_elem, _phys_points_secondary[_qp], false}),
+                    Moose::currentState())
+              : _u_secondary[_qp];
+      const auto u_primary =
+          _functor_evals_for_primal
+              ? _primary_var(
+                    ElemPointArg({_interior_primary_elem, _phys_points_primary[_qp], false}),
+                    Moose::currentState())
+              : _u_primary[_qp];
+      return _test[_i][_qp] * (_lambda[_qp] - heat_transfer_coeff * (u_secondary - u_primary));
     }
 
     default:
@@ -74,31 +92,35 @@ GapHeatConductanceTest::computeQpResidual(Moose::MortarType type)
 }
 
 void
-GapHeatConductanceTest::computeJacobian(Moose::MortarType mortar_type)
+GapHeatConductanceTest::computeJacobian(MortarType mortar_type)
 {
   std::vector<DualReal> residuals;
   size_t test_space_size = 0;
-  typedef Moose::ConstraintJacobianType JType;
-  typedef Moose::MortarType MType;
+  typedef ConstraintJacobianType JType;
+  typedef MortarType MType;
   std::vector<JType> jacobian_types;
   std::vector<dof_id_type> dof_indices;
+  Real scaling_factor = 1;
 
   switch (mortar_type)
   {
     case MType::Secondary:
       dof_indices = _secondary_var.dofIndices();
       jacobian_types = {JType::SecondarySecondary, JType::SecondaryPrimary, JType::SecondaryLower};
+      scaling_factor = _secondary_var.scalingFactor();
       break;
 
     case MType::Primary:
       dof_indices = _primary_var.dofIndicesNeighbor();
       jacobian_types = {JType::PrimarySecondary, JType::PrimaryPrimary, JType::PrimaryLower};
+      scaling_factor = _primary_var.scalingFactor();
       break;
 
     case MType::Lower:
       if (_var)
         dof_indices = _var->dofIndicesLower();
       jacobian_types = {JType::LowerSecondary, JType::LowerPrimary, JType::LowerLower};
+      scaling_factor = _var->scalingFactor();
       break;
   }
   test_space_size = dof_indices.size();
@@ -108,89 +130,18 @@ GapHeatConductanceTest::computeJacobian(Moose::MortarType mortar_type)
     for (_i = 0; _i < test_space_size; _i++)
       residuals[_i] += _JxW_msm[_qp] * _coord[_qp] * computeQpResidual(mortar_type);
 
-#ifdef MOOSE_GLOBAL_AD_INDEXING
   // Trim interior node variable derivatives
   const auto & primary_ip_lowerd_map = amg().getPrimaryIpToLowerElementMap(
       *_lower_primary_elem, *_lower_primary_elem->interior_parent(), *_lower_secondary_elem);
   const auto & secondary_ip_lowerd_map =
       amg().getSecondaryIpToLowerElementMap(*_lower_secondary_elem);
-  const std::vector<const MooseVariable *> var_array = {&_secondary_var, &_primary_var};
+  const std::array<const MooseVariableField<Real> *, 2> secondary_side_var_array = {
+      &_secondary_var};
+  const std::array<const MooseVariableField<Real> *, 2> primary_side_var_array = {&_primary_var};
 
-  trimInteriorNodeDerivatives(secondary_ip_lowerd_map, var_array, residuals, true);
-  trimInteriorNodeDerivatives(primary_ip_lowerd_map, var_array, residuals, false);
-  _assembly.processUnconstrainedDerivatives(residuals, dof_indices, _matrix_tags);
-
-#else
-
-  auto local_functor = [&](const std::vector<ADReal> & input_residuals,
-                           const std::vector<dof_id_type> &,
-                           const std::set<TagID> &)
-  {
-    auto & ce = _assembly.couplingEntries();
-    for (const auto & it : ce)
-    {
-      MooseVariableFEBase & ivariable = *(it.first);
-      MooseVariableFEBase & jvariable = *(it.second);
-
-      unsigned int ivar = ivariable.number();
-      unsigned int jvar = jvariable.number();
-
-      switch (mortar_type)
-      {
-        case MType::Secondary:
-          if (ivar != _secondary_var.number())
-            continue;
-          break;
-
-        case MType::Primary:
-          if (ivar != _primary_var.number())
-            continue;
-          break;
-
-        case MType::Lower:
-          if (!_var || _var->number() != ivar)
-            continue;
-          break;
-      }
-
-      // Derivatives are offset by the variable number
-      std::vector<size_t> ad_offsets{
-          Moose::adOffset(jvar, _sys.getMaxVarNDofsPerElem(), Moose::ElementType::Element),
-          Moose::adOffset(jvar,
-                          _sys.getMaxVarNDofsPerElem(),
-                          Moose::ElementType::Neighbor,
-                          _sys.system().n_vars()),
-          Moose::adOffset(jvar,
-                          _sys.getMaxVarNDofsPerElem(),
-                          Moose::ElementType::Lower,
-                          _sys.system().n_vars())};
-      std::vector<size_t> shape_space_sizes{jvariable.dofIndices().size(),
-                                            jvariable.dofIndicesNeighbor().size(),
-                                            jvariable.dofIndicesLower().size()};
-
-      for (MooseIndex(3) type_index = 0; type_index < 3; ++type_index)
-      {
-        const auto jacobian_type = jacobian_types[type_index];
-        // There's no actual coupling between secondary and primary dofs
-        if ((jacobian_type == JType::SecondaryPrimary) ||
-            (jacobian_type == JType::PrimarySecondary))
-          continue;
-
-        prepareMatrixTagLower(_assembly, ivar, jvar, jacobian_type);
-        for (_i = 0; _i < test_space_size; _i++)
-          for (_j = 0; _j < shape_space_sizes[type_index]; _j++)
-          {
-#ifndef MOOSE_SPARSE_AD
-            mooseAssert(ad_offsets[type_index] + _j < MOOSE_AD_MAX_DOFS_PER_ELEM,
-                        "Out of bounds access in derivative vector.");
-#endif
-            _local_ke(_i, _j) += input_residuals[_i].derivatives()[ad_offsets[type_index] + _j];
-          }
-        accumulateTaggedLocalMatrix();
-      }
-    }
-  };
-
-  _assembly.processDerivatives(residuals, dof_indices, _matrix_tags, local_functor);
-#endif
+  if (_secondary_var.feType().family == LAGRANGE)
+    trimInteriorNodeDerivatives(secondary_ip_lowerd_map, secondary_side_var_array, residuals, true);
+  if (_primary_var.feType().family == LAGRANGE)
+    trimInteriorNodeDerivatives(primary_ip_lowerd_map, primary_side_var_array, residuals, false);
+  addResidualsAndJacobianWithoutConstraints(_assembly, residuals, dof_indices, scaling_factor);
 }

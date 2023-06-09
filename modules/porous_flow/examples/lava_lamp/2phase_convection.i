@@ -192,18 +192,16 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [co2sw]
-      type = CO2FluidProperties
-    []
-    [co2]
-      type = TabulatedFluidProperties
-      fp = co2sw
-    []
-    [brine]
-      type = BrineFluidProperties
-    []
+[FluidProperties]
+  [co2sw]
+    type = CO2FluidProperties
+  []
+  [co2]
+    type = TabulatedFluidProperties
+    fp = co2sw
+  []
+  [brine]
+    type = BrineFluidProperties
   []
 []
 
@@ -285,9 +283,9 @@
 [Functions]
   [flux]
     type = ParsedFunction
-    vals = 'delta_xco2 dt'
-    vars = 'dx dt'
-    value = 'dx/dt'
+    symbol_values = 'delta_xco2 dt'
+    symbol_names = 'dx dt'
+    expression = 'dx/dt'
   []
 []
 

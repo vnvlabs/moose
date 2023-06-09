@@ -43,7 +43,7 @@ To enforce the ordering of execution, users can use multi-level MultiApps or set
 If a `MultiApp` is set to be executed on timestep_begin or timestep_end, the formed loosely-coupled systems of fully-coupled
 equations can be solved with [Fixed Point iterations](syntax/Executioner/index.md).
 
-!listing multiapps/transient_multiapp/dt_from_master.i block=MultiApps
+!listing multiapps/transient_multiapp/dt_from_parent.i block=MultiApps
 
 ## Positions id=multiapp-positions
 
@@ -70,7 +70,7 @@ If this parameter is not provided, a single position (0,0,0) will be used.
 
 ## Mesh optimizations
 
-The [!param](/MultiApps/TransientMultiApp/clone_master_mesh) parameter allows for re-using the
+The [!param](/MultiApps/TransientMultiApp/clone_parent_mesh) parameter allows for re-using the
 main application mesh in the sub-app. This avoids repeating mesh creation operations. This does
 not automatically transfer the mesh modifications performed by [Adaptivity](syntax/Adaptivity/index.md)
 on either the main or sub-app, though it does transfer initial mesh modification work such as uniform
@@ -88,7 +88,7 @@ multiple sub-apps.  All sub-apps of a given `MultiApp` are run simultaneously in
 `MultiApps` will be executed one after another.
 
 
-## Dynamically Loading Multiapps
+## Dynamically Loading MultiApps
 
 If building with dynamic libraries (the default) other applications can be loaded without adding them
 to your Makefile and registering them. Simply set the proper `type` in your input file
@@ -111,7 +111,7 @@ When running a multiapp simulation you do not need to enable checkpoint output i
 The main app stores the restart data for all sub-apps in its file.
 When restarting or recovering, the main app restores the restart data of all sub-apps into MultiApp's *backups*
 (a data structure holding all the current state including solution vectors, stateful material properties,
-post-processors, restartable quantties declared in objects and etc. of the sub-apps), which are used by
+post-processors, restartable quantities declared in objects and etc. of the sub-apps), which are used by
 sub-apps to restart/recover the calculations in their initial setups.
 The same backups are also used by multiapps for saving/restoring the current state during fixed point iterations.
 

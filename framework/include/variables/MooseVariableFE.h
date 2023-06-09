@@ -21,7 +21,7 @@
 #include "libmesh/elem.h"
 #include "libmesh/quadrature.h"
 #include "libmesh/dense_vector.h"
-#include "libmesh/dense_vector.h"
+#include "libmesh/enum_fe_family.h"
 
 class TimeIntegrator;
 template <typename>
@@ -140,15 +140,9 @@ public:
    */
   bool computingCurl() const override final;
 
-  /**
-   * Get the variable name of a component in libMesh
-   */
-  std::string componentName(const unsigned int comp) const;
-
-  const std::set<SubdomainID> & activeSubdomains() const override;
-  bool activeOnSubdomain(SubdomainID subdomain) const override;
-
   bool isNodal() const override { return _element_data->isNodal(); }
+  bool hasDoFsOnNodes() const override { return _element_data->hasDoFsOnNodes(); }
+  FEContinuity getContinuity() const override { return _element_data->getContinuity(); };
   Moose::VarFieldType fieldType() const override;
   bool isArray() const override;
   bool isVector() const override;
@@ -243,7 +237,7 @@ public:
   const FieldVariablePhiSecond & secondPhiFaceNeighbor() const override final;
   const FieldVariablePhiCurl & curlPhiFaceNeighbor() const;
 
-  const FieldVariablePhiValue & phiLower() const { return _lower_data->phi(); }
+  virtual const FieldVariablePhiValue & phiLower() const override { return _lower_data->phi(); }
   const FieldVariablePhiGradient & gradPhiLower() const { return _lower_data->gradPhi(); }
 
   const ADTemplateVariableTestGradient<OutputShape> & adGradPhi() const
@@ -272,7 +266,7 @@ public:
   {
     return _element_data->vectorTagGradient(tag);
   }
-  const DoFValue & vectorTagDofValue(TagID tag) const
+  const DoFValue & vectorTagDofValue(TagID tag) const override
   {
     return _element_data->vectorTagDofValue(tag);
   }
@@ -573,6 +567,11 @@ public:
   const MooseArray<ADReal> & adDofValues() const override;
 
   /**
+   * Return the AD neignbor dof values
+   */
+  const MooseArray<ADReal> & adDofValuesNeighbor() const override;
+
+  /**
    * Compute and store incremental change in solution at QPs based on increment_vec
    */
   void computeIncrementAtQps(const NumericVector<Number> & increment_vec);
@@ -669,6 +668,8 @@ public:
 
   unsigned int oldestSolutionStateRequested() const override final;
 
+  void setActiveTags(const std::set<TagID> & vtags) override;
+
 protected:
   usingMooseVariableBaseMembers;
 
@@ -684,26 +685,16 @@ protected:
 private:
   using MooseVariableField<OutputType>::evaluate;
   using ElemArg = Moose::ElemArg;
-  using ElemFromFaceArg = Moose::ElemFromFaceArg;
   using ElemQpArg = Moose::ElemQpArg;
   using ElemSideQpArg = Moose::ElemSideQpArg;
   using FaceArg = Moose::FaceArg;
-  using SingleSidedFaceArg = Moose::SingleSidedFaceArg;
+  using StateArg = Moose::StateArg;
 
-  ValueType evaluate(const ElemArg &, unsigned int) const override final
+  ValueType evaluate(const ElemArg &, const StateArg &) const override final
   {
     mooseError("Elem functor overload not yet implemented for finite element variables");
   }
-  ValueType evaluate(const ElemFromFaceArg &, unsigned int) const override final
-  {
-    mooseError(
-        "Elem-and-face-info functor overload not yet implemented for finite element variables");
-  }
-  ValueType evaluate(const FaceArg &, unsigned int) const override final
-  {
-    mooseError("Face info functor overload not yet implemented for finite element variables");
-  }
-  ValueType evaluate(const SingleSidedFaceArg &, unsigned int) const override final
+  ValueType evaluate(const FaceArg &, const StateArg &) const override final
   {
     mooseError("Face info functor overload not yet implemented for finite element variables");
   }
@@ -717,8 +708,24 @@ MooseVariableFE<OutputType>::adDofValues() const
 }
 
 template <typename OutputType>
+inline const MooseArray<ADReal> &
+MooseVariableFE<OutputType>::adDofValuesNeighbor() const
+{
+  return _neighbor_data->adDofValues();
+}
+
+template <typename OutputType>
 inline const typename Moose::ADType<OutputType>::type &
 MooseVariableFE<OutputType>::adNodalValue() const
 {
   return _element_data->adNodalValue();
+}
+
+template <typename OutputType>
+void
+MooseVariableFE<OutputType>::setActiveTags(const std::set<TagID> & vtags)
+{
+  _element_data->setActiveTags(vtags);
+  _neighbor_data->setActiveTags(vtags);
+  _lower_data->setActiveTags(vtags);
 }

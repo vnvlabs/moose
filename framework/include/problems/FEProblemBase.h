@@ -70,6 +70,7 @@ class ElementUserObject;
 class InternalSideUserObject;
 class InterfaceUserObject;
 class GeneralUserObject;
+class Positions;
 class Function;
 class Distribution;
 class Sampler;
@@ -79,9 +80,9 @@ class LineSearch;
 class UserObject;
 class AutomaticMortarGeneration;
 class VectorPostprocessor;
-class MooseFunctionBase;
-template <typename>
-class FunctionTempl;
+class Function;
+class MooseAppCoordTransform;
+class MortarUserObject;
 
 // libMesh forward declarations
 namespace libMesh
@@ -149,6 +150,7 @@ public:
   virtual EquationSystems & es() override { return _eq; }
   virtual MooseMesh & mesh() override { return _mesh; }
   virtual const MooseMesh & mesh() const override { return _mesh; }
+  const MooseMesh & mesh(bool use_displaced) const override;
 
   void setCoordSystem(const std::vector<SubdomainName> & blocks, const MultiMooseEnum & coord_sys);
   void setAxisymmetricCoordAxis(const MooseEnum & rz_coord_axis);
@@ -165,18 +167,32 @@ public:
   /**
    * Set custom coupling matrix
    * @param cm coupling matrix to be set
+   * @param i which nonlinear system we are setting the coupling matrix for
    */
-  void setCouplingMatrix(std::unique_ptr<CouplingMatrix> cm);
+  void setCouplingMatrix(std::unique_ptr<CouplingMatrix> cm, unsigned int nl_sys = 0);
 
   // DEPRECATED METHOD
-  void setCouplingMatrix(CouplingMatrix * cm);
+  void setCouplingMatrix(CouplingMatrix * cm, unsigned int nl_sys = 0);
 
-  const CouplingMatrix * couplingMatrix() const override { return _cm.get(); }
+  const CouplingMatrix * couplingMatrix(unsigned int nl_sys = 0) const override;
 
   /// Set custom coupling matrix for variables requiring nonlocal contribution
   void setNonlocalCouplingMatrix();
 
-  bool areCoupled(unsigned int ivar, unsigned int jvar) const;
+  bool areCoupled(unsigned int ivar, unsigned int jvar, unsigned int nl_sys = 0) const;
+
+  /**
+   * Whether or not MOOSE will perform a user object/auxiliary kernel state check
+   */
+  bool hasUOAuxStateCheck() const { return _uo_aux_state_check; }
+
+  /**
+   * Return a flag to indicate whether we are executing user objects and auxliary kernels for state
+   * check
+   * Note: This function can return true only when hasUOAuxStateCheck() returns true, i.e. the check
+   *       has been activated by users through Problem/check_uo_aux_state input parameter.
+   */
+  bool checkingUOAuxState() const { return _checking_uo_aux_state; }
 
   /**
    * Whether to trust the user coupling matrix even if we want to do things like be paranoid and
@@ -186,9 +202,9 @@ public:
   void trustUserCouplingMatrix();
 
   std::vector<std::pair<MooseVariableFEBase *, MooseVariableFEBase *>> &
-  couplingEntries(THREAD_ID tid);
+  couplingEntries(THREAD_ID tid, unsigned int nl_sys = 0);
   std::vector<std::pair<MooseVariableFEBase *, MooseVariableFEBase *>> &
-  nonlocalCouplingEntries(THREAD_ID tid);
+  nonlocalCouplingEntries(THREAD_ID tid, unsigned int nl_sys = 0);
 
   /**
    * Check for convergence of the nonlinear solution
@@ -221,6 +237,24 @@ public:
                             const PetscInt max_funcs,
                             const Real initial_residual_before_preset_bcs,
                             const Real div_threshold);
+
+  /// Perform steps required before checking nonlinear convergence
+  virtual void nonlinearConvergenceSetup() {}
+
+  /**
+   * Check the relative convergence of the nonlinear solution
+   * @param fnorm          Norm of the residual vector
+   * @param the_residual   The residual to check
+   * @param rtol           Relative tolerance
+   * @param abstol         Absolute tolerance
+   * @return               Bool signifying convergence
+   */
+  virtual bool checkRelativeConvergence(const PetscInt it,
+                                        const Real fnorm,
+                                        const Real the_residual,
+                                        const Real rtol,
+                                        const Real abstol,
+                                        std::ostringstream & oss);
 
   virtual bool hasVariable(const std::string & var_name) const override;
   using SubProblem::getVariable;
@@ -327,16 +361,8 @@ public:
     return _uo_jacobian_moose_vars[tid];
   }
 
-  Assembly & assembly(THREAD_ID tid) override
-  {
-    mooseAssert(tid < _assembly.size(), "Assembly objects not initialized");
-    return *_assembly[tid];
-  }
-  const Assembly & assembly(THREAD_ID tid) const override
-  {
-    mooseAssert(tid < _assembly.size(), "Assembly objects not initialized");
-    return *_assembly[tid];
-  }
+  Assembly & assembly(THREAD_ID tid, unsigned int nl_sys_num = 0) override;
+  const Assembly & assembly(THREAD_ID tid, unsigned int nl_sys_num = 0) const override;
 
   /**
    * Returns a list of all the variables in the problem (both from the NL and Aux systems.
@@ -344,7 +370,9 @@ public:
   virtual std::vector<VariableName> getVariableNames();
 
   void initialSetup() override;
+  void checkDuplicatePostprocessorVariableNames();
   void timestepSetup() override;
+  void customSetup(const ExecFlagType & exec_type) override;
   void residualSetup() override;
   void jacobianSetup() override;
 
@@ -402,11 +430,12 @@ public:
   virtual void subdomainSetup(SubdomainID subdomain, THREAD_ID tid);
   virtual void neighborSubdomainSetup(SubdomainID subdomain, THREAD_ID tid);
 
-  virtual void newAssemblyArray(NonlinearSystemBase & nl);
-  virtual void initNullSpaceVectors(const InputParameters & parameters, NonlinearSystemBase & nl);
+  virtual void newAssemblyArray(std::vector<std::shared_ptr<NonlinearSystemBase>> & nl);
+  virtual void initNullSpaceVectors(const InputParameters & parameters,
+                                    std::vector<std::shared_ptr<NonlinearSystemBase>> & nl);
 
   virtual void init() override;
-  virtual void solve() override;
+  virtual void solve(unsigned int nl_sys_num = 0);
 
   ///@{
   /**
@@ -454,11 +483,11 @@ public:
    */
   virtual void checkExceptionAndStopSolve(bool print_message = true);
 
-  virtual bool converged() override;
-  virtual unsigned int nNonlinearIterations() const override;
-  virtual unsigned int nLinearIterations() const override;
-  virtual Real finalNonlinearResidual() const override;
-  virtual bool computingInitialResidual() const override;
+  virtual bool nlConverged(unsigned int nl_sys_num) override;
+  virtual unsigned int nNonlinearIterations(unsigned int nl_sys_num = 0) const override;
+  virtual unsigned int nLinearIterations(unsigned int nl_sys_num = 0) const override;
+  virtual Real finalNonlinearResidual(unsigned int nl_sys_num = 0) const override;
+  virtual bool computingInitialResidual(unsigned int nl_sys_num = 0) const override;
 
   /**
    * Return solver type as a human readable string
@@ -557,11 +586,7 @@ public:
   virtual void
   addFunction(const std::string & type, const std::string & name, InputParameters & parameters);
   virtual bool hasFunction(const std::string & name, THREAD_ID tid = 0);
-  template <typename T>
-  bool hasFunction(const std::string & name, THREAD_ID tid = 0) const;
   virtual Function & getFunction(const std::string & name, THREAD_ID tid = 0);
-  template <typename T>
-  FunctionTempl<T> & getFunction(const std::string & name, THREAD_ID tid = 0);
 
   /**
    * add a MOOSE line search
@@ -596,16 +621,19 @@ public:
   virtual Sampler & getSampler(const std::string & name, THREAD_ID tid = 0);
 
   // NL /////
-  NonlinearSystemBase & getNonlinearSystemBase() { return *_nl; }
-  const NonlinearSystemBase & getNonlinearSystemBase() const { return *_nl; }
+  NonlinearSystemBase & getNonlinearSystemBase(unsigned int sys_num = 0);
+  const NonlinearSystemBase & getNonlinearSystemBase(unsigned int sys_num = 0) const;
+  void setCurrentNonlinearSystem(unsigned int nl_sys_num);
+  NonlinearSystemBase & currentNonlinearSystem();
+  const NonlinearSystemBase & currentNonlinearSystem() const;
 
-  virtual const SystemBase & systemBaseNonlinear() const override;
-  virtual SystemBase & systemBaseNonlinear() override;
+  virtual const SystemBase & systemBaseNonlinear(unsigned int sys_num = 0) const override;
+  virtual SystemBase & systemBaseNonlinear(unsigned int sys_num = 0) override;
 
   virtual const SystemBase & systemBaseAuxiliary() const override;
   virtual SystemBase & systemBaseAuxiliary() override;
 
-  virtual NonlinearSystem & getNonlinearSystem();
+  virtual NonlinearSystem & getNonlinearSystem(unsigned int sys_num = 0);
 
   /**
    * Canonical method for adding a non-linear variable
@@ -615,20 +643,6 @@ public:
    */
   virtual void
   addVariable(const std::string & var_type, const std::string & var_name, InputParameters & params);
-
-  virtual void addVariable(const std::string & var_name,
-                           const FEType & type,
-                           Real scale_factor,
-                           const std::set<SubdomainID> * const active_subdomains = nullptr);
-  virtual void addArrayVariable(const std::string & var_name,
-                                const FEType & type,
-                                unsigned int components,
-                                const std::vector<Real> & scale_factor,
-                                const std::set<SubdomainID> * const active_subdomains = nullptr);
-  virtual void addScalarVariable(const std::string & var_name,
-                                 Order order,
-                                 Real scale_factor = 1.,
-                                 const std::set<SubdomainID> * const active_subdomains = nullptr);
 
   virtual void addKernel(const std::string & kernel_name,
                          const std::string & name,
@@ -923,6 +937,13 @@ public:
   const UserObject & getUserObjectBase(const std::string & name, const THREAD_ID tid = 0) const;
 
   /**
+   * Get the Positions object by its name
+   * @param name The name of the Positions object being retrieved
+   * @return Const reference to the Positions object
+   */
+  const Positions & getPositionsObject(const std::string & name) const;
+
+  /**
    * Check if there if a user object of given name
    * @param name The name of the user object being checked for
    * @return true if the user object exists, false otherwise
@@ -1135,24 +1156,6 @@ public:
    */
   void execTransfers(ExecFlagType type);
 
-  /// Evaluates transient residual G in canonical semidiscrete form G(t,U,Udot,Udotdot) = F(t,U)
-  void computeTransientImplicitResidual(Real time,
-                                        const NumericVector<Number> & u,
-                                        const NumericVector<Number> & udot,
-                                        const NumericVector<Number> & udotdot,
-                                        NumericVector<Number> & residual);
-
-  /// Evaluates transient Jacobian J_a = dG/dU + a*dG/dUdot from canonical semidiscrete form G(t,U,Udot) = F(t,U)
-  void computeTransientImplicitJacobian(Real time,
-                                        const NumericVector<Number> & u,
-                                        const NumericVector<Number> & udot,
-                                        const NumericVector<Number> & udotdot,
-                                        Real duDotDu_shift,
-                                        Real duDotDotDu_shift,
-                                        SparseMatrix<Number> & jacobian);
-
-  ////
-
   /**
    * Computes the residual using whatever is sitting in the current solution vector then returns the
    * L2 norm.
@@ -1179,7 +1182,16 @@ public:
    * Form a residual with default tags (nontime, time, residual).
    */
   virtual void computeResidual(const NumericVector<Number> & soln,
-                               NumericVector<Number> & residual);
+                               NumericVector<Number> & residual,
+                               unsigned int nl_sys_num = 0);
+
+  /**
+   * Form a residual and Jacobian with default tags
+   */
+  void computeResidualAndJacobian(const NumericVector<Number> & soln,
+                                  NumericVector<Number> & residual,
+                                  SparseMatrix<Number> & jacobian);
+
   /**
    * Form a residual vector for a given tag
    */
@@ -1214,7 +1226,9 @@ public:
   /**
    * Form a Jacobian matrix with the default tag (system).
    */
-  virtual void computeJacobian(const NumericVector<Number> & soln, SparseMatrix<Number> & jacobian);
+  virtual void computeJacobian(const NumericVector<Number> & soln,
+                               SparseMatrix<Number> & jacobian,
+                               unsigned int nl_sys_num = 0);
 
   /**
    * Form a Jacobian matrix for a given tag.
@@ -1243,7 +1257,8 @@ public:
    *
    * @param blocks The blocks to fill in (JacobianBlock is defined in ComputeJacobianBlocksThread)
    */
-  virtual void computeJacobianBlocks(std::vector<JacobianBlock *> & blocks);
+  virtual void computeJacobianBlocks(std::vector<JacobianBlock *> & blocks,
+                                     unsigned int nl_sys_num = 0);
 
   /**
    * Really not a good idea to use this.
@@ -1332,12 +1347,6 @@ public:
   virtual void addJacobianNeighbor(THREAD_ID tid) override;
   virtual void addJacobianNeighborLowerD(THREAD_ID tid) override;
   virtual void addJacobianLowerD(THREAD_ID tid) override;
-  virtual void addJacobianBlock(SparseMatrix<Number> & jacobian,
-                                unsigned int ivar,
-                                unsigned int jvar,
-                                const DofMap & dof_map,
-                                std::vector<dof_id_type> & dof_indices,
-                                THREAD_ID tid) override;
   virtual void addJacobianBlockTags(SparseMatrix<Number> & jacobian,
                                     unsigned int ivar,
                                     unsigned int jvar,
@@ -1351,6 +1360,7 @@ public:
                                    const DofMap & dof_map,
                                    std::vector<dof_id_type> & dof_indices,
                                    std::vector<dof_id_type> & neighbor_dof_indices,
+                                   const std::set<TagID> & tags,
                                    THREAD_ID tid) override;
   virtual void addJacobianScalar(THREAD_ID tid = 0);
   virtual void addJacobianOffDiagScalar(unsigned int ivar, THREAD_ID tid = 0);
@@ -1358,10 +1368,6 @@ public:
   virtual void cacheJacobian(THREAD_ID tid) override;
   virtual void cacheJacobianNeighbor(THREAD_ID tid) override;
   virtual void addCachedJacobian(THREAD_ID tid) override;
-  /**
-   * Deprecated method. Use addCachedJacobian
-   */
-  virtual void addCachedJacobianContributions(THREAD_ID tid) override;
 
   virtual void prepareShapes(unsigned int var, THREAD_ID tid) override;
   virtual void prepareFaceShapes(unsigned int var, THREAD_ID tid) override;
@@ -1385,12 +1391,24 @@ public:
       bool on_displaced,
       bool periodic,
       const bool debug,
-      const bool correct_edge_dropping);
+      const bool correct_edge_dropping,
+      const Real minimum_projection_angle);
 
+  /**
+   * Return the undisplaced or displaced mortar generation object associated with the provided
+   * boundaries and subdomains
+   */
+  ///@{
   const AutomaticMortarGeneration &
   getMortarInterface(const std::pair<BoundaryID, BoundaryID> & primary_secondary_boundary_pair,
                      const std::pair<SubdomainID, SubdomainID> & primary_secondary_subdomain_pair,
                      bool on_displaced) const;
+
+  AutomaticMortarGeneration &
+  getMortarInterface(const std::pair<BoundaryID, BoundaryID> & primary_secondary_boundary_pair,
+                     const std::pair<SubdomainID, SubdomainID> & primary_secondary_subdomain_pair,
+                     bool on_displaced);
+  ///@}
 
   const std::unordered_map<std::pair<BoundaryID, BoundaryID>, AutomaticMortarGeneration> &
   getMortarInterfaces(bool on_displaced) const;
@@ -1405,11 +1423,11 @@ public:
    */
   void setRestartFile(const std::string & file_name);
 
-  ///@{
   /**
    * Return a reference to the material property storage
    * @return A const reference to the material property storage
    */
+  ///@{
   const MaterialPropertyStorage & getMaterialPropertyStorage() { return _material_props; }
   const MaterialPropertyStorage & getBndMaterialPropertyStorage() { return _bnd_material_props; }
   const MaterialPropertyStorage & getNeighborMaterialPropertyStorage()
@@ -1418,10 +1436,10 @@ public:
   }
   ///@}
 
-  ///@{
   /**
    * Return indicator/marker storage.
    */
+  ///@{
   const MooseObjectWarehouse<Indicator> & getIndicatorWarehouse() { return _indicators; }
   const MooseObjectWarehouse<InternalSideIndicator> & getInternalSideIndicatorWarehouse()
   {
@@ -1507,8 +1525,6 @@ public:
    */
   virtual void checkProblemIntegrity();
 
-  void serializeSolution();
-
   void registerRandomInterface(RandomInterface & random_interface, const std::string & name);
 
   /**
@@ -1535,6 +1551,11 @@ public:
    * Toggle parallel barrier messaging (defaults to on).
    */
   void setParallelBarrierMessaging(bool flag) { _parallel_barrier_messaging = flag; }
+
+  /**
+   * Whether or not to use verbose printing for MultiApps.
+   */
+  bool verboseMultiApps() const { return _verbose_multiapps; }
 
   /**
    * Calls parentOutputPositionChanged() on all sub apps.
@@ -1618,6 +1639,16 @@ public:
   {
     _error_on_jacobian_nonzero_reallocation = state;
   }
+
+  /**
+   * Whether or not the invalid solutions are allowed
+   */
+  bool allowInvalidSolution() const { return _allow_invalid_solution; }
+
+  /**
+   * Whether or not the solution invalid warnings are printed out immediately
+   */
+  bool immediatelyPrintInvalidSolution() const { return _immediately_print_invalid_solution; }
 
   bool ignoreZerosInJacobian() const { return _ignore_zeros_in_jacobian; }
 
@@ -1908,7 +1939,16 @@ public:
                                      const std::vector<Real> * const weights = nullptr,
                                      THREAD_ID tid = 0) override;
 
+  /**
+   * @return whether to perform a boundary condition integrity check for finite volume
+   */
   bool fvBCsIntegrityCheck() const { return _fv_bcs_integrity_check; }
+
+  /**
+   * @param fv_bcs_integrity_check Whether to perform a boundary condition integrity check for
+   * finite volume
+   */
+  void fvBCsIntegrityCheck(bool fv_bcs_integrity_check);
 
   /**
    * Get the materials and variables potentially needed for FV
@@ -1973,7 +2013,85 @@ public:
     _computing_scaling_residual = computing_scaling_residual;
   }
 
+  /**
+   * @return whether we are currently computing a residual for automatic scaling purposes
+   */
   bool computingScalingResidual() const override final { return _computing_scaling_residual; }
+
+  /**
+   * @return the coordinate transformation object that describes how to transform this problem's
+   * coordinate system into the canonical/reference coordinate system
+   */
+  MooseAppCoordTransform & coordTransform();
+
+  std::size_t numNonlinearSystems() const override { return _num_nl_sys; }
+
+  /**
+   * reinitialize the finite volume assembly data for the provided face and thread
+   */
+  void reinitFVFace(THREAD_ID tid, const FaceInfo & fi);
+
+  unsigned int currentNlSysNum() const override;
+
+  /**
+   * @return the nonlinear system number corresponding to the provided \p nl_sys_name
+   */
+  unsigned int nlSysNum(const NonlinearSystemName & nl_sys_name) const;
+
+  /**
+   * Whether it will skip further residual evaluations and fail the next nonlinear convergence check
+   */
+  bool getFailNextNonlinearConvergenceCheck() const
+  {
+    return _fail_next_nonlinear_convergence_check;
+  }
+
+  /**
+   * Skip further residual evaluations and fail the next nonlinear convergence check
+   */
+  void setFailNextNonlinearConvergenceCheck() { _fail_next_nonlinear_convergence_check = true; }
+
+  /*
+   * Set the status of loop order of execution printing
+   * @param print_exec set of execution flags to print on
+   */
+  void setExecutionPrinting(const ExecFlagEnum & print_exec) { _print_execution_on = print_exec; };
+
+  /**
+   * Check whether the problem should output execution orders at this time
+   */
+  bool shouldPrintExecution(const THREAD_ID tid) const;
+  /**
+   * Call \p reinit on mortar user objects with matching primary boundary ID, secondary boundary ID,
+   * and displacement characteristics
+   */
+  void reinitMortarUserObjects(BoundaryID primary_boundary_id,
+                               BoundaryID secondary_boundary_id,
+                               bool displaced);
+
+  virtual const std::vector<VectorTag> & currentResidualVectorTags() const override;
+
+  /**
+   * Class that is used as a parameter to set/clearCurrentResidualVectorTags that allows only
+   * blessed classes to call said methods
+   */
+  class CurrentResidualVectorTagsKey
+  {
+    friend class CrankNicolson;
+    friend class FEProblemBase;
+    CurrentResidualVectorTagsKey() {}
+    CurrentResidualVectorTagsKey(const CurrentResidualVectorTagsKey &) {}
+  };
+
+  /**
+   * Set the current residual vector tag data structure based on the passed in tag IDs
+   */
+  void setCurrentResidualVectorTags(const std::set<TagID> & vector_tags);
+
+  /**
+   * Clear the current residual vector tag data structure
+   */
+  void clearCurrentResidualVectorTags();
 
 protected:
   /// Create extra tagged vectors and matrices
@@ -2010,19 +2128,39 @@ protected:
   /// the absolute non linear divergence tolerance
   Real _nl_abs_div_tol = -1;
 
-  std::shared_ptr<NonlinearSystemBase> _nl;
+  /// The nonlinear system names
+  const std::vector<NonlinearSystemName> _nl_sys_names;
+
+  /// The number of nonlinear systems
+  const std::size_t _num_nl_sys;
+
+  /// The nonlinear systems
+  std::vector<std::shared_ptr<NonlinearSystemBase>> _nl;
+
+  /// Map from nonlinear system name to number
+  std::map<NonlinearSystemName, unsigned int> _nl_sys_name_to_num;
+
+  /// Map from nonlinear variable name to nonlinear system number
+  std::map<NonlinearVariableName, unsigned int> _nl_var_to_sys_num;
+
+  /// The current nonlinear system that we are solving
+  NonlinearSystemBase * _current_nl_sys;
+
+  /// The auxiliary system
   std::shared_ptr<AuxiliarySystem> _aux;
 
-  Moose::CouplingType _coupling;       ///< Type of variable coupling
-  std::unique_ptr<CouplingMatrix> _cm; ///< Coupling matrix for variables.
+  Moose::CouplingType _coupling;                    ///< Type of variable coupling
+  std::vector<std::unique_ptr<CouplingMatrix>> _cm; ///< Coupling matrix for variables.
 
-  // Dimension of the subspace spanned by the vectors with a given prefix
+  /// Dimension of the subspace spanned by the vectors with a given prefix
   std::map<std::string, unsigned int> _subspace_dim;
 
-  std::vector<std::unique_ptr<Assembly>> _assembly;
+  /// The Assembly objects. The first index corresponds to the thread ID and the second index
+  /// corresponds to the nonlinear system number
+  std::vector<std::vector<std::unique_ptr<Assembly>>> _assembly;
 
   /// functions
-  MooseObjectWarehouse<MooseFunctionBase> _functions;
+  MooseObjectWarehouse<Function> _functions;
 
   /// nonlocal kernels
   MooseObjectWarehouse<KernelBase> _nonlocal_kernels;
@@ -2083,6 +2221,9 @@ protected:
   /// Transfers executed just after MultiApps to transfer data from them
   ExecuteMooseObjectWarehouse<Transfer> _from_multi_app_transfers;
 
+  /// Transfers executed just before MultiApps to transfer data between them
+  ExecuteMooseObjectWarehouse<Transfer> _between_multi_app_transfers;
+
   /// A map of objects that consume random numbers
   std::map<std::string, std::unique_ptr<RandomData>> _random_data_objects;
 
@@ -2132,8 +2273,10 @@ protected:
 
   /**
    * Call when it is possible that the needs for ghosted elements has changed.
+   * @param mortar_changed Whether an update of mortar data has been requested since the last
+   * EquationSystems (re)initialization
    */
-  void reinitBecauseOfGhostingOrNewGeomObjects();
+  void reinitBecauseOfGhostingOrNewGeomObjects(bool mortar_changed = false);
 
   /**
    * Helper for setting the "_subproblem" and "_sys" parameters in addObject() and
@@ -2141,7 +2284,7 @@ protected:
    *
    * This is needed due to header includes/forward declaration issues
    */
-  void addObjectParamsHelper(InputParameters & params);
+  void addObjectParamsHelper(InputParameters & params, const std::string & object_name);
 
 #ifdef LIBMESH_ENABLE_AMR
   Adaptivity _adaptivity;
@@ -2208,14 +2351,25 @@ protected:
   /// Determines whether a check to verify an active kernel on every subdomain
   bool _kernel_coverage_check;
 
+  /// whether to perform checking of boundary restricted nodal object variable dependencies,
+  /// e.g. whether the variable dependencies are defined on the selected boundaries
+  const bool _boundary_restricted_node_integrity_check;
+
+  /// whether to perform checking of boundary restricted elemental object variable dependencies,
+  /// e.g. whether the variable dependencies are defined on the selected boundaries
+  const bool _boundary_restricted_elem_integrity_check;
+
   /// Determines whether a check to verify an active material on every subdomain
   bool _material_coverage_check;
 
   /// Whether to check overlapping Dirichlet and Flux BCs and/or multiple DirichletBCs per sideset
-  const bool _fv_bcs_integrity_check;
+  bool _fv_bcs_integrity_check;
 
   /// Determines whether a check to verify material dependencies on every subdomain
   const bool _material_dependency_check;
+
+  /// Whether or not checking the state of uo/aux evaluation
+  const bool _uo_aux_state_check;
 
   /// Maximum number of quadrature points used in the problem
   unsigned int _max_qps;
@@ -2234,6 +2388,9 @@ protected:
 
   /// Whether or not information about how many transfers have completed is printed
   bool _parallel_barrier_messaging;
+
+  /// Whether or not to be verbose with multiapps
+  const bool _verbose_multiapps;
 
   /// The error message to go with an exception
   std::string _exception_message;
@@ -2264,6 +2421,43 @@ protected:
   bool _using_ad_mat_props;
 
 private:
+  /**
+   * Helper for getting mortar objects corresponding to primary boundary ID, secondary boundary ID,
+   * and displaced parameters, given some initial set
+   */
+  std::vector<MortarUserObject *>
+  getMortarUserObjects(BoundaryID primary_boundary_id,
+                       BoundaryID secondary_boundary_id,
+                       bool displaced,
+                       const std::vector<MortarUserObject *> & mortar_uo_superset);
+
+  /**
+   * Helper for getting mortar objects corresponding to primary boundary ID, secondary boundary ID,
+   * and displaced parameters from the entire active mortar user object set
+   */
+  std::vector<MortarUserObject *> getMortarUserObjects(BoundaryID primary_boundary_id,
+                                                       BoundaryID secondary_boundary_id,
+                                                       bool displaced);
+
+  /**
+   * Determine what nonlinear system the provided variable name lies in
+   * @param var_name The name of the variable we are doing nonlinear system lookups for
+   * @param error_if_not_found Whether to error if the variable name isn't found in any of the
+   * nonlinear systems
+   * @return A pair in which the first member indicates whether the variable was found in the
+   * nonlinear systems and the second member indicates the nonlinear system number in which the
+   * variable was found (or an invalid unsigned integer if not found)
+   */
+  std::pair<bool, unsigned int>
+  determineNonlinearSystem(const std::string & var_name,
+                           bool error_if_not_found = false) const override;
+
+  /*
+   * Test if stateful property redistribution is expected to be
+   * necessary, and set it up if so.
+   */
+  void addAnyRedistributers();
+
   void updateMaxQps();
 
   void joinAndFinalize(TheWarehouse::Query query, bool isgen = false);
@@ -2273,7 +2467,9 @@ private:
   const bool _force_restart;
   const bool _skip_additional_restart_data;
   const bool _skip_nl_system_check;
-  bool _fail_next_linear_convergence_check;
+  bool _fail_next_nonlinear_convergence_check;
+  const bool & _allow_invalid_solution;
+  const bool & _immediately_print_invalid_solution;
 
   /// At or beyond initialSteup stage
   bool _started_initial_setup;
@@ -2307,10 +2503,6 @@ private:
   /// Number of steps in a grid sequence
   unsigned int _num_grid_steps;
 
-  /// MooseEnum describing how to obtain reference points for displaced mesh dgkernels and/or
-  /// interface kernels. Options are invert_elem_phys, use_undisplaced_ref, and the default unset.
-  MooseEnum _displaced_neighbor_ref_pts;
-
   /// Whether to trust the user coupling matrix no matter what. See
   /// https://github.com/idaholab/moose/issues/16395 for detailed background
   bool _trust_user_coupling_matrix = false;
@@ -2320,6 +2512,17 @@ private:
 
   /// Flag used to indicate whether we are computing the scaling Residual
   bool _computing_scaling_residual = false;
+
+  /// Flag used to indicate whether we are doing the uo/aux state check in execute
+  bool _checking_uo_aux_state = false;
+
+  /// When to print the execution of loops
+  ExecFlagEnum _print_execution_on;
+
+  /// A data member to store the residual vector tag(s) passed into \p computeResidualTag(s). This
+  /// data member will be used when APIs like \p cacheResidual, \p addCachedResiduals, etc. are
+  /// called
+  std::vector<VectorTag> _current_residual_vector_tags;
 };
 
 using FVProblemBase = FEProblemBase;
@@ -2381,7 +2584,7 @@ FEProblemBase::addObject(const std::string & type,
                          const bool threaded)
 {
   // Add the _subproblem and _sys parameters depending on use_displaced_mesh
-  addObjectParamsHelper(parameters);
+  addObjectParamsHelper(parameters, name);
 
   const auto n_threads = threaded ? libMesh::n_threads() : 1;
   std::vector<std::shared_ptr<T>> objects(n_threads);
@@ -2395,5 +2598,90 @@ FEProblemBase::addObject(const std::string & type,
   return objects;
 }
 
-template <>
-FunctionTempl<Real> & FEProblemBase::getFunction<Real>(const std::string & name, THREAD_ID tid);
+inline NonlinearSystemBase &
+FEProblemBase::getNonlinearSystemBase(const unsigned int sys_num)
+{
+  mooseAssert(sys_num < _nl.size(), "System number greater than the number of nonlinear systems");
+  return *_nl[sys_num];
+}
+
+inline const NonlinearSystemBase &
+FEProblemBase::getNonlinearSystemBase(const unsigned int sys_num) const
+{
+  mooseAssert(sys_num < _nl.size(), "System number greater than the number of nonlinear systems");
+  return *_nl[sys_num];
+}
+
+inline NonlinearSystemBase &
+FEProblemBase::currentNonlinearSystem()
+{
+  mooseAssert(_current_nl_sys, "The nonlinear system is not currently set");
+  return *_current_nl_sys;
+}
+
+inline const NonlinearSystemBase &
+FEProblemBase::currentNonlinearSystem() const
+{
+  mooseAssert(_current_nl_sys, "The nonlinear system is not currently set");
+  return *_current_nl_sys;
+}
+
+inline Assembly &
+FEProblemBase::assembly(const THREAD_ID tid, const unsigned int nl_sys_num)
+{
+  mooseAssert(tid < _assembly.size(), "Assembly objects not initialized");
+  mooseAssert(nl_sys_num < _assembly[tid].size(),
+              "Nonlinear system number larger than the assembly container size");
+  return *_assembly[tid][nl_sys_num];
+}
+
+inline const Assembly &
+FEProblemBase::assembly(const THREAD_ID tid, const unsigned int nl_sys_num) const
+{
+  mooseAssert(tid < _assembly.size(), "Assembly objects not initialized");
+  mooseAssert(nl_sys_num < _assembly[tid].size(),
+              "Nonlinear system number larger than the assembly container size");
+  return *_assembly[tid][nl_sys_num];
+}
+
+inline const CouplingMatrix *
+FEProblemBase::couplingMatrix(const unsigned int i) const
+{
+  return _cm[i].get();
+}
+
+inline void
+FEProblemBase::setCurrentNonlinearSystem(const unsigned int nl_sys_num)
+{
+  mooseAssert(nl_sys_num < _nl.size(),
+              "System number greater than the number of nonlinear systems");
+  _current_nl_sys = _nl[nl_sys_num].get();
+}
+
+inline void
+FEProblemBase::fvBCsIntegrityCheck(const bool fv_bcs_integrity_check)
+{
+  if (!_fv_bcs_integrity_check)
+    // the user has requested that we don't check integrity so we will honor that
+    return;
+
+  _fv_bcs_integrity_check = fv_bcs_integrity_check;
+}
+
+inline const std::vector<VectorTag> &
+FEProblemBase::currentResidualVectorTags() const
+{
+  return _current_residual_vector_tags;
+}
+
+inline void
+FEProblemBase::setCurrentResidualVectorTags(const std::set<TagID> & vector_tags)
+{
+  _current_residual_vector_tags = getVectorTags(vector_tags);
+}
+
+inline void
+FEProblemBase::clearCurrentResidualVectorTags()
+{
+  _current_residual_vector_tags.clear();
+}

@@ -1,8 +1,8 @@
-mu=0.5
-rho=1.1
-advected_interp_method='average'
-velocity_interp_method='average'
-two_term_boundary_expansion=true
+mu = 0.5
+rho = 1.1
+advected_interp_method = 'average'
+velocity_interp_method = 'average'
+two_term_boundary_expansion = true
 
 [Mesh]
   [gen]
@@ -15,10 +15,6 @@ two_term_boundary_expansion=true
     nx = 10
     ny = 2
   []
-[]
-
-[Problem]
-  fv_bcs_integrity_check = true
 []
 
 [GlobalParams]
@@ -156,60 +152,58 @@ two_term_boundary_expansion=true
 [Functions]
   [exact_u]
     type = ParsedFunction
-    value = '0.5*(1.0 - y^2)/mu'
-    vars = 'mu'
-    vals = '${mu}'
+    expression = '0.5*(1.0 - y^2)/mu'
+    symbol_names = 'mu'
+    symbol_values = '${mu}'
   []
   [exact_rhou]
     type = ParsedFunction
-    value = '0.5*rho*(1.0 - y^2)/mu'
-    vars = 'mu rho'
-    vals = '${mu} ${rho}'
+    expression = '0.5*rho*(1.0 - y^2)/mu'
+    symbol_names = 'mu rho'
+    symbol_values = '${mu} ${rho}'
   []
   [forcing_u]
-    type = ADParsedFunction
-    value = '0'
-    vars = 'mu rho'
-    vals = '${mu} ${rho}'
+    type = ParsedFunction
+    expression = '0'
+    symbol_names = 'mu rho'
+    symbol_values = '${mu} ${rho}'
   []
   [exact_v]
     type = ParsedFunction
-    value = '0.0'
+    expression = '0.0'
   []
   [exact_rhov]
     type = ParsedFunction
-    value = '0'
-    vars = 'mu rho'
-    vals = '${mu} ${rho}'
+    expression = '0'
+    symbol_names = 'mu rho'
+    symbol_values = '${mu} ${rho}'
   []
   [forcing_v]
-    type = ADParsedFunction
-    value = '0'
-    vars = 'mu rho'
-    vals = '${mu} ${rho}'
+    type = ParsedFunction
+    expression = '0'
+    symbol_names = 'mu rho'
+    symbol_values = '${mu} ${rho}'
   []
   [exact_p]
     type = ParsedFunction
-    value = '10.0 - x'
+    expression = '10.0 - x'
   []
   [forcing_p]
     type = ParsedFunction
-    value = '0'
-    vars = 'rho mu'
-    vals = '${rho} ${mu}'
+    expression = '0'
+    symbol_names = 'rho mu'
+    symbol_values = '${rho} ${mu}'
   []
 []
 
 [Executioner]
   type = Steady
   solve_type = 'NEWTON'
-  petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_pc_type -sub_pc_factor_shift_type'
-  petsc_options_value = 'asm      100                lu           NONZERO'
-  line_search = 'none'
+  petsc_options_iname = '-pc_type -pc_factor_shift_type -pc_factor_mat_solver_type'
+  petsc_options_value = 'lu NONZERO                     superlu_dist'
 []
 
 [Outputs]
-  exodus = true
   csv = true
 []
 
@@ -219,25 +213,25 @@ two_term_boundary_expansion=true
     outputs = 'console csv'
     execute_on = 'timestep_end'
   []
-  [./L2u]
+  [L2u]
     type = ElementL2Error
     variable = u
     function = exact_u
     outputs = 'console csv'
     execute_on = 'timestep_end'
-  [../]
-  [./L2v]
+  []
+  [L2v]
     type = ElementL2Error
     variable = v
     function = exact_v
     outputs = 'console csv'
     execute_on = 'timestep_end'
-  [../]
-  [./L2p]
+  []
+  [L2p]
     variable = pressure
     function = exact_p
     type = ElementL2Error
     outputs = 'console csv'
     execute_on = 'timestep_end'
-  [../]
+  []
 []

@@ -25,13 +25,9 @@ FVKernel::setRMParams(const InputParameters & obj_params,
 InputParameters
 FVKernel::validParams()
 {
-  InputParameters params = MooseObject::validParams();
-  params += TransientInterface::validParams();
+  InputParameters params = ResidualObject::validParams();
   params += BlockRestrictable::validParams();
-  params += TaggingInterface::validParams();
-  params += FunctorInterface::validParams();
-  params.addRequiredParam<NonlinearVariableName>(
-      "variable", "The name of the finite volume variable this kernel applies to");
+  params += ADFunctorInterface::validParams();
   params.addParam<bool>("use_displaced_mesh",
                         false,
                         "Whether or not this object should use the "
@@ -41,14 +37,12 @@ FVKernel::validParams()
                         "undisplaced mesh will still be used.");
   params.addParamNamesToGroup("use_displaced_mesh", "Advanced");
 
-  params.declareControllable("enable");
-
   params.addParam<unsigned short>("ghost_layers", 1, "The number of layers of elements to ghost.");
   params.addParam<bool>("use_point_neighbors",
                         false,
                         "Whether to use point neighbors, which introduces additional ghosting to "
                         "that used for simple face neighbors.");
-  params.set<bool>("_residual_object") = true;
+  params.addParamNamesToGroup("ghost_layers use_point_neighbors", "Parallel ghosting");
 
   // FV Kernels always need one layer of ghosting because when looping over
   // faces to compute fluxes, the elements on each side of the face may be on
@@ -68,21 +62,7 @@ FVKernel::validParams()
 }
 
 FVKernel::FVKernel(const InputParameters & params)
-  : MooseObject(params),
-    TaggingInterface(this),
-    TransientInterface(this),
-    BlockRestrictable(this),
-    FunctionInterface(this),
-    UserObjectInterface(this),
-    PostprocessorInterface(this),
-    SetupInterface(this),
-    Restartable(this, "FVKernels"),
-    FunctorInterface(this),
-    _subproblem(*getCheckedPointerParam<SubProblem *>("_subproblem")),
-    _sys(*getCheckedPointerParam<SystemBase *>("_sys")),
-    _tid(params.get<THREAD_ID>("_tid")),
-    _assembly(_subproblem.assembly(_tid)),
-    _mesh(_subproblem.mesh())
+  : ResidualObject(params), BlockRestrictable(this), ADFunctorInterface(this)
 {
   _subproblem.haveADObjects(true);
   if (getParam<bool>("use_displaced_mesh"))

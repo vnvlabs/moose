@@ -18,6 +18,7 @@
 #include "EigenProblem.h"
 
 #include "MooseTestApp.h"
+#include "MooseRevision.h"
 
 InputParameters
 MooseTestApp::validParams()
@@ -83,6 +84,12 @@ MooseTestApp::executeExecutioner()
   MooseApp::executeExecutioner();
 }
 
+std::string
+MooseTestApp::getInstallableInputs() const
+{
+  return MOOSE_INSTALLABLE_DIRS;
+}
+
 void
 MooseTestApp::registerAll(Factory & f, ActionFactory & af, Syntax & s, bool use_test_objs)
 {
@@ -91,10 +98,7 @@ MooseTestApp::registerAll(Factory & f, ActionFactory & af, Syntax & s, bool use_
 
   if (use_test_objs)
   {
-    auto & syntax = s;  // for resiterSyntax macros
-    auto & factory = f; // for resiterSyntax macros
-
-    registerExecFlag(EXEC_JUST_GO);
+    auto & syntax = s; // for resiterSyntax macros
 
     registerSyntax("ConvDiffMetaAction", "ConvectionDiffusion");
     registerSyntaxTask("AddAuxVariableAction", "MoreAuxVariables/*", "add_aux_variable");

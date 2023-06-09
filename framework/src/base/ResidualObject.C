@@ -19,7 +19,6 @@ ResidualObject::validParams()
   params += RandomInterface::validParams();
   params += MeshChangedInterface::validParams();
   params += TaggingInterface::validParams();
-  params += FunctorInterface::validParams();
 
   params.addRequiredParam<NonlinearVariableName>(
       "variable", "The name of the variable that this residual object operates on");
@@ -48,12 +47,11 @@ ResidualObject::ResidualObject(const InputParameters & parameters, bool is_nodal
     Restartable(this, parameters.get<std::string>("_moose_base") + "s"),
     MeshChangedInterface(parameters),
     TaggingInterface(this),
-    FunctorInterface(this),
     _subproblem(*getCheckedPointerParam<SubProblem *>("_subproblem")),
     _fe_problem(*parameters.get<FEProblemBase *>("_fe_problem_base")),
     _sys(*getCheckedPointerParam<SystemBase *>("_sys")),
     _tid(parameters.get<THREAD_ID>("_tid")),
-    _assembly(_subproblem.assembly(_tid)),
+    _assembly(_subproblem.assembly(_tid, _sys.number())),
     _mesh(_subproblem.mesh())
 {
 }
@@ -62,4 +60,12 @@ void
 ResidualObject::prepareShapes(const unsigned int var_num)
 {
   _subproblem.prepareShapes(var_num, _tid);
+}
+
+void
+ResidualObject::computeResidualAndJacobian()
+{
+  mooseError(
+      "This object has not yet implemented 'computeResidualAndJacobian'. If you would like that "
+      "feature for this object, please contact a MOOSE developer.");
 }

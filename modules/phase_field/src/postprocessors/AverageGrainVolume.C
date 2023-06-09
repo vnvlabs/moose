@@ -44,7 +44,7 @@ AverageGrainVolume::validParams()
 AverageGrainVolume::AverageGrainVolume(const InputParameters & parameters)
   : GeneralPostprocessor(parameters),
     Coupleable(this, false),
-    MooseVariableDependencyInterface(),
+    MooseVariableDependencyInterface(this),
     _mesh(_subproblem.mesh()),
     _assembly(_subproblem.assembly(0)),
     _q_point(_assembly.qPoints()),
@@ -146,11 +146,15 @@ AverageGrainVolume::computeIntegral(std::size_t var_index) const
   return sum;
 }
 
+void
+AverageGrainVolume::finalize()
+{
+  gatherSum(_feature_volumes);
+}
+
 Real
 AverageGrainVolume::getValue()
 {
-  _communicator.sum(_feature_volumes);
-
   Real total_volume = 0;
   for (auto & volume : _feature_volumes)
     total_volume += volume;

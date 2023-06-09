@@ -68,10 +68,10 @@ public:
   std::string getPrimaryFileName(bool stripLeadingPath = true) const;
 
   /**
-   * Parse an input file consisting of hit syntax and setup objects
+   * Parse an input file (or text string if non-empty) consisting of hit syntax and setup objects
    * in the MOOSE derived application
    */
-  void parse(const std::vector<std::string> & input_filenames);
+  void parse(const std::vector<std::string> & input_filenames, const std::string & input_text = "");
 
   /**
    * This function attempts to extract values from the input file based on the contents of
@@ -177,6 +177,18 @@ protected:
                                GlobalParamsAction * global_block);
 
   /**
+   * Template method for setting any triple indexed type parameter read from the input file or
+   * command line.
+   */
+  template <typename T>
+  void setTripleIndexParameter(
+      const std::string & full_name,
+      const std::string & short_name,
+      InputParameters::Parameter<std::vector<std::vector<std::vector<T>>>> * param,
+      bool in_global,
+      GlobalParamsAction * global_block);
+
+  /**
    * Template method for setting any multivalue "scalar" type parameter read from the input file or
    * command line.  Examples include "Point" and "RealVectorValue".
    */
@@ -197,6 +209,25 @@ protected:
                                    InputParameters::Parameter<std::vector<T>> * param,
                                    bool in_global,
                                    GlobalParamsAction * global_block);
+
+  /**
+   * Template method for setting vector of several multivalue "scalar" type parameter read from the
+   * input file or command line.  Examples include vectors of several "Point"s and
+   * "RealVectorValue"s such as (a three-element vector; each element is several "Point"s):
+   * points_values = '0 0 0
+   *                  0 0 1;
+   *                  0 1 0;
+   *                  1 0 0
+   *                  1 1 0
+   *                  1 1 1'
+   */
+  template <typename T>
+  void
+  setVectorVectorComponentParameter(const std::string & full_name,
+                                    const std::string & short_name,
+                                    InputParameters::Parameter<std::vector<std::vector<T>>> * param,
+                                    bool in_global,
+                                    GlobalParamsAction * global_block);
 
   std::unique_ptr<hit::Node> _cli_root = nullptr;
   std::unique_ptr<hit::Node> _root = nullptr;
@@ -235,4 +266,7 @@ private:
   std::string _errmsg;
   std::string _warnmsg;
   void walkRaw(std::string fullpath, std::string nodepath, hit::Node * n);
+
+  // Allow the MooseServer class to access the root node of the hit parse tree
+  friend class MooseServer;
 };

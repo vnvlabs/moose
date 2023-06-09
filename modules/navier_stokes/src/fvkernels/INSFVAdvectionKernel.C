@@ -10,27 +10,23 @@
 #include "INSFVAdvectionKernel.h"
 #include "NS.h"
 #include "MooseVariableFV.h"
+#include "RelationshipManager.h"
+#include "NSFVUtils.h"
+#include "FVBoundaryScalarLagrangeMultiplierConstraint.h"
 
 InputParameters
 INSFVAdvectionKernel::validParams()
 {
   InputParameters params = FVFluxKernel::validParams();
-  MooseEnum advected_interp_method("average upwind skewness-corrected", "upwind");
-  params.addParam<MooseEnum>(
-      "advected_interp_method",
-      advected_interp_method,
-      "The interpolation to use for the advected quantity. Options are "
-      "'upwind', 'average', and 'skewness-corrected' with the default being 'upwind'.");
-  MooseEnum velocity_interp_method("average rc", "rc");
-  params.addParam<MooseEnum>(
-      "velocity_interp_method",
-      velocity_interp_method,
-      "The interpolation to use for the velocity. Options are "
-      "'average' and 'rc' which stands for Rhie-Chow. The default is Rhie-Chow.");
+  params += Moose::FV::interpolationParameters();
   params.addRequiredParam<UserObjectName>("rhie_chow_user_object", "The rhie-chow user-object");
   // We need 2 ghost layers for the Rhie-Chow interpolation
   params.set<unsigned short>("ghost_layers") = 2;
-  params.addRequiredParam<UserObjectName>("rhie_chow_user_object", "The rhie-chow user-object");
+
+  // We currently do not have a need for this, boundary conditions tell us where to execute
+  // advection kernels
+  params.suppressParameter<bool>("force_boundary_execution");
+
   return params;
 }
 
@@ -38,32 +34,18 @@ INSFVAdvectionKernel::INSFVAdvectionKernel(const InputParameters & params)
   : FVFluxKernel(params),
     _rc_vel_provider(getUserObject<INSFVRhieChowInterpolator>("rhie_chow_user_object"))
 {
-#ifndef MOOSE_GLOBAL_AD_INDEXING
-  mooseError("INSFV is not supported by local AD indexing. In order to use INSFV, please run the "
-             "configure script in the root MOOSE directory with the configure option "
-             "'--with-ad-indexing-type=global'");
-#endif
-  using namespace Moose::FV;
+  const bool need_more_ghosting =
+      Moose::FV::setInterpolationMethods(*this, _advected_interp_method, _velocity_interp_method);
+  if (need_more_ghosting && _tid == 0)
+  {
+    adjustRMGhostLayers(std::max((unsigned short)(3), _pars.get<unsigned short>("ghost_layers")));
 
-  const auto & advected_interp_method = getParam<MooseEnum>("advected_interp_method");
-  if (advected_interp_method == "average")
-    _advected_interp_method = InterpMethod::Average;
-  else if (advected_interp_method == "skewness-corrected")
-    _advected_interp_method = Moose::FV::InterpMethod::SkewCorrectedAverage;
-  else if (advected_interp_method == "upwind")
-    _advected_interp_method = InterpMethod::Upwind;
-  else
-    mooseError("Unrecognized interpolation type ",
-               static_cast<std::string>(advected_interp_method));
-
-  const auto & velocity_interp_method = getParam<MooseEnum>("velocity_interp_method");
-  if (velocity_interp_method == "average")
-    _velocity_interp_method = InterpMethod::Average;
-  else if (velocity_interp_method == "rc")
-    _velocity_interp_method = InterpMethod::RhieChow;
-  else
-    mooseError("Unrecognized interpolation type ",
-               static_cast<std::string>(velocity_interp_method));
+    // If we need more ghosting, then we are a second-order nonlinear limiting scheme whose stencil
+    // is liable to change upon wind-direction change. Consequently we need to tell our problem that
+    // it's ok to have new nonzeros which may crop-up after PETSc has shrunk the matrix memory
+    getCheckedPointerParam<FEProblemBase *>("_fe_problem_base")
+        ->setErrorOnJacobianNonzeroReallocation(false);
+  }
 
   auto param_check = [&params, this](const auto & param_name)
   {
@@ -73,7 +55,6 @@ INSFVAdvectionKernel::INSFVAdvectionKernel(const InputParameters & params)
   };
 
   param_check("force_boundary_execution");
-  param_check("boundaries_to_force");
 }
 
 void
@@ -85,13 +66,28 @@ INSFVAdvectionKernel::initialSetup()
 bool
 INSFVAdvectionKernel::skipForBoundary(const FaceInfo & fi) const
 {
+  // Boundaries to avoid come first, since they are always obeyed
+  if (avoidBoundary(fi))
+    return true;
+
+  // We're not on a boundary, so technically we're not skipping a boundary
   if (!onBoundary(fi))
     return false;
 
+  // Selected boundaries to force
+  for (const auto bnd_to_force : _boundaries_to_force)
+    if (fi.boundaryIDs().count(bnd_to_force))
+      return false;
+
   // If we have flux bcs then we do skip
-  const auto & flux_pr = _var.getFluxBCs(fi);
-  if (flux_pr.first)
-    return true;
+  const auto & [have_flux_bcs, flux_bcs] = _var.getFluxBCs(fi);
+  libmesh_ignore(have_flux_bcs);
+  for (const auto * const flux_bc : flux_bcs)
+    // If we have something like an average-value pressure constraint on a flow boundary, then we
+    // still want to execute this advection kernel on the boundary to ensure we're enforcing local
+    // conservation (mass in this example)
+    if (!dynamic_cast<const FVBoundaryScalarLagrangeMultiplierConstraint *>(flux_bc))
+      return true;
 
   // If we have a flow boundary without a replacement flux BC, then we must not skip. Mass and
   // momentum are transported via advection across boundaries

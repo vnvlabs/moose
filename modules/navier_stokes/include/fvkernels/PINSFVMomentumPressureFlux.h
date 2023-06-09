@@ -31,10 +31,8 @@ protected:
 
   /// the porosity as a functor
   const Moose::Functor<ADReal> & _eps;
-  /// the current element pressure
-  const ADVariableValue & _p_elem;
-  /// the neighbor element pressure
-  const ADVariableValue & _p_neighbor;
+  /// The pressure
+  const Moose::Functor<ADReal> & _p;
   /// which momentum component this kernel applies to
   const int _index;
 };

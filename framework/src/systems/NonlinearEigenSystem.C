@@ -145,18 +145,20 @@ NonlinearEigenSystem::postAddResidualObject(ResidualObject & object)
   // be singular because boundary elements are zero.
   if (_precond_matrix_includes_eigen && !dynamic_cast<EigenDirichletBC *>(&object) &&
       !dynamic_cast<EigenArrayDirichletBC *>(&object))
-    object.useMatrixTag(_precond_tag);
+    object.useMatrixTag(_precond_tag, {});
 
-  auto & vtags = object.getVectorTags();
-  auto & mtags = object.getMatrixTags();
+  auto & vtags = object.getVectorTags({});
+  auto & mtags = object.getMatrixTags({});
   // If it is an eigen kernel, mark its variable as eigen
   if (vtags.find(_Bx_tag) != vtags.end() || mtags.find(_B_tag) != mtags.end())
   {
+    // Note: the object may be on the displaced system
+    auto sys = object.parameters().get<SystemBase *>("_sys");
     auto vname = object.variable().name();
     if (hasScalarVariable(vname))
-      getScalarVariable(0, vname).eigen(true);
+      sys->getScalarVariable(0, vname).eigen(true);
     else
-      getVariable(0, vname).eigen(true);
+      sys->getVariable(0, vname).eigen(true);
   }
 
   // If this is not an eigen kernel
@@ -165,18 +167,18 @@ NonlinearEigenSystem::postAddResidualObject(ResidualObject & object)
   if (vtags.find(_Bx_tag) == vtags.end() && mtags.find(_B_tag) == mtags.end())
   {
     // Noneigen Vector tag
-    object.useVectorTag(_Ax_tag);
+    object.useVectorTag(_Ax_tag, {});
     // Noneigen Matrix tag
-    object.useMatrixTag(_A_tag);
+    object.useMatrixTag(_A_tag, {});
     // Noneigen Kernels
-    object.useMatrixTag(_precond_tag);
+    object.useMatrixTag(_precond_tag, {});
   }
   else
   {
     // Associate the eigen matrix tag and the vector tag
     // if this is a eigen kernel
-    object.useMatrixTag(_B_tag);
-    object.useVectorTag(_Bx_tag);
+    object.useMatrixTag(_B_tag, {});
+    object.useVectorTag(_Bx_tag, {});
   }
 }
 
@@ -204,11 +206,9 @@ NonlinearEigenSystem::solve()
     else
       computeScaling();
   }
-#ifdef MOOSE_GLOBAL_AD_INDEXING
   // We do not know a priori what variable a global degree of freedom corresponds to, so we need a
   // map from global dof to scaling factor. We just use a ghosted NumericVector for that mapping
   assembleScalingVector();
-#endif
 
 // In DEBUG mode, Libmesh will check the residual automatically. This may cause
 // an error because B does not need to assembly by default.
@@ -406,7 +406,7 @@ NonlinearEigenSystem::checkIntegrity()
       // EigenArrayDirichletBC
       auto aeigen_nbc = std::dynamic_pointer_cast<EigenArrayDirichletBC>(nodal_bc);
       // If it is a Dirichlet boundary condition, then value has to be zero
-      if (nbc && nbc->getParam<Real>("value"))
+      if (nbc && nbc->variable().eigen() && nbc->getParam<Real>("value"))
         mooseError(
             "Can't set an inhomogeneous Dirichlet boundary condition for eigenvalue problems.");
       // If it is an array Dirichlet boundary condition, all values should be zero
@@ -467,6 +467,15 @@ void
 NonlinearEigenSystem::turnOffJacobian()
 {
   // Let us do nothing at the current moment
+}
+
+void
+NonlinearEigenSystem::residualAndJacobianTogether()
+{
+  mooseError(
+      "NonlinearEigenSystem::residualAndJacobianTogether is not implemented. It might even be "
+      "nonsensical. If it is sensical and you want this capability, please contact a MOOSE "
+      "developer.");
 }
 
 void

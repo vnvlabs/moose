@@ -44,12 +44,12 @@
 [Functions]
   [./forcing_fn]
     type = ParsedFunction
-    value = ((x*x)+(y*y))-(4*t)
+    expression = ((x*x)+(y*y))-(4*t)
   [../]
 
   [./exact_fn]
     type = ParsedFunction
-    value = t*((x*x)+(y*y))
+    expression = t*((x*x)+(y*y))
   [../]
 []
 
@@ -96,11 +96,6 @@
     execute_on = 'initial timestep_end'
   [../]
 
-  [./x]
-    type = ScalarVariable
-    variable = x
-    execute_on = 'initial timestep_end'
-  [../]
 []
 
 [Executioner]

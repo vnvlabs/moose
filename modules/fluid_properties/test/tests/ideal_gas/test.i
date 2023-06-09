@@ -9,11 +9,11 @@
 [Functions]
   [./f_fn]
     type = ParsedFunction
-    value = -4
+    expression = -4
   [../]
   [./bc_fn]
     type = ParsedFunction
-    value = 'x*x+y*y'
+    expression = 'x*x+y*y'
   [../]
 []
 
@@ -107,19 +107,17 @@
   [../]
 []
 
-[Modules]
-  [./FluidProperties]
-    [./ideal_gas]
-      type = IdealGasFluidProperties
-      gamma = 1.4
-      molar_mass = 1.000536678700361
-    [../]
-  []
+[FluidProperties]
+  [./ideal_gas]
+    type = IdealGasFluidProperties
+    gamma = 1.4
+    molar_mass = 1.000536678700361
+  [../]
 []
 
 [Materials]
   [./fp_mat]
-    type = FluidPropertiesMaterial
+    type = FluidPropertiesMaterialVE
     e = e
     v = v
     fp = ideal_gas

@@ -20,15 +20,13 @@ DerivativeSumMaterialTempl<is_ad>::validParams()
 {
   InputParameters params = DerivativeFunctionMaterialBaseTempl<is_ad>::validParams();
   params.addClassDescription("Meta-material to sum up multiple derivative materials");
-  params.addParam<std::vector<std::string>>(
-      "sum_materials",
-      "Base name of the free energy function (used to name the material properties)");
-  // params.addParam<bool>("third_derivatives", true, "Calculate third derivatoves of the free
-  // energy");
+  params.addParam<std::vector<std::string>>("sum_materials",
+                                            "Base name of the parsed sum material property");
 
-  // All arguments of the free energies being summed
-  params.addRequiredCoupledVar(
-      "args", "Arguments of the free energy functions being summed - use vector coupling");
+  // All arguments of the parsed expression (free energy) being summed
+  params.addRequiredCoupledVar("args", "Vector of names of variables being summed");
+  params.deprecateCoupledVar("args", "coupled_variables", "02/07/2024");
+
   params.addCoupledVar("displacement_gradients",
                        "Vector of displacement gradient variables (see "
                        "Modules/PhaseField/DisplacementGradients "
@@ -41,7 +39,7 @@ DerivativeSumMaterialTempl<is_ad>::validParams()
   params.addParam<bool>("validate_coupling",
                         true,
                         "Check if all variables the specified materials depend on are listed in "
-                        "the `args` parameter.");
+                        "the `coupled_variables` parameter.");
   params.addParamNamesToGroup("prefactor constant", "Advanced");
 
   return params;
@@ -67,7 +65,7 @@ DerivativeSumMaterialTempl<is_ad>::DerivativeSumMaterialTempl(const InputParamet
   if (_num_materials == p.size())
     _prefactor = p;
   else if (p.size() != 0)
-    mooseError("Supply the same nummber of sum materials and prefactors.");
+    mooseError("Supply the same number of sum materials and prefactors.");
 
   // reserve space for summand material properties
   _summand_F.resize(_num_materials);

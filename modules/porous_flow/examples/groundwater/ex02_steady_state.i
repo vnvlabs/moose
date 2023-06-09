@@ -89,9 +89,9 @@
   []
   [baseflow_rate]
     type = ParsedFunction
-    vars = 'baseflow_kg dt'
-    vals = 'baseflow_kg dt'
-    value = 'baseflow_kg / dt * 24.0 * 3600.0 / 400.0'
+    symbol_names = 'baseflow_kg dt'
+    symbol_values = 'baseflow_kg dt'
+    expression = 'baseflow_kg / dt * 24.0 * 3600.0 / 400.0'
   []
 []
 
@@ -100,11 +100,9 @@
   porepressure = pp
 []
 
-[Modules]
-  [FluidProperties]
-    [simple_fluid]
-      type = SimpleFluidProperties
-    []
+[FluidProperties]
+  [simple_fluid]
+    type = SimpleFluidProperties
   []
 []
 
@@ -151,6 +149,7 @@
   [baseflow_l_per_m_per_day]
     type = FunctionValuePostprocessor
     function = baseflow_rate
+    indirect_dependencies = 'baseflow_kg dt'
   []
 []
 
@@ -186,4 +185,3 @@
     type = CSV
   []
 []
-

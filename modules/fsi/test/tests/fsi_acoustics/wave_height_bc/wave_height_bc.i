@@ -88,7 +88,7 @@
 [Functions]
   [./initial_cond]
     type = ParsedFunction
-    value = '0.00001*exp(-((x-0.5)/0.1)^2-((y-0.5)/0.1)^2)'
+    expression = '0.00001*exp(-((x-0.5)/0.1)^2-((y-0.5)/0.1)^2)'
   [../]
 []
 
@@ -130,7 +130,6 @@
 
 [Outputs]
   csv = true
-  exodus = true
   perf_graph = true
   print_linear_residuals = true
 []

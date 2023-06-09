@@ -22,6 +22,11 @@ FVDiffusionInterface::validParams()
                                                 "The diffusion coefficient on the 1st subdomain");
   params.addRequiredParam<MaterialPropertyName>("coeff2",
                                                 "The diffusion coefficient on the 2nd subdomain");
+  MooseEnum coeff_interp_method("average harmonic", "harmonic");
+  params.addParam<MooseEnum>(
+      "coeff_interp_method",
+      coeff_interp_method,
+      "Switch that can select face interpolation method for diffusion coefficients.");
   return params;
 }
 
@@ -30,6 +35,11 @@ FVDiffusionInterface::FVDiffusionInterface(const InputParameters & params)
     _coeff1(getFunctor<ADReal>("coeff1")),
     _coeff2(getFunctor<ADReal>("coeff2"))
 {
+  const auto & interp_method = getParam<MooseEnum>("coeff_interp_method");
+  if (interp_method == "average")
+    _coeff_interp_method = Moose::FV::InterpMethod::Average;
+  else if (interp_method == "harmonic")
+    _coeff_interp_method = Moose::FV::InterpMethod::HarmonicAverage;
 }
 
 ADReal
@@ -41,18 +51,19 @@ FVDiffusionInterface::computeQpResidual()
   // Form a finite difference gradient across the interface
   Point one_over_gradient_support = _face_info->elemCentroid() - _face_info->neighborCentroid();
   one_over_gradient_support /= (one_over_gradient_support * one_over_gradient_support);
-  const auto gradient = elemIsOne() ? (var1().getElemValue(&_face_info->elem()) -
-                                       var2().getElemValue(_face_info->neighborPtr())) *
+  const auto state = determineState();
+  const auto gradient = elemIsOne() ? (var1().getElemValue(&_face_info->elem(), state) -
+                                       var2().getElemValue(_face_info->neighborPtr(), state)) *
                                           one_over_gradient_support
-                                    : (var1().getElemValue(_face_info->neighborPtr()) -
-                                       var2().getElemValue(&_face_info->elem())) *
+                                    : (var1().getElemValue(_face_info->neighborPtr(), state) -
+                                       var2().getElemValue(&_face_info->elem(), state)) *
                                           -one_over_gradient_support;
 
   ADReal diffusivity;
-  interpolate(Moose::FV::InterpMethod::Average,
+  interpolate(_coeff_interp_method,
               diffusivity,
-              coef_elem(elemFromFace()),
-              coef_neighbor(neighborFromFace()),
+              coef_elem(elemArg(), determineState()),
+              coef_neighbor(neighborArg(), determineState()),
               *_face_info,
               true);
 

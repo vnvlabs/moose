@@ -28,7 +28,7 @@
 [Functions]
   [./temperature_load]
     type = ParsedFunction
-    value = t*(500.0)+300.0
+    expression = t*(500.0)+300.0
   [../]
 []
 
@@ -110,7 +110,6 @@
 []
 
 [Outputs]
-  csv = true
   exodus = true
   checkpoint = true
 []

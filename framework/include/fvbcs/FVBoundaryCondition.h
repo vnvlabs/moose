@@ -24,7 +24,8 @@
 #include "MeshChangedInterface.h"
 #include "TaggingInterface.h"
 #include "MooseVariableDependencyInterface.h"
-#include "FunctorInterface.h"
+#include "ADFunctorInterface.h"
+#include "FaceArgInterface.h"
 
 // Forward declerations
 template <typename>
@@ -54,7 +55,8 @@ class FVBoundaryCondition : public MooseObject,
                             public TaggingInterface,
                             public MooseVariableInterface<Real>,
                             public MooseVariableDependencyInterface,
-                            public FunctorInterface
+                            public ADFunctorInterface,
+                            public FaceArgProducerInterface
 {
 public:
   /**
@@ -74,17 +76,19 @@ public:
 
   const MooseVariableFV<Real> & variable() const { return _var; }
 
+  bool hasFaceSide(const FaceInfo & fi, bool fi_elem_side) const override;
+
 protected:
   /**
    * Determine the single sided face argument when evaluating a functor on a face.
-   * This is used to perform evluations of material properties with the actual face values of
+   * This is used to perform evaluations of material properties with the actual face values of
    * their dependences, rather than interpolate the material property to the boundary.
    * @param fi the FaceInfo for this face
    * @param limiter_type the limiter type, to be specified if more than the default average
    *        interpolation is required for the parameters of the functor
    * @param correct_skewness whether to perform skew correction at the face
    */
-  Moose::SingleSidedFaceArg singleSidedFaceArg(
+  Moose::FaceArg singleSidedFaceArg(
       const FaceInfo * fi = nullptr,
       Moose::FV::LimiterType limiter_type = Moose::FV::LimiterType::CentralDifference,
       bool correct_skewness = false) const;

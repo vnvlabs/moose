@@ -161,7 +161,7 @@
     # space so that the Dirichlet conditions are the same regardless
     # of the mesh spacing.
     type = ParsedFunction
-    value = '4*x*(1-x)'
+    expression = '4*x*(1-x)'
   [../]
 []
 
@@ -182,6 +182,5 @@
 
 [Outputs]
   file_base = lid_driven_out
-  exodus = true
   perf_graph = true
 []

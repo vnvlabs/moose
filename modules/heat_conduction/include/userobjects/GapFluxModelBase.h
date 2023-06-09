@@ -11,11 +11,12 @@
 
 #include "ModularGapConductanceConstraint.h"
 #include "InterfaceUserObjectBase.h"
+#include "ADFunctorInterface.h"
 
 /**
  * Base class for gap flux models used by ModularGapConductanceConstraint
  */
-class GapFluxModelBase : public InterfaceUserObjectBase
+class GapFluxModelBase : public InterfaceUserObjectBase, public ADFunctorInterface
 {
 public:
   static InputParameters validParams();
@@ -25,7 +26,7 @@ public:
   /**
    * Cache geometry-related information from the mortar constraint
    */
-  virtual const ADReal
+  virtual ADReal
   computeFluxInternal(const ModularGapConductanceConstraint & mortar_constraint) const;
 
   /**
@@ -41,4 +42,10 @@ protected:
   mutable ADReal _gap_width;
   mutable ADReal _surface_integration_factor;
   mutable ADReal _adjusted_length;
+  mutable ADReal _normal_pressure;
+
+  /// The secondary quadrature point location
+  mutable Moose::ElemPointArg _secondary_point;
+  /// The primary quadrature point location
+  mutable Moose::ElemPointArg _primary_point;
 };

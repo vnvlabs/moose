@@ -85,15 +85,13 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [the_simple_fluid]
-      type = SimpleFluidProperties
-      thermal_expansion = 0.0
-      bulk_modulus = 3.3333333333
-      viscosity = 1.0
-      density0 = 1.0
-    []
+[FluidProperties]
+  [the_simple_fluid]
+    type = SimpleFluidProperties
+    thermal_expansion = 0.0
+    bulk_modulus = 3.3333333333
+    viscosity = 1.0
+    density0 = 1.0
   []
 []
 
@@ -204,21 +202,21 @@
 [Functions]
   [stress_xx_over_strain_fcn]
     type = ParsedFunction
-    value = a/b
-    vars = 'a b'
-    vals = 'stress_xx zdisp'
+    expression = a/b
+    symbol_names = 'a b'
+    symbol_values = 'stress_xx zdisp'
   []
   [stress_zz_over_strain_fcn]
     type = ParsedFunction
-    value = a/b
-    vars = 'a b'
-    vals = 'stress_zz zdisp'
+    expression = a/b
+    symbol_names = 'a b'
+    symbol_values = 'stress_zz zdisp'
   []
   [p_over_strain_fcn]
     type = ParsedFunction
-    value = a/b
-    vars = 'a b'
-    vals = 'p0 zdisp'
+    expression = a/b
+    symbol_names = 'a b'
+    symbol_values = 'p0 zdisp'
   []
 []
 

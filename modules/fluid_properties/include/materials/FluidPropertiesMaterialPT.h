@@ -34,20 +34,26 @@ protected:
   MaterialProperty<Real> & _rho;
   /// Viscosity (Pa.s)
   MaterialProperty<Real> & _mu;
-  /// Isobaric specific heat capacity (kJ/kg/K)
+  /// Isobaric specific heat capacity (J/kg/K)
   MaterialProperty<Real> & _cp;
-  /// Isochoric specific heat capacity (kJ/kg/K)
+  /// Isochoric specific heat capacity (J/kg/K)
   MaterialProperty<Real> & _cv;
   /// Thermal conductivity (W/m/K)
   MaterialProperty<Real> & _k;
-  /// Specific enthalpy (kJ/kg)
+  /// Specific enthalpy (J/kg)
   MaterialProperty<Real> & _h;
-  /// Internal energy (kJ/kg)
+  /// Internal energy (J/kg)
   MaterialProperty<Real> & _e;
-  /// Specific entropy (kJ/kg/K)
-  MaterialProperty<Real> & _s;
+
+  /// Whether to compute entropy
+  const bool _compute_s;
+  /// Whether to compute the speed of sound
+  const bool _compute_c;
+
+  /// Specific entropy (J/kg/K)
+  MaterialProperty<Real> * const _s;
   /// Speed of sound (m/s)
-  MaterialProperty<Real> & _c;
+  MaterialProperty<Real> * const _c;
 
   /// Fluid properties UserObject
   const SinglePhaseFluidProperties & _fp;

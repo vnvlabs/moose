@@ -8,16 +8,15 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "GateValve1Phase.h"
-#include "GeometricalFlowComponent.h"
+#include "FlowChannel1Phase.h"
 #include "FlowModelSinglePhase.h"
-#include "THMMesh.h"
 
 registerMooseObject("ThermalHydraulicsApp", GateValve1Phase);
 
 InputParameters
 GateValve1Phase::validParams()
 {
-  InputParameters params = FlowJunction::validParams();
+  InputParameters params = FlowJunction1Phase::validParams();
 
   params.addRequiredParam<Real>("open_area_fraction", "Fraction of flow area that is open [-]");
 
@@ -28,37 +27,21 @@ GateValve1Phase::validParams()
   return params;
 }
 
-GateValve1Phase::GateValve1Phase(const InputParameters & params) : FlowJunction(params) {}
+GateValve1Phase::GateValve1Phase(const InputParameters & params) : FlowJunction1Phase(params) {}
 
 void
 GateValve1Phase::setupMesh()
 {
-  FlowJunction::setupMesh();
+  FlowJunction1Phase::setupMesh();
 
-  std::vector<dof_id_type> connected_elems;
-  const std::map<dof_id_type, std::vector<dof_id_type>> & node_to_elem = _mesh.nodeToElemMap();
-  for (auto & nid : _nodes)
-  {
-    const auto & it = node_to_elem.find(nid);
-    if (it == node_to_elem.end())
-      mooseError(name(), ": failed to find node ", nid, "in the mesh!");
-
-    const std::vector<dof_id_type> & elems = it->second;
-    for (const auto & e : elems)
-      connected_elems.push_back(e);
-  }
-
-  if (connected_elems.size() == 2)
-    _sim.augmentSparsity(connected_elems[0], connected_elems[1]);
+  if (_connected_elems.size() == 2)
+    getTHMProblem().augmentSparsity(_connected_elems[0], _connected_elems[1]);
 }
 
 void
 GateValve1Phase::check() const
 {
-  FlowJunction::check();
-
-  if (_flow_model_id != THM::FM_SINGLE_PHASE)
-    logModelNotImplementedError(_flow_model_id);
+  FlowJunction1Phase::check();
 
   // Check that there are exactly 2 connections
   checkNumberOfConnections(2);
@@ -67,12 +50,12 @@ GateValve1Phase::check() const
   bool slope_reconstruction_used = false;
   for (const auto & connection : getConnections())
   {
-    const std::string & gc_name = connection._geometrical_component_name;
-    if (hasComponentByName<GeometricalFlowComponent>(gc_name))
+    const std::string & comp_name = connection._component_name;
+    if (hasComponentByName<FlowChannel1Phase>(comp_name))
     {
-      const GeometricalFlowComponent & gc = getComponentByName<GeometricalFlowComponent>(gc_name);
+      const FlowChannel1Phase & comp = getComponentByName<FlowChannel1Phase>(comp_name);
       slope_reconstruction_used =
-          slope_reconstruction_used || (gc.getSlopeReconstruction() != "none");
+          slope_reconstruction_used || (comp.getSlopeReconstruction() != "none");
     }
   }
   if (slope_reconstruction_used)
@@ -92,6 +75,7 @@ GateValve1Phase::addMooseObjects()
     InputParameters params = _factory.getValidParams(class_name);
     params.set<std::vector<BoundaryName>>("boundary") = _boundary_names;
     params.set<std::vector<Real>>("normals") = _normals;
+    params.set<std::vector<processor_id_type>>("processor_ids") = _proc_ids;
     // It is assumed that each channel should have the same numerical flux, so
     // just use the first one.
     params.set<UserObjectName>("numerical_flux") = _numerical_flux_names[0];
@@ -102,7 +86,7 @@ GateValve1Phase::addMooseObjects()
     params.set<std::vector<VariableName>>("rhoEA") = {FlowModelSinglePhase::RHOEA};
     params.set<std::string>("component_name") = name();
     params.set<ExecFlagEnum>("execute_on") = execute_on;
-    _sim.addUserObject(class_name, _junction_uo_name, params);
+    getTHMProblem().addUserObject(class_name, _junction_uo_name, params);
 
     connectObject(params, _junction_uo_name, "open_area_fraction");
   }
@@ -126,8 +110,8 @@ GateValve1Phase::addMooseObjects()
       params.set<std::vector<VariableName>>("rhoA") = {FlowModelSinglePhase::RHOA};
       params.set<std::vector<VariableName>>("rhouA") = {FlowModelSinglePhase::RHOUA};
       params.set<std::vector<VariableName>>("rhoEA") = {FlowModelSinglePhase::RHOEA};
-      params.set<bool>("implicit") = _sim.getImplicitTimeIntegrationFlag();
-      _sim.addBoundaryCondition(
+      params.set<bool>("implicit") = getTHMProblem().getImplicitTimeIntegrationFlag();
+      getTHMProblem().addBoundaryCondition(
           class_name, genName(name(), i, var_names[j] + ":" + class_name), params);
     }
 }

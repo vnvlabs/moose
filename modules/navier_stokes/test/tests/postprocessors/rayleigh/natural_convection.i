@@ -129,7 +129,6 @@ l = 4
     cp = cp
     rho = rho
     drho_dt = drho_dt
-    dcp_dt = 0
   []
   [temp_conduction]
     type = FVDiffusion
@@ -175,13 +174,11 @@ l = 4
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [fp]
-      type = SimpleFluidProperties
-      density0 = ${rho}
-      thermal_expansion = ${beta}
-    []
+[FluidProperties]
+  [fp]
+    type = SimpleFluidProperties
+    density0 = ${rho}
+    thermal_expansion = ${beta}
   []
 []
 
@@ -252,13 +249,13 @@ l = 4
     value_type = 'max'
   []
   [T_min]
-    type = ElementExtremeValue
-    variable = 'T'
+    type = ADElementExtremeFunctorValue
+    functor = 'T'
     value_type = 'min'
   []
   [T_max]
-    type = ElementExtremeValue
-    variable = 'T'
+    type = ADElementExtremeFunctorValue
+    functor = 'T'
     value_type = 'max'
   []
 []

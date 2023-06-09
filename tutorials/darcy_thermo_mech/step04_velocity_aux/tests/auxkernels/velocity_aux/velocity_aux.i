@@ -1,8 +1,12 @@
 [Mesh]
-  type = GeneratedMesh
-  dim = 2
-  nx = 2
-  ny = 2
+  [gmg]
+    type = GeneratedMeshGenerator
+    dim = 2
+    nx = 2
+    ny = 2
+  []
+  coord_type = RZ
+  rz_coord_axis = X
 []
 
 [Variables]
@@ -29,7 +33,7 @@
 [Functions]
   [pressure_ic_func]
     type = ParsedFunction
-    value = 2000*x*y*x*y
+    expression = 2000*x*y*x*y
   []
 []
 
@@ -43,8 +47,6 @@
 
 [Problem]
   type = FEProblem
-  coord_type = RZ
-  rz_coord_axis = X
   solve = false
 []
 

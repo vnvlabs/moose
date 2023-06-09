@@ -37,9 +37,9 @@
 [Functions]
   [ana_pp]
     type = ParsedFunction
-    vars = 'g B p0 rho0'
-    vals = '1 2 -1 1'
-    value = '-B*log(exp(-p0/B)+g*rho0*x/B)' # expected pp at base
+    symbol_names = 'g B p0 rho0'
+    symbol_values = '1 2 -1 1'
+    expression = '-B*log(exp(-p0/B)+g*rho0*x/B)' # expected pp at base
   []
 []
 
@@ -66,15 +66,13 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [simple_fluid]
-      type = SimpleFluidProperties
-      bulk_modulus = 2
-      density0 = 1
-      viscosity = 1
-      thermal_expansion = 0
-    []
+[FluidProperties]
+  [simple_fluid]
+    type = SimpleFluidProperties
+    bulk_modulus = 2
+    density0 = 1
+    viscosity = 1
+    thermal_expansion = 0
   []
 []
 

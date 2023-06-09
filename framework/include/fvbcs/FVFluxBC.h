@@ -13,20 +13,25 @@
 #include "NeighborCoupleableMooseVariableDependencyIntermediateInterface.h"
 #include "TwoMaterialPropertyInterface.h"
 #include "MathFVUtils.h"
+#include "FVFaceResidualObject.h"
 
-// Provides an interface for computing residual contributions from finite
-// volume numerical fluxes computed on faces to neighboring elements.
+/**
+ * Provides an interface for computing residual contributions from finite
+ * volume numerical fluxes computed on faces to neighboring elements.
+ */
 class FVFluxBC : public FVBoundaryCondition,
                  public NeighborCoupleableMooseVariableDependencyIntermediateInterface,
-                 public TwoMaterialPropertyInterface
+                 public TwoMaterialPropertyInterface,
+                 public FVFaceResidualObject
 {
 public:
   FVFluxBC(const InputParameters & parameters);
 
   static InputParameters validParams();
 
-  virtual void computeResidual(const FaceInfo & fi);
-  virtual void computeJacobian(const FaceInfo & fi);
+  void computeResidual(const FaceInfo & fi) override;
+  void computeJacobian(const FaceInfo & fi) override;
+  void computeResidualAndJacobian(const FaceInfo & fi) override;
 
 protected:
   virtual ADReal computeQpResidual() = 0;
@@ -51,50 +56,15 @@ protected:
   const ADReal & uOnGhost() const;
 
   /**
-   * @return the value of \p makeSidedFace with \p fi_elem = true
+   * @return an element argument corresponding to the face info elem
    */
-  Moose::ElemFromFaceArg elemFromFace(bool correct_skewness = false) const;
+  Moose::ElemArg elemArg(bool correct_skewness = false) const;
 
   /**
-   * @return the value of \p makeSidedFace with \p fi_elem = false
+   * @return an element argument corresponding to the face info neighbor
    */
-  Moose::ElemFromFaceArg neighborFromFace(bool correct_skewness = false) const;
-
-  /**
-   * Determine the subdomain ID pair that should be used when creating a face argument for a
-   * functor. The first member of the pair will correspond to the SubdomainID in the tuple returned
-   * by \p elemFromFace. The second member of the pair will correspond to the SubdomainID in the
-   * tuple returned by \p neighborFromFace. As explained in the doxygen for \p makeSidedFace these
-   * subdomain IDs do not simply correspond to the subdomain ID of the element; they must respect
-   * the block restriction of the variable this object is acting upon
-   */
-  std::pair<SubdomainID, SubdomainID> faceArgSubdomains() const;
+  Moose::ElemArg neighborArg(bool correct_skewness = false) const;
 
   /// The variable face type
   FaceInfo::VarFaceNeighbors _face_type;
-
-private:
-  /**
-   * This creates a tuple of an element, \p FaceInfo, and subdomain ID. The element returned will
-   * correspond to the method argument, e.g. if \p fi_elem is true, then this will return the \p
-   * FaceInfo element, else it will return the \p FaceInfo neighbor. The \p FaceInfo part of the
-   * tuple will simply correspond to the current \p _face_info. The subdomain ID part of the tuple
-   * will correspond to the subdomain ID that this object is defined on because flux boundary
-   * conditions do indeed have sidedness. If a variable is only defined on the element side of the
-   * current face, then the subdomain ID will be equivalent to \p _face_info->elem().subdomain_id().
-   * If the variable is only defined on the neighbor side of the face, then the subdomain ID will be
-   * equivalent to \p _face_info->neighborPtr()->subdomain_id(). We currently error in flux bcs if
-   * the variable is defined on both sides of the face
-   */
-  Moose::ElemFromFaceArg makeSidedFace(bool fi_elem, bool correct_skewness = false) const;
-
-  /// Computes the Jacobian contribution for every coupled variable.
-  ///
-  /// @param type Either ElementElement, ElementNeighbor, NeighborElement, or NeighborNeighbor. As an
-  /// example ElementNeighbor means the derivatives of the elemental residual with respect to the
-  /// neighbor degrees of freedom
-  ///
-  /// @param residual The already computed residual (probably done with \p computeQpResidual) that
-  /// also holds derivative information for filling in the Jacobians
-  void computeJacobian(Moose::DGJacobianType type, const ADReal & residual);
 };

@@ -8,6 +8,7 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "MixingLengthTurbulentViscosityMaterial.h"
+#include "NS.h"
 
 registerMooseObject("NavierStokesApp", MixingLengthTurbulentViscosityMaterial);
 
@@ -18,12 +19,12 @@ MixingLengthTurbulentViscosityMaterial::validParams()
   params.addClassDescription("Computes the material property corresponding to the total viscosity"
                              "comprising the mixing length model turbulent total_viscosity"
                              "and the molecular viscosity.");
-  params.addRequiredCoupledVar("u", "The x-velocity");
-  params.addCoupledVar("v", 0, "y-velocity"); // only required in 2D and 3D
-  params.addCoupledVar("w", 0, "z-velocity"); // only required in 3D
-  params.addRequiredCoupledVar("mixing_length", "Turbulent eddy mixing length.");
-  params.addRequiredParam<MaterialPropertyName>("mu", "The viscosity");
-  params.addRequiredParam<MaterialPropertyName>("rho", "The value for the density");
+  params.addRequiredParam<MooseFunctorName>("u", "The x-velocity");
+  params.addParam<MooseFunctorName>("v", 0, "y-velocity"); // only required in 2D and 3D
+  params.addParam<MooseFunctorName>("w", 0, "z-velocity"); // only required in 3D
+  params.addRequiredParam<MooseFunctorName>("mixing_length", "Turbulent eddy mixing length.");
+  params.addRequiredParam<MooseFunctorName>("mu", "The viscosity");
+  params.addRequiredParam<MooseFunctorName>("rho", "The value for the density");
   return params;
 }
 
@@ -31,15 +32,15 @@ MixingLengthTurbulentViscosityMaterial::MixingLengthTurbulentViscosityMaterial(
     const InputParameters & parameters)
   : FunctorMaterial(parameters),
     _mesh_dimension(_mesh.dimension()),
-    _u_vel(*getVarHelper<MooseVariableFVReal>("u", 0)),
-    _v_vel(isCoupled("v") ? getVarHelper<MooseVariableFVReal>("v", 0) : nullptr),
-    _w_vel(isCoupled("w") ? getVarHelper<MooseVariableFVReal>("w", 0) : nullptr),
-    _mixing_len(*getVarHelper<MooseVariableFVReal>("mixing_length", 0)),
+    _u_vel(getFunctor<ADReal>("u")),
+    _v_vel(isParamValid("v") ? &getFunctor<ADReal>("v") : nullptr),
+    _w_vel(isParamValid("w") ? &getFunctor<ADReal>("v") : nullptr),
+    _mixing_len(getFunctor<ADReal>(NS::mixing_length)),
     _mu(getFunctor<ADReal>("mu")),
     _rho(getFunctor<ADReal>("rho"))
 {
   addFunctorProperty<ADReal>(
-      "total_viscosity",
+      NS::total_viscosity,
       [this](const auto & r, const auto & t) -> ADReal
       {
         constexpr Real offset = 1e-15; // prevents explosion of sqrt(x) derivative to infinity

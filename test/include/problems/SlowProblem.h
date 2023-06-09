@@ -20,8 +20,15 @@ public:
   static InputParameters validParams();
 
   SlowProblem(const InputParameters & params);
-  virtual void solve();
+  virtual void solve(unsigned int) override;
 
 protected:
+  /// Another timed routine
+  void otherTimedSection() const;
+  /// Get the time to sleep for
+  Real getDelay() const;
+
   const std::vector<Real> _seconds_to_sleep;
+  const bool _nested_print;
+  const bool _nested_section;
 };

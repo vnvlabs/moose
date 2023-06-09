@@ -36,13 +36,13 @@
 [Functions]
   [./tdisp]
     type = ParsedFunction
-    value = 0.05*t
+    expression = 0.05*t
   [../]
 []
 
 [UserObjects]
   [./prop_read]
-    type = ElementPropertyReadFile
+    type = PropertyReadFile
     prop_file_name = 'input_file.txt'
     nprop = 4
     read_type = grain

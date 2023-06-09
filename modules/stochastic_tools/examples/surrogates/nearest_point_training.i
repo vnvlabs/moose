@@ -27,7 +27,7 @@
 
 [Controls]
   [cmdline]
-    type = MultiAppCommandLineControl
+    type = MultiAppSamplerControl
     multi_app = sub
     sampler = grid
     param_names = 'Materials/conductivity/prop_values Kernels/source/value Mesh/xmax BCs/right/value'
@@ -37,7 +37,7 @@
 [Transfers]
   [data]
     type = SamplerReporterTransfer
-    multi_app = sub
+    from_multi_app = sub
     sampler = grid
     stochastic_reporter = results
     from_reporter = 'avg/value max/value'
@@ -46,16 +46,9 @@
 
 [Reporters]
   [results]
-    type = StochasticReporter
-    outputs = none
-  []
-[]
-
-[VectorPostprocessors]
-  [sampler_data]
-    type = SamplerData
+    type = StochasticMatrix
     sampler = grid
-    parallel_type = DISTRIBUTED
+    outputs = none
   []
 []
 
@@ -64,7 +57,7 @@
     type = NearestPointTrainer
     execute_on = timestep_end
     sampler = grid
-    predictors = 'sampler_data/grid_0'
+    predictors = 'results/grid_0'
     predictor_cols = '1 2 3'
     response = results/data:avg:value
   []

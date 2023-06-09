@@ -10,7 +10,7 @@
   closures = simple_closures
 []
 
-[Modules/FluidProperties]
+[FluidProperties]
   [fp]
     type = StiffenedGasFluidProperties
     gamma = 2.35
@@ -120,8 +120,4 @@
     type = GAUSS
     order = SECOND
   []
-[]
-
-[Outputs]
-  csv = true
 []

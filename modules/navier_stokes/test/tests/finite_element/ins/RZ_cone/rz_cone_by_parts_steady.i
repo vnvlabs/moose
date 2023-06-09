@@ -36,7 +36,6 @@ petsc_options_iname = '-pc_type -sub_pc_type -sub_pc_factor_levels'
 []
 
 [Outputs]
-  csv = true
   console = true
   [./out]
     type = Exodus
@@ -126,7 +125,7 @@ petsc_options_iname = '-pc_type -sub_pc_type -sub_pc_factor_levels'
 [Functions]
   [./inlet_func]
     type = ParsedFunction
-    value = '-4 * x^2 + 1'
+    expression = '-4 * x^2 + 1'
   [../]
 []
 

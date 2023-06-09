@@ -1,10 +1,14 @@
 [Mesh]
-  type = GeneratedMesh
-  dim = 2
-  nx = 30
-  ny = 3
-  xmax = 0.304 # Length of test chamber
-  ymax = 0.0257 # Test chamber radius
+  [gmg]
+    type = GeneratedMeshGenerator
+    dim = 2
+    nx = 30
+    ny = 3
+    xmax = 0.304 # Length of test chamber
+    ymax = 0.0257 # Test chamber radius
+  []
+  coord_type = RZ
+  rz_coord_axis = X
   uniform_refine = 2
 []
 
@@ -113,8 +117,6 @@
 
 [Problem]
   type = FEProblem
-  coord_type = RZ
-  rz_coord_axis = X
 []
 
 [Executioner]

@@ -82,7 +82,7 @@ cp = 1
     rho = ${rho}
   []
   [mean_zero_pressure]
-    type = FVScalarLagrangeMultiplier
+    type = FVIntegralValueConstraint
     variable = pressure
     lambda = lambda
   []
@@ -149,8 +149,8 @@ cp = 1
     variable2 = Ts
     boundary = 'interface'
     h = 5
-    temp_solid = Ts
-    temp_fluid = T
+    T_solid = Ts
+    T_fluid = T
     subdomain1 = 0
     subdomain2 = 1
     wall_cell_is_bulk = true
@@ -252,13 +252,13 @@ cp = 1
 
 [Postprocessors]
   [max_T]
-    type = ElementExtremeValue
-    variable = T
+    type = ADElementExtremeFunctorValue
+    functor = T
     block = 0
   []
   [max_Ts]
-    type = ElementExtremeValue
-    variable = Ts
+    type = ADElementExtremeFunctorValue
+    functor = Ts
     block = 1
   []
   [mdot_out]
@@ -266,6 +266,7 @@ cp = 1
     boundary = 'top_to_0'
     vel_x = u
     vel_y = v
+    advected_quantity = ${rho}
   []
 []
 

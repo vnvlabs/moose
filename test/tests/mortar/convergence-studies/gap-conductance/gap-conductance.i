@@ -145,23 +145,23 @@
 [Functions]
   [./forcing_function]
     type = ParsedFunction
-    value = ''
+    expression = ''
   [../]
   [./exact_soln_primal]
     type = ParsedFunction
-    value = ''
+    expression = ''
   [../]
   [exact_soln_lambda]
     type = ParsedFunction
-    value = ''
+    expression = ''
   []
   [mms_secondary]
     type = ParsedFunction
-    value = ''
+    expression = ''
   []
   [mms_primary]
     type = ParsedFunction
-    value = ''
+    expression = ''
   []
 []
 
@@ -196,14 +196,11 @@
   solve_type = NEWTON
   type = Steady
   petsc_options = '-snes_converged_reason'
-  # petsc_options_iname = '-pc_type -pc_factor_mat_solver_type'
-  # petsc_options_value = 'lu       superlu_dist'
   petsc_options_iname = '-pc_type -pc_hypre_type'
   petsc_options_value = 'hypre    boomeramg'
 []
 
 [Outputs]
-  exodus = true
   csv = true
   [dofmap]
     type = DOFMap

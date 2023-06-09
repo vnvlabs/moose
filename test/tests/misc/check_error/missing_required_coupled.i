@@ -13,7 +13,7 @@
 [Functions]
   [./bc_fn_v]
     type = ParsedFunction
-    value = (x*x+y*y)
+    expression = (x*x+y*y)
   [../]
 []
 
@@ -65,5 +65,4 @@
 
 [Outputs]
   execute_on = 'timestep_end'
-  exodus = true
 []

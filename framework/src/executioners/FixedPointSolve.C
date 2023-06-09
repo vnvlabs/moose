@@ -96,8 +96,8 @@ FixedPointSolve::validParams()
   params.addDeprecatedParam<std::vector<std::string>>(
       "relaxed_variables",
       std::vector<std::string>(),
-      "Relaxed variables is deprecated, use transformed_variables instead.",
-      "List of main app variables to relax during fixed point iterations");
+      "List of main app variables to relax during fixed point iterations",
+      "Relaxed variables is deprecated, use transformed_variables instead.");
 
   params.addParam<bool>("auto_advance",
                         "Whether to automatically advance sub-applications regardless of whether "
@@ -107,7 +107,8 @@ FixedPointSolve::validParams()
       "fixed_point_min_its fixed_point_max_its accept_on_max_fixed_point_iteration "
       "disable_fixed_point_residual_norm_check fixed_point_rel_tol fixed_point_abs_tol "
       "fixed_point_force_norms custom_pp fixed_point_rel_tol fixed_point_abs_tol direct_pp_value "
-      "relaxation_factor transformed_variables transformed_postprocessors auto_advance",
+      "relaxation_factor transformed_variables transformed_postprocessors auto_advance "
+      "custom_abs_tol custom_rel_tol",
       "Fixed point iterations");
 
   params.addParam<unsigned int>(
@@ -153,7 +154,6 @@ FixedPointSolve::FixedPointSolve(Executioner & ex)
     _xfem_update_count(0),
     _xfem_repeat_step(false),
     _old_entering_time(_problem.time() - 1),
-    _solve_message(_problem.shouldSolve() ? "Solve Converged!" : "Solve Skipped!"),
     _fail_step(false),
     _auto_advance_set_by_user(isParamValid("auto_advance")),
     _auto_advance_user_value(_auto_advance_set_by_user ? getParam<bool>("auto_advance") : true)
@@ -203,8 +203,10 @@ FixedPointSolve::solve()
 
   // need to back up multi-apps even when not doing fixed point iteration for recovering from failed
   // multiapp solve
+  _problem.backupMultiApps(EXEC_MULTIAPP_FIXED_POINT_BEGIN);
   _problem.backupMultiApps(EXEC_TIMESTEP_BEGIN);
   _problem.backupMultiApps(EXEC_TIMESTEP_END);
+  _problem.backupMultiApps(EXEC_MULTIAPP_FIXED_POINT_END);
 
   // Prepare to relax variables as a main app
   std::set<dof_id_type> transformed_dofs;
@@ -266,12 +268,15 @@ FixedPointSolve::solve()
       else
       {
         // For every iteration other than the first, we need to restore the state of the MultiApps
+        _problem.restoreMultiApps(EXEC_MULTIAPP_FIXED_POINT_BEGIN);
         _problem.restoreMultiApps(EXEC_TIMESTEP_BEGIN);
         _problem.restoreMultiApps(EXEC_TIMESTEP_END);
+        _problem.restoreMultiApps(EXEC_MULTIAPP_FIXED_POINT_END);
       }
 
       _console << COLOR_MAGENTA << "Beginning fixed point iteration " << _fixed_point_it
-               << COLOR_DEFAULT << std::endl;
+               << COLOR_DEFAULT << std::endl
+               << std::endl;
     }
 
     // Save last postprocessor value as value before solve
@@ -309,6 +314,19 @@ FixedPointSolve::solve()
       break;
     }
 
+    if (converged)
+    {
+      // Fixed point iteration loop ends right above
+      _problem.execute(EXEC_MULTIAPP_FIXED_POINT_END);
+      _problem.execTransfers(EXEC_MULTIAPP_FIXED_POINT_END);
+      if (!_problem.execMultiApps(EXEC_MULTIAPP_FIXED_POINT_END, autoAdvance()))
+      {
+        _fixed_point_status = MooseFixedPointConvergenceReason::DIVERGED_FAILED_MULTIAPP;
+        return false;
+      }
+      _problem.outputStep(EXEC_MULTIAPP_FIXED_POINT_END);
+    }
+
     _problem.dt() =
         current_dt; // _dt might be smaller than this at this point for multistep methods
   }
@@ -335,6 +353,10 @@ FixedPointSolve::solve()
 
   INJECTION_LOOP_END(MOOSE, PicardSolve,VNV_NOCALLBACK);
   
+  // clear history to avoid displaying it again on next solve that can happen for example during
+  // transient
+  _pp_history.str("");
+
   return converged;
 }
 
@@ -360,8 +382,20 @@ FixedPointSolve::solveStep(Real & begin_norm,
                                            : std::numeric_limits<Real>::max());
 
   _executioner.preSolve();
-
   _problem.execTransfers(EXEC_TIMESTEP_BEGIN);
+
+  if (_fixed_point_it == 0)
+  {
+    _problem.execute(EXEC_MULTIAPP_FIXED_POINT_BEGIN);
+    _problem.execTransfers(EXEC_MULTIAPP_FIXED_POINT_BEGIN);
+    if (!_problem.execMultiApps(EXEC_MULTIAPP_FIXED_POINT_BEGIN, autoAdvance()))
+    {
+      _fixed_point_status = MooseFixedPointConvergenceReason::DIVERGED_FAILED_MULTIAPP;
+      return false;
+    }
+    _problem.outputStep(EXEC_MULTIAPP_FIXED_POINT_BEGIN);
+  }
+
   if (!_problem.execMultiApps(EXEC_TIMESTEP_BEGIN, auto_advance))
   {
     _fixed_point_status = MooseFixedPointConvergenceReason::DIVERGED_FAILED_MULTIAPP;
@@ -405,15 +439,12 @@ FixedPointSolve::solveStep(Real & begin_norm,
   {
     _fixed_point_status = MooseFixedPointConvergenceReason::DIVERGED_NONLINEAR;
 
-    _console << COLOR_RED << " Solve Did NOT Converge!" << COLOR_DEFAULT << std::endl;
     // Perform the output of the current, failed time step (this only occurs if desired)
     _problem.outputStep(EXEC_FAILED);
     return false;
   }
   else
     _fixed_point_status = MooseFixedPointConvergenceReason::CONVERGED_NONLINEAR;
-
-  _console << COLOR_GREEN << ' ' << _solve_message << COLOR_DEFAULT << std::endl;
 
   // Use the fixed point algorithm if the conditions (availability of values, etc) are met
   if (_transformed_vars.size() > 0 && useFixedPointAlgorithmUpdateInsteadOfPicard(true))

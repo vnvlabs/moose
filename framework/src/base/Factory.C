@@ -343,9 +343,3 @@ Factory::associatedClassName(const std::string & name) const
   else
     return it->second;
 }
-
-void
-Factory::regExecFlag(const ExecFlagType & flag)
-{
-  _app.addExecFlag(flag);
-}

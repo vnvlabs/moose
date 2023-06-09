@@ -45,7 +45,7 @@
 [Functions]
   [strain]
     type = ParsedFunction
-    value = 't'
+    expression = 't'
   []
 []
 
@@ -424,5 +424,4 @@
 
 [Outputs]
   exodus = false
-  csv = true
 []

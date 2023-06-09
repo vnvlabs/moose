@@ -11,6 +11,7 @@
 #include "Reconstructions.h"
 #include "NS.h"
 #include "Assembly.h"
+#include "BernoulliPressureVariable.h"
 
 registerMooseObject("NavierStokesApp", PINSFVRhieChowInterpolator);
 
@@ -39,10 +40,12 @@ PINSFVRhieChowInterpolator::validParams()
 
 PINSFVRhieChowInterpolator::PINSFVRhieChowInterpolator(const InputParameters & params)
   : INSFVRhieChowInterpolator(params),
-    _eps(const_cast<Moose::Functor<ADReal> &>(getFunctor<ADReal>(NS::porosity))),
+    _eps(getFunctor<ADReal>(NS::porosity)),
+    _smoothed_eps(_moose_mesh, NS::smoothed_porosity),
     _epss(libMesh::n_threads(), nullptr),
+    _smoothed_epss(libMesh::n_threads(), nullptr),
     _smoothing_layers(getParam<unsigned short>("smoothing_layers")),
-    _smoothed_eps(_moose_mesh, "smoothed_eps")
+    _pinsfv_setup_done(false)
 {
   if (_smoothing_layers && _eps.wrapsType<MooseVariableBase>())
     paramError(
@@ -58,7 +61,19 @@ PINSFVRhieChowInterpolator::PINSFVRhieChowInterpolator(const InputParameters & p
   const auto porosity_name = deduceFunctorName(NS::porosity);
 
   for (const auto tid : make_range(libMesh::n_threads()))
-    _epss[tid] = &UserObject::_subproblem.getFunctor<ADReal>(porosity_name, tid, name());
+  {
+    _epss[tid] = &UserObject::_subproblem.getFunctor<ADReal>(porosity_name, tid, name(), true);
+
+    if (_smoothing_layers > 0)
+    {
+      if (!UserObject::_subproblem.hasFunctor(NS::smoothed_porosity, tid))
+        // Smoothed porosity is only an envelope at this point, it will be set during pinsfvSetup()
+        UserObject::_subproblem.addFunctor(NS::smoothed_porosity, _smoothed_eps, tid);
+
+      _smoothed_epss[tid] =
+          &UserObject::_subproblem.getFunctor<ADReal>(NS::smoothed_porosity, tid, name(), true);
+    }
+  }
 }
 
 void
@@ -69,22 +84,21 @@ PINSFVRhieChowInterpolator::meshChanged()
 }
 
 void
-PINSFVRhieChowInterpolator::residualSetup()
-{
-  if (!_initial_setup_done)
-  {
-    insfvSetup();
-    pinsfvSetup();
-  }
-
-  _initial_setup_done = true;
-}
-
-void
 PINSFVRhieChowInterpolator::pinsfvSetup()
 {
   if (!_smoothing_layers)
     return;
+
+  if (dynamic_cast<BernoulliPressureVariable *>(_p))
+    paramError(
+        NS::pressure,
+        "If 'smoothing_layers' is non-zero, e.g. if the porosity is smooth(ed), "
+        "then the pressure drop should be computed automatically. The "
+        "'BernoulliPressureVariable' class enforces a pressure drop according to the Bernoulli "
+        "equation on any face which has different pressure values on either side. This is "
+        "undesirable when the porosity is varying smoothing and there may be pressure drops "
+        "corresponding to viscous effects. Please just use the 'INSFVPressureVariable' "
+        "class for pressure when the porosity is smooth.");
 
   const auto & all_fi = _moose_mesh.allFaceInfo();
   _geometric_fi.reserve(all_fi.size());
@@ -98,18 +112,31 @@ PINSFVRhieChowInterpolator::pinsfvSetup()
   const auto saved_do_derivatives = ADReal::do_derivatives;
   ADReal::do_derivatives = true;
   Moose::FV::interpolateReconstruct(
-      _smoothed_eps, _eps, _smoothing_layers, false, _geometric_fi, *this);
+      _smoothed_eps, _eps, _smoothing_layers, false, _geometric_fi, determineState());
   ADReal::do_derivatives = saved_do_derivatives;
 
-  _eps.assign(_smoothed_eps);
-
-  const auto porosity_name = deduceFunctorName(NS::porosity);
+  // Assign the new functor to all
   for (const auto tid : make_range((unsigned int)(1), libMesh::n_threads()))
   {
-    auto & other_epss = const_cast<Moose::Functor<ADReal> &>(
-        UserObject::_subproblem.getFunctor<ADReal>(porosity_name, tid, name()));
-    other_epss.assign(_smoothed_eps);
+    auto & other_smoothed_epss = const_cast<Moose::Functor<ADReal> &>(
+        UserObject::_subproblem.getFunctor<ADReal>(NS::smoothed_porosity, tid, name(), true));
+    other_smoothed_epss.assign(_smoothed_eps);
   }
+}
+
+void
+PINSFVRhieChowInterpolator::residualSetup()
+{
+  // We cant do this on initialSetup because user objects are initialized before
+  // functions are, so the porosity function is not available for interpolation-reconstruction
+  // on initialSetup().
+  if (!_pinsfv_setup_done)
+  {
+    pinsfvSetup();
+    _pinsfv_setup_done = true;
+  }
+
+  INSFVRhieChowInterpolator::residualSetup();
 }
 
 bool

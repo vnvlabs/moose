@@ -33,7 +33,7 @@
   []
 []
 
-[Modules/FluidProperties]
+[FluidProperties]
   [eos]
     type = StiffenedGasFluidProperties
     gamma = 1.4
@@ -53,7 +53,7 @@
 [Functions]
   [T0]
     type = ParsedFunction
-    value = 'if (x < 1, 300 + 50 * sin(2*pi*x + 1.5*pi), 250)'
+    expression = 'if (x < 1, 300 + 50 * sin(2*pi*x + 1.5*pi), 250)'
   []
 []
 

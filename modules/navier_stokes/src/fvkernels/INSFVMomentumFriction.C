@@ -36,28 +36,28 @@ INSFVMomentumFriction::INSFVMomentumFriction(const InputParameters & parameters)
     _linear_friction(isParamValid("linear_coef_name") ? &getFunctor<ADReal>("linear_coef_name")
                                                       : nullptr),
     _quadratic_friction(
-        isParamValid("quadratic_coef_name") ? &getFunctor<ADReal>("quadratic_coef_name") : nullptr),
-    _use_linear_friction(isParamValid("linear_coef_name"))
+        isParamValid("quadratic_coef_name") ? &getFunctor<ADReal>("quadratic_coef_name") : nullptr)
 {
-  // Check that one and at most one friction coefficient has been provided
-  if (isParamValid("linear_coef_name") + isParamValid("quadratic_coef_name") != 1)
-    mooseError("INSFVMomentumFriction should be provided with one and only one friction "
-               "coefficient material property");
+  if (!isParamValid("linear_coef_name") && !isParamValid("quadratic_coef_name"))
+    mooseError("INSFVMomentumFriction should be provided with at least one friction coefficiant!");
 }
 
 void
 INSFVMomentumFriction::gatherRCData(const Elem & elem)
 {
-  const auto elem_arg = makeElemArg(&elem);
+  const auto & elem_arg = makeElemArg(&elem);
+  const auto state = determineState();
 
-  auto coefficient = _use_linear_friction
-                         ? (*_linear_friction)(elem_arg)
-                         : (*_quadratic_friction)(elem_arg)*std::abs(_u_functor(elem_arg));
+  ADReal coefficient = 0.0;
+  if (_linear_friction)
+    coefficient += (*_linear_friction)(elem_arg, determineState());
+  if (_quadratic_friction)
+    coefficient += (*_quadratic_friction)(elem_arg, state) * std::abs(_u_functor(elem_arg, state));
 
   coefficient *= _assembly.elementVolume(&elem);
 
   _rc_uo.addToA(&elem, _index, coefficient);
 
   const auto dof_number = elem.dof_number(_sys.number(), _var.number(), 0);
-  processResidual(coefficient * _u_functor(elem_arg), dof_number);
+  addResidualAndJacobian(coefficient * _u_functor(elem_arg, state), dof_number);
 }

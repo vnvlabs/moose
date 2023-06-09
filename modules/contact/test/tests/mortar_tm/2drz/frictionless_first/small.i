@@ -96,7 +96,6 @@ name = 'small'
     primary = plank_right
     secondary = block_left
     formulation = mortar
-    mortar_approach = weighted
     c_normal = 1.0e0
   []
 []
@@ -235,7 +234,6 @@ name = 'small'
 []
 
 [Outputs]
-  exodus = true
   file_base = ${name}
   [comp]
     type = CSV

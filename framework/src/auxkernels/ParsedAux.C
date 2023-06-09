@@ -8,6 +8,7 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "ParsedAux.h"
+#include "MooseApp.h"
 
 registerMooseObject("MooseApp", ParsedAux);
 
@@ -20,8 +21,11 @@ ParsedAux::validParams()
       "Sets a field variable value to the evaluation of a parsed expression.");
 
   params.addRequiredCustomTypeParam<std::string>(
-      "function", "FunctionExpression", "function expression");
-  params.addCoupledVar("args", "coupled variables");
+      "function", "FunctionExpression", "Parsed function expression to compute");
+  params.deprecateParam("function", "expression", "02/07/2024");
+  params.addCoupledVar("args", "Vector of coupled variable names");
+  params.deprecateCoupledVar("args", "coupled_variables", "02/07/2024");
+
   params.addParam<bool>(
       "use_xyzt",
       false,
@@ -38,9 +42,9 @@ ParsedAux::validParams()
 ParsedAux::ParsedAux(const InputParameters & parameters)
   : AuxKernel(parameters),
     FunctionParserUtils(parameters),
-    _function(getParam<std::string>("function")),
-    _nargs(coupledComponents("args")),
-    _args(coupledValues("args")),
+    _function(getParam<std::string>("expression")),
+    _nargs(coupledComponents("coupled_variables")),
+    _args(coupledValues("coupled_variables")),
     _use_xyzt(getParam<bool>("use_xyzt"))
 {
   // build variables argument
@@ -48,7 +52,7 @@ ParsedAux::ParsedAux(const InputParameters & parameters)
 
   // coupled field variables
   for (std::size_t i = 0; i < _nargs; ++i)
-    variables += (i == 0 ? "" : ",") + getFieldVar("args", i)->name();
+    variables += (i == 0 ? "" : ",") + getFieldVar("coupled_variables", i)->name();
 
   // "system" variables
   const std::vector<std::string> xyzt = {"x", "y", "z", "t"};
@@ -78,7 +82,17 @@ ParsedAux::ParsedAux(const InputParameters & parameters)
 
   // just-in-time compile
   if (_enable_jit)
+  {
+    // let rank 0 do the JIT compilation first
+    if (_communicator.rank() != 0)
+      _communicator.barrier();
+
     _func_F->JITCompile();
+
+    // wait for ranks > 0 to catch up
+    if (_communicator.rank() == 0)
+      _communicator.barrier();
+  }
 
   // reserve storage for parameter passing buffer
   _func_params.resize(_nargs + (_use_xyzt ? 4 : 0));

@@ -67,7 +67,11 @@ ComputeJacobianForScalingThread::operator()(const ConstElemRange & range,
     }
     catch (libMesh::LogicError & e)
     {
-      throw MooseException("We caught a libMesh error in ComputeJacobianForScalingThread");
+      mooseException("We caught a libMesh error in ComputeJacobianForScalingThread: ", e.what());
+    }
+    catch (MetaPhysicL::LogicError & e)
+    {
+      moose::translateMetaPhysicLError(e);
     }
   }
   catch (MooseException & e)
@@ -77,10 +81,10 @@ ComputeJacobianForScalingThread::operator()(const ConstElemRange & range,
 }
 
 void
-ComputeJacobianForScalingThread::computeJacobian()
+ComputeJacobianForScalingThread::computeOnElement()
 {
   if (_nl.offDiagonalsInAutoScaling())
-    ComputeFullJacobianThread::computeJacobian();
+    ComputeFullJacobianThread::computeOnElement();
   else
-    ComputeJacobianThread::computeJacobian();
+    ComputeJacobianThread::computeOnElement();
 }

@@ -12,27 +12,13 @@ import subprocess
 from mooseutils import colorText
 from collections import OrderedDict
 import json
+import yaml
+import sys
 
 TERM_COLS = int(os.getenv('MOOSE_TERM_COLS', '110'))
 TERM_FORMAT = os.getenv('MOOSE_TERM_FORMAT', 'njcst')
 
 MOOSE_OPTIONS = {
-    'ad_mode' :   { 're_option' : r'#define\s+MOOSE_SPARSE_AD\s+(\d+)',
-                    'default'   : 'NONSPARSE',
-                    'options'   :
-                    { 'SPARSE'    : '1',
-                      'NONSPARSE' : '0'
-                    }
-                  },
-
-    'ad_indexing_type' : { 're_option' : r'#define\s+MOOSE_GLOBAL_AD_INDEXING\s+(\d+)',
-                           'default'   : 'LOCAL',
-                           'options'   :
-                           { 'GLOBAL'  : '1',
-                             'LOCAL'   : '0'
-                           }
-    },
-
     'ad_size' : { 're_option' : r'#define\s+MOOSE_AD_MAX_DOFS_PER_ELEM\s+(\d+)',
                            'default'   : '50'
     },
@@ -43,7 +29,18 @@ MOOSE_OPTIONS = {
                     { 'TRUE'    : '1',
                       'FALSE'   : '0'
                     }
-                  }
+    },
+
+    'libtorch' :    { 're_option' : r'#define\s+MOOSE_LIBTORCH_ENABLED\s+(\d+)',
+                    'default'   : 'FALSE',
+                    'options'   :
+                    { 'TRUE'    : '1',
+                      'FALSE'   : '0'
+                    }
+    },
+
+    'libtorch_dir' : { 're_option' : r'#define\s+MOOSE_LIBTORCH_DIR\s+(.*)',
+                       'default'  : '/framework/contrib/libtorch'}
 }
 
 
@@ -124,6 +121,15 @@ LIBMESH_OPTIONS = {
   'exodus_minor' :  { 're_option' : r'#define\s+LIBMESH_DETECTED_EXODUS_VERSION_MINOR\s+(\d+)',
                      'default'   : '1'
                    },
+  'vtk_major' :  { 're_option' : r'#define\s+LIBMESH_DETECTED_VTK_VERSION_MAJOR\s+(\d+)',
+                   'default'   : '1'
+                 },
+  'vtk_minor' :  { 're_option' : r'#define\s+LIBMESH_DETECTED_VTK_VERSION_MINOR\s+(\d+)',
+                   'default'   : '1'
+                 },
+  'vtk_subminor' :  { 're_option' : r'#define\s+LIBMESH_DETECTED_VTK_VERSION_SUBMINOR\s+(\d+)',
+                      'default'   : '1'
+                    },
   'dof_id_bytes' : { 're_option' : r'#define\s+LIBMESH_DOF_ID_BYTES\s+(\d+)',
                      'default'   : '4'
                    },
@@ -193,6 +199,16 @@ LIBMESH_OPTIONS = {
                    },
 }
 
+LIBTORCH_OPTIONS = {
+      'libtorch_major' :  { 're_option' : r'#define\s+TORCH_VERSION_MAJOR\s+(\d+)',
+                   'default'   : '1'
+                 },
+      'libtorch_minor' :  { 're_option' : r'#define\s+TORCH_VERSION_MINOR\s+(\d+)',
+                   'default'   : '10'
+                 }
+
+}
+
 
 ## Run a command and return the output, or ERROR: + output if retcode != 0
 def runCommand(cmd, cwd=None):
@@ -229,7 +245,7 @@ def formatStatusMessage(job, status, message, options):
 
     # Add caveats if requested
     if job.isPass() and options.extra_info:
-        for check in list(options._checks.keys()):
+        for check in options._checks.keys():
             if job.specs.isValid(check) and not 'ALL' in job.specs[check]:
                 job.addCaveats(check)
 
@@ -247,7 +263,7 @@ def formatStatusMessage(job, status, message, options):
 def formatResult(job, options, result='', color=True, **kwargs):
     # Support only one instance of a format identifier, but obey the order
     terminal_format = list(OrderedDict.fromkeys(list(TERM_FORMAT)))
-    status, message, message_color, exit_code = job.getJointStatus()
+    status, message, message_color, exit_code, sort_value = job.getJointStatus()
 
     color_opts = {'code' : options.code, 'colored' : options.colored}
 
@@ -463,25 +479,48 @@ def getExodusVersion(libmesh_dir):
 
     return major_version.pop() + '.' + minor_version.pop()
 
+def getVTKVersion(libmesh_dir):
+    major_version = getLibMeshConfigOption(libmesh_dir, 'vtk_major')
+    minor_version = getLibMeshConfigOption(libmesh_dir, 'vtk_minor')
+    subminor_version = getLibMeshConfigOption(libmesh_dir, 'vtk_subminor')
+    if len(major_version) != 1 or len(minor_version) != 1 or len(major_version) != 1:
+      return None
+
+    return major_version.pop() + '.' + minor_version.pop() + '.' + subminor_version.pop()
+
+def getLibtorchVersion(moose_dir):
+    libtorch_dir = getMooseConfigOption(moose_dir, 'libtorch_dir')
+
+    if len(libtorch_dir) != 1:
+      return None
+
+    filenames = [libtorch_dir.pop()+'/include/torch/csrc/api/include/torch/version.h']
+    major_version = getConfigOption(filenames, 'libtorch_major', LIBTORCH_OPTIONS)
+    minor_version = getConfigOption(filenames, 'libtorch_minor', LIBTORCH_OPTIONS)
+
+    if len(major_version) != 1 or len(minor_version) != 1 or len(major_version) != 1:
+      return None
+
+    return major_version.pop() + '.' + minor_version.pop()
 
 def checkLogicVersionSingle(checks, iversion, package):
-    logic, version = re.search(r'(.*?)(\d\S+)', iversion).groups()
+    logic, version = re.search(r'(.*?)\s*(\d\S+)', iversion).groups()
     if logic == '' or logic == '=':
         if version == checks[package]:
             return True
         else:
             return False
 
-    # Logical match
-    if logic == '>' and list(map(int, checks[package].split("."))) > list(map(int, version.split("."))):
-        return True
-    elif logic == '>=' and list(map(int, checks[package].split("."))) >= list(map(int, version.split("."))):
-        return True
-    elif logic == '<' and list(map(int, checks[package].split("."))) < list(map(int, version.split("."))):
-        return True
-    elif logic == '<=' and list(map(int, checks[package].split("."))) <= list(map(int, version.split("."))):
-        return True
+    from operator import lt, gt, le, ge
+    ops = {
+      '<': lt,
+      '>': gt,
+      '<=': le,
+      '>=': ge,
+    }
 
+    if ops[logic]([int(x) for x in checks[package].split(".")], [int(x) for x in version.split(".")]):
+        return True
     return False
 
 def checkVersion(checks, test, package):
@@ -542,6 +581,35 @@ def checkExodusVersion(checks, test):
        return (False, version_string)
 
     return (checkVersion(checks, version_string, 'exodus_version'), version_string)
+
+
+# Break down VTKversion logic in a new define
+def checkVTKVersion(checks, test):
+    version_string = ' '.join(test['vtk_version'])
+
+    # If any version of VTK works, return true immediately
+    if 'ALL' in set(test['vtk_version']):
+        return (True, version_string)
+
+    # VTK not installed or version could not be detected (e.g. old libMesh)
+    if checks['vtk_version'] == None:
+       return (False, version_string)
+
+    return (checkVersion(checks, version_string, 'vtk_version'), version_string)
+
+# Break down libtorch version logic in a new define
+def checkLibtorchVersion(checks, test):
+    version_string = ' '.join(test['libtorch_version'])
+
+    # If any version of libtorch works, return true immediately
+    if 'ALL' in set(test['libtorch_version']):
+        return (True, version_string)
+
+    # libtorch not installed or version could not be detected
+    if checks['libtorch_version'] == None:
+       return (False, version_string)
+
+    return (checkVersion(checks, version_string, 'libtorch_version'), version_string)
 
 
 def getIfAsioExists(moose_dir):
@@ -657,31 +725,13 @@ def getInitializedSubmodules(root_dir):
     # This ignores submodules that have a '-' at the beginning which means they are not initialized
     return re.findall(r'^[ +]\S+ (\S+)', output, flags=re.MULTILINE)
 
-def checkInstalled(root_dir):
+def checkInstalled(executable, app_name):
     """
-    Returns a set containing 'ALL' and whether or not the TestHarness
-    is running in an "installed" directory. Since we don't have a fool-proof
-    way of knowing whether a binary is installed or not... Actually we really
-    don't have even a "bad" way of telling. People can install tests just about
-    anywhere that they can write too so we'll see all sorts of good and bad
-    practices. So, for now, let's just detect whether or not we are in a Git
-    repository since usually installed tests won't be in a git area.
-
-    - If somebody tarballs MOOSE up, this report an incorrect result
-    - If somebody installs tests into their git repository, this report an incorrect results
-
-    Neither of these cases a significant risk.
+    Read resource file and determine if binary was relocated
     """
-
     option_set = set(['ALL'])
-
-    # If we are in a git repo assume we are not installed
-    output = str(runCommand("git submodule status", cwd=root_dir))
-    if output.startswith("ERROR"):
-        option_set.add('TRUE')
-    else:
-        option_set.add('FALSE')
-
+    resource_content = readResourceFile(executable, app_name)
+    option_set.add(resource_content.get('installation_type', 'ALL').upper())
     return option_set
 
 def addObjectsFromBlock(objs, node, block_name):
@@ -715,9 +765,17 @@ def getExeJSON(exe):
     Extracts the JSON from the dump
     """
     output = runCommand("%s --json" % exe)
-    output = output.split('**START JSON DATA**\n')[1]
-    output = output.split('**END JSON DATA**\n')[0]
-    return json.loads(output)
+    try:
+        output = output.split('**START JSON DATA**\n')[1]
+        output = output.split('**END JSON DATA**\n')[0]
+        results = json.loads(output)
+    except IndexError:
+        print(f'{exe} --json, produced an error during execution')
+        sys.exit(1)
+    except json.decoder.JSONDecodeError:
+        print(f'{exe} --json, produced invalid JSON output')
+        sys.exit(1)
+    return results
 
 def getExeObjects(exe):
     """
@@ -728,12 +786,32 @@ def getExeObjects(exe):
     addObjectsFromBlock(obj_names, data, "blocks")
     return obj_names
 
+def readResourceFile(exe, app_name):
+    resource_path = os.path.join(os.path.dirname(os.path.abspath(exe)),
+                                 f'{app_name}.yaml')
+    if os.path.exists(resource_path):
+        try:
+            with open(resource_path, 'r', encoding='utf-8') as stream:
+                return yaml.safe_load(stream)
+        except yaml.YAMLError:
+            print(f'resource file parse failure: {resource_path}')
+            sys.exit(1)
+    return {}
+
+# TODO: Deprecate when we can remove getExeObjects
 def getExeRegisteredApps(exe):
     """
     Gets a list of registered applications
     """
     data = getExeJSON(exe)
     return data.get('global', {}).get('registered_apps', [])
+
+def getRegisteredApps(exe, app_name):
+    """
+    Gets a list of registered applications
+    """
+    resource_content = readResourceFile(exe, app_name)
+    return resource_content.get('registered_apps', [])
 
 def checkOutputForPattern(output, re_pattern):
     """

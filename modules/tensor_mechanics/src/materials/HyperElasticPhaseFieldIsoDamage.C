@@ -46,13 +46,13 @@ HyperElasticPhaseFieldIsoDamage::HyperElasticPhaseFieldIsoDamage(const InputPara
     _c(coupledValue("c")),
     _save_state(false),
     _dstress_dc(
-        declarePropertyDerivative<RankTwoTensor>(_base_name + "stress", getVar("c", 0)->name())),
+        declarePropertyDerivative<RankTwoTensor>(_base_name + "stress", coupledName("c", 0))),
     _etens(LIBMESH_DIM),
     _F(declareProperty<Real>(getParam<MaterialPropertyName>("F_name"))),
     _dFdc(declarePropertyDerivative<Real>(getParam<MaterialPropertyName>("F_name"),
-                                          getVar("c", 0)->name())),
+                                          coupledName("c", 0))),
     _d2Fdc2(declarePropertyDerivative<Real>(
-        getParam<MaterialPropertyName>("F_name"), getVar("c", 0)->name(), getVar("c", 0)->name())),
+        getParam<MaterialPropertyName>("F_name"), coupledName("c", 0), coupledName("c", 0))),
     _d2Fdcdstrain(declareProperty<RankTwoTensor>("d2Fdcdstrain")),
     _hist(declareProperty<Real>("hist")),
     _hist_old(getMaterialPropertyOld<Real>("hist"))
@@ -76,9 +76,9 @@ HyperElasticPhaseFieldIsoDamage::computePK2StressAndDerivative()
     _dpk2_dce = _dpk2_dee * _dee_dce;
 
   _dce_dfe.zero();
-  for (unsigned int i = 0; i < LIBMESH_DIM; ++i)
-    for (unsigned int j = 0; j < LIBMESH_DIM; ++j)
-      for (unsigned int k = 0; k < LIBMESH_DIM; ++k)
+  for (const auto i : make_range(Moose::dim))
+    for (const auto j : make_range(Moose::dim))
+      for (const auto k : make_range(Moose::dim))
       {
         _dce_dfe(i, j, k, i) = _dce_dfe(i, j, k, i) + _fe(k, j);
         _dce_dfe(i, j, k, j) = _dce_dfe(i, j, k, j) + _fe(k, i);
@@ -100,11 +100,11 @@ HyperElasticPhaseFieldIsoDamage::computeDamageStress()
   RankTwoTensor evec;
   _ee.symmetricEigenvaluesEigenvectors(eigval, evec);
 
-  for (unsigned int i = 0; i < LIBMESH_DIM; ++i)
-    _etens[i].vectorOuterProduct(evec.column(i), evec.column(i));
+  for (const auto i : make_range(Moose::dim))
+    _etens[i] = RankTwoTensor::selfOuterProduct(evec.column(i));
 
   Real etr = 0.0;
-  for (unsigned int i = 0; i < LIBMESH_DIM; ++i)
+  for (const auto i : make_range(Moose::dim))
     etr += eigval[i];
 
   Real etrpos = (std::abs(etr) + etr) / 2.0;
@@ -112,7 +112,7 @@ HyperElasticPhaseFieldIsoDamage::computeDamageStress()
 
   RankTwoTensor pk2pos, pk2neg;
 
-  for (unsigned int i = 0; i < LIBMESH_DIM; ++i)
+  for (const auto i : make_range(Moose::dim))
   {
     pk2pos += _etens[i] * (lambda * etrpos + 2.0 * mu * (std::abs(eigval[i]) + eigval[i]) / 2.0);
     pk2neg += _etens[i] * (lambda * etrneg + 2.0 * mu * (std::abs(eigval[i]) - eigval[i]) / 2.0);
@@ -123,7 +123,7 @@ HyperElasticPhaseFieldIsoDamage::computeDamageStress()
   if (_save_state)
   {
     std::vector<Real> epos(LIBMESH_DIM), eneg(LIBMESH_DIM);
-    for (unsigned int i = 0; i < LIBMESH_DIM; ++i)
+    for (const auto i : make_range(Moose::dim))
     {
       epos[i] = (std::abs(eigval[i]) + eigval[i]) / 2.0;
       eneg[i] = (std::abs(eigval[i]) - eigval[i]) / 2.0;
@@ -131,7 +131,7 @@ HyperElasticPhaseFieldIsoDamage::computeDamageStress()
 
     // sum squares of epos and eneg
     Real pval(0.0), nval(0.0);
-    for (unsigned int i = 0; i < LIBMESH_DIM; ++i)
+    for (const auto i : make_range(Moose::dim))
     {
       pval += epos[i] * epos[i];
       nval += eneg[i] * eneg[i];
@@ -171,7 +171,7 @@ HyperElasticPhaseFieldIsoDamage::computeNumStiffness()
 {
   RankTwoTensor ee_tmp;
 
-  for (unsigned int i = 0; i < LIBMESH_DIM; ++i)
+  for (const auto i : make_range(Moose::dim))
     for (unsigned int j = i; j < LIBMESH_DIM; ++j)
     {
       Real ee_pert = _zero_pert;
@@ -183,8 +183,8 @@ HyperElasticPhaseFieldIsoDamage::computeNumStiffness()
 
       computeDamageStress();
 
-      for (unsigned int k = 0; k < LIBMESH_DIM; ++k)
-        for (unsigned int l = 0; l < LIBMESH_DIM; ++l)
+      for (const auto k : make_range(Moose::dim))
+        for (const auto l : make_range(Moose::dim))
         {
           _dpk2_dee(k, l, i, j) = (_pk2_tmp(k, l) - _pk2[_qp](k, l)) / ee_pert;
           _dpk2_dee(k, l, j, i) = (_pk2_tmp(k, l) - _pk2[_qp](k, l)) / ee_pert;
@@ -207,5 +207,6 @@ HyperElasticPhaseFieldIsoDamage::computeQpJacobian()
     _d2Fdcdstrain[_qp] =
         -_df_dstretch_inc.innerProductTranspose(dG0_df) * 2.0 * (1.0 - _c[_qp]) * (1 - _kdamage);
 
-  _dstress_dc[_qp] = _fe.mixedProductIkJl(_fe) * _dpk2_dc;
+  usingTensorIndices(i_, j_, k_, l_);
+  _dstress_dc[_qp] = _fe.times<i_, k_, j_, l_>(_fe) * _dpk2_dc;
 }

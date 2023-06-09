@@ -42,11 +42,9 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [simple_fluid]
-      type = SimpleFluidProperties
-    []
+[FluidProperties]
+  [simple_fluid]
+    type = SimpleFluidProperties
   []
 []
 
@@ -114,7 +112,7 @@
 [Functions]
   [sink_strength_fcn]
     type = ParsedFunction
-    value = '30 * if(t <= 2, -1, if(t <= 7, 1, -1))'
+    expression = '30 * if(t <= 2, -1, if(t <= 7, 1, -1))'
   []
 []
 

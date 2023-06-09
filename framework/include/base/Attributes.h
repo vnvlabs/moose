@@ -11,6 +11,7 @@
 
 #include "MooseHashing.h"
 #include "TheWarehouse.h"
+#include "Moose.h"
 
 #include <ostream>
 #include <tuple>
@@ -32,7 +33,9 @@ enum class Interfaces
   InterfaceUserObject = 1 << 12,
   BlockRestrictable = 1 << 13,
   BoundaryRestrictable = 1 << 14,
-  Reporter = 1 << 15
+  Reporter = 1 << 15,
+  DomainUserObject = 1 << 16,
+  MortarUserObject = 1 << 17
 };
 
 template <>
@@ -128,7 +131,10 @@ public:
 class AttribExecOns : public Attribute
 {
 public:
-  typedef unsigned int Key;
+  /// Execute flag that is used to represent all flags when querying AttribExecOns
+  static const ExecFlagType EXEC_ALL;
+
+  typedef int Key;
   void setFrom(Key k)
   {
     _vals.clear();
@@ -136,9 +142,10 @@ public:
   }
 
   AttribExecOns(TheWarehouse & w) : Attribute(w, "exec_ons") {}
-  AttribExecOns(TheWarehouse & w, unsigned int exec_flag) : Attribute(w, "exec_ons")
+  AttribExecOns(TheWarehouse & w, const int id) : Attribute(w, "exec_ons"), _vals({id}) {}
+  AttribExecOns(TheWarehouse & w, const ExecFlagType & exec_flag)
+    : Attribute(w, "exec_ons"), _vals({exec_flag.id()})
   {
-    _vals.push_back(exec_flag);
   }
   virtual void initFrom(const MooseObject * obj) override;
   virtual bool isMatch(const Attribute & other) const override;
@@ -147,7 +154,7 @@ public:
   clonefunc(AttribExecOns);
 
 private:
-  std::vector<unsigned int> _vals;
+  std::vector<Key> _vals;
 };
 
 class AttribSubdomains : public Attribute
@@ -241,6 +248,27 @@ private:
   THREAD_ID _val = 0;
 };
 
+class AttribExecutionOrderGroup : public Attribute
+{
+public:
+  typedef int Key;
+  void setFrom(Key k) { _val = k; }
+
+  AttribExecutionOrderGroup(TheWarehouse & w) : Attribute(w, "execution_order_group") {}
+  AttribExecutionOrderGroup(TheWarehouse & w, Key p)
+    : Attribute(w, "execution_order_group"), _val(p)
+  {
+  }
+  virtual void initFrom(const MooseObject * obj) override;
+  virtual bool isMatch(const Attribute & other) const override;
+  virtual bool isEqual(const Attribute & other) const override;
+  hashfunc(_val);
+  clonefunc(AttribExecutionOrderGroup);
+
+private:
+  int _val = 0;
+};
+
 /**
  * Tracks the libmesh system number that a \p MooseObject is associated with
  */
@@ -285,7 +313,7 @@ private:
 class AttribPreAux : public Attribute
 {
 public:
-  typedef unsigned int Key;
+  typedef int Key;
   void setFrom(Key k)
   {
     _vals.clear();
@@ -293,9 +321,8 @@ public:
   }
 
   AttribPreAux(TheWarehouse & w) : Attribute(w, "pre_aux") {}
-  AttribPreAux(TheWarehouse & w, unsigned int val) : Attribute(w, "pre_aux") { _vals.insert(val); }
-  AttribPreAux(TheWarehouse & w, const std::set<unsigned int> & vals)
-    : Attribute(w, "pre_aux"), _vals(vals)
+  AttribPreAux(TheWarehouse & w, Key val) : Attribute(w, "pre_aux") { _vals.insert(val); }
+  AttribPreAux(TheWarehouse & w, const std::set<Key> & vals) : Attribute(w, "pre_aux"), _vals(vals)
   {
   }
   virtual void initFrom(const MooseObject * obj) override;
@@ -305,7 +332,7 @@ public:
   clonefunc(AttribPreAux);
 
 private:
-  std::set<unsigned int> _vals;
+  std::set<Key> _vals;
 };
 
 /// TODO: delete this later - it is a temporary hack for dealing with inter-system dependencies
@@ -317,7 +344,7 @@ private:
 class AttribPostAux : public Attribute
 {
 public:
-  typedef unsigned int Key;
+  typedef int Key;
   void setFrom(Key k)
   {
     _vals.clear();
@@ -325,11 +352,8 @@ public:
   }
 
   AttribPostAux(TheWarehouse & w) : Attribute(w, "post_aux") {}
-  AttribPostAux(TheWarehouse & w, unsigned int val) : Attribute(w, "post_aux")
-  {
-    _vals.insert(val);
-  }
-  AttribPostAux(TheWarehouse & w, const std::set<unsigned int> & vals)
+  AttribPostAux(TheWarehouse & w, Key val) : Attribute(w, "post_aux") { _vals.insert(val); }
+  AttribPostAux(TheWarehouse & w, const std::set<Key> & vals)
     : Attribute(w, "post_aux"), _vals(vals)
   {
   }
@@ -340,7 +364,7 @@ public:
   clonefunc(AttribPostAux);
 
 private:
-  std::set<unsigned int> _vals;
+  std::set<Key> _vals;
 };
 
 class AttribName : public Attribute

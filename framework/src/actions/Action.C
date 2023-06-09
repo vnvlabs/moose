@@ -16,6 +16,7 @@
 #include "FEProblemBase.h"
 #include "DisplacedProblem.h"
 #include "RelationshipManager.h"
+#include "InputParameterWarehouse.h"
 
 InputParameters
 Action::validParams()
@@ -43,10 +44,14 @@ Action::validParams()
   params.addPrivateParam<std::string>("action_type");
   params.addPrivateParam<ActionWarehouse *>("awh", nullptr);
 
+  params.addParam<std::vector<std::string>>(
+      "control_tags",
+      "Adds user-defined labels for accessing object parameters via control logic.");
+  params.registerBase("Action");
   return params;
 }
 
-Action::Action(InputParameters parameters)
+Action::Action(const InputParameters & parameters)
   : ConsoleStreamInterface(
         *parameters.getCheckedPointerParam<MooseApp *>("_moose_app", "In Action constructor")),
     MeshMetaDataInterface(
@@ -65,6 +70,7 @@ Action::Action(InputParameters parameters)
                  ? std::string("::") + parameters.get<std::string>("task")
                  : "")),
     ParallelObject(*parameters.getCheckedPointerParam<MooseApp *>("_moose_app")),
+    DataFileInterface<Action>(*this),
     _pars(parameters),
     _registered_identifier(isParamValid("registered_identifier")
                                ? getParam<std::string>("registered_identifier")
@@ -171,4 +177,28 @@ Action::getBaseName() const
 {
   mooseDeprecated("getBaseName() is deprecated.");
   return MooseUtils::baseName(_name);
+}
+
+void
+Action::connectControllableParams(const std::string & parameter,
+                                  const std::string & object_type,
+                                  const std::string & object_name,
+                                  const std::string & object_parameter) const
+{
+  MooseObjectParameterName primary_name(uniqueActionName(), parameter);
+  auto base_type = _factory.getValidParams(object_type).get<std::string>("_moose_base");
+  MooseObjectParameterName secondary_name(base_type, object_name, object_parameter);
+  _app.getInputParameterWarehouse().addControllableParameterConnection(primary_name,
+                                                                       secondary_name);
+
+  const std::vector<std::string> & tags = _pars.get<std::vector<std::string>>("control_tags");
+  for (const auto & tag : tags)
+  {
+    if (!tag.empty())
+    {
+      MooseObjectParameterName tagged_name(tag, _name, parameter);
+      _app.getInputParameterWarehouse().addControllableParameterConnection(tagged_name,
+                                                                           secondary_name);
+    }
+  }
 }

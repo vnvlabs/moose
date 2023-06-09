@@ -27,16 +27,15 @@ INSFVFluxKernel::INSFVFluxKernel(const InputParameters & params)
 }
 
 void
-INSFVFluxKernel::processResidual(const ADReal & residual)
+INSFVFluxKernel::addResidualAndJacobian(const ADReal & residual)
 {
   auto process_residual = [this](const ADReal & residual, const Elem & elem)
   {
     const auto dof_index = elem.dof_number(_sys.number(), _var.number(), 0);
-
-    if (_subproblem.currentlyComputingJacobian())
-      _assembly.processDerivatives(residual, dof_index, _matrix_tags);
-    else
-      _assembly.processResidual(residual.value(), dof_index, _vector_tags);
+    addResidualsAndJacobian(_assembly,
+                            std::array<ADReal, 1>{{residual}},
+                            std::array<dof_id_type, 1>{{dof_index}},
+                            _var.scalingFactor());
   };
 
   if (_face_type == FaceInfo::VarFaceNeighbors::ELEM ||

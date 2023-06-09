@@ -8,32 +8,29 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "TagMatrixAux.h"
+#include "libmesh/utility.h"
 
 registerMooseObject("MooseApp", TagMatrixAux);
 
 InputParameters
 TagMatrixAux::validParams()
 {
-  InputParameters params = AuxKernel::validParams();
+  InputParameters params = TagAuxBase<AuxKernel>::validParams();
   params.addParam<TagName>("matrix_tag", "TagName", "Tag Name this Aux works on");
-  params.addRequiredCoupledVar("v",
-                               "The coupled variable whose components are coupled to AuxVariable");
-  params.set<ExecFlagEnum>("execute_on", true) = {EXEC_TIMESTEP_END};
-
-  params.addClassDescription("Couple the diag of a tag matrix, and return its nodal value");
+  params.addClassDescription("Couple the diagonal of a tag matrix, and return its nodal value");
   return params;
 }
 
 TagMatrixAux::TagMatrixAux(const InputParameters & parameters)
-  : AuxKernel(parameters), _v(coupledMatrixTagValue("v", "matrix_tag"))
+  : TagAuxBase<AuxKernel>(parameters),
+    _v(coupledMatrixTagValue("v", "matrix_tag")),
+    _v_var(*getVar("v", 0))
 {
-  auto & execute_on = getParam<ExecFlagEnum>("execute_on");
-  if (execute_on.size() != 1 || !execute_on.contains(EXEC_TIMESTEP_END))
-    mooseError("execute_on for TagMatrixAux must be set to EXEC_TIMESTEP_END");
+  checkCoupledVariable(&_v_var, &_var);
 }
 
 Real
 TagMatrixAux::computeValue()
 {
-  return _v[_qp];
+  return _scaled ? _v[_qp] : _v[_qp] / _v_var.scalingFactor();
 }

@@ -17,7 +17,7 @@ registerMooseObject("NavierStokesApp", PINSFVEnergyTimeDerivative);
 InputParameters
 PINSFVEnergyTimeDerivative::validParams()
 {
-  InputParameters params = FVTimeKernel::validParams();
+  InputParameters params = FVFunctorTimeKernel::validParams();
   params.addClassDescription(
       "Adds the time derivative term to the Navier-Stokes energy equation: "
       "for fluids: d(eps * rho * cp * T)/dt, for solids: (1 - eps) * d(rho * cp * T)/dt"
@@ -25,8 +25,6 @@ PINSFVEnergyTimeDerivative::validParams()
   params.addRequiredParam<MooseFunctorName>(NS::density, "Density");
   params.addParam<MooseFunctorName>(NS::time_deriv(NS::density), "Density time derivative functor");
   params.addRequiredParam<MooseFunctorName>(NS::cp, "Specific heat capacity");
-  params.addParam<MooseFunctorName>(NS::time_deriv(NS::cp),
-                                    "Specific heat capacity time derivative functor");
   params.addRequiredParam<MooseFunctorName>(NS::porosity, "Porosity");
 
   params.addRequiredParam<bool>("is_solid", "Whether this kernel acts on the solid temperature");
@@ -39,14 +37,12 @@ PINSFVEnergyTimeDerivative::validParams()
 }
 
 PINSFVEnergyTimeDerivative::PINSFVEnergyTimeDerivative(const InputParameters & params)
-  : FVTimeKernel(params),
+  : FVFunctorTimeKernel(params),
     _rho(getFunctor<ADReal>(NS::density)),
     _rho_dot(isParamValid(NS::time_deriv(NS::density))
                  ? &getFunctor<ADReal>(NS::time_deriv(NS::density))
                  : nullptr),
     _cp(getFunctor<ADReal>(NS::cp)),
-    _cp_dot(isParamValid(NS::time_deriv(NS::cp)) ? &getFunctor<ADReal>(NS::time_deriv(NS::cp))
-                                                 : nullptr),
     _eps(getFunctor<ADReal>(NS::porosity)),
     _is_solid(getParam<bool>("is_solid")),
     _scaling(getParam<Real>("scaling")),
@@ -61,17 +57,14 @@ PINSFVEnergyTimeDerivative::computeQpResidual()
     return 0.0;
   else
   {
-    auto time_derivative = _rho(makeElemArg(_current_elem)) * _cp(makeElemArg(_current_elem)) *
-                           FVTimeKernel::computeQpResidual();
+    auto elem_arg = makeElemArg(_current_elem);
+    const auto state = determineState();
+    auto time_derivative = _rho(elem_arg, state) * _cp(elem_arg, state) * _var.dot(elem_arg, state);
     if (_rho_dot)
-      time_derivative += (*_rho_dot)(makeElemArg(_current_elem)) * _cp(makeElemArg(_current_elem)) *
-                         _var(makeElemArg(_current_elem));
-    if (_cp_dot)
-      time_derivative += _rho(makeElemArg(_current_elem)) * (*_cp_dot)(makeElemArg(_current_elem)) *
-                         _var(makeElemArg(_current_elem));
+      time_derivative +=
+          (*_rho_dot)(elem_arg, state) * _cp(elem_arg, state) * _var(elem_arg, state);
 
-    return _scaling *
-           (_is_solid ? 1 - _eps(makeElemArg(_current_elem)) : _eps(makeElemArg(_current_elem))) *
+    return _scaling * (_is_solid ? 1 - _eps(elem_arg, state) : _eps(elem_arg, state)) *
            time_derivative;
   }
 }

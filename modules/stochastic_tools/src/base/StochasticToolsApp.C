@@ -51,6 +51,10 @@ StochasticToolsApp::registerAll(Factory & f, ActionFactory & af, Syntax & syntax
   registerTask("load_surrogate_data", true);
   addTaskDependency("load_surrogate_data", "add_surrogate");
 
+  // Adds action for loading mapping data
+  registerTask("load_mapping_data", true);
+  addTaskDependency("load_mapping_data", "add_variable_mapping");
+
   // General StochasticTools action
   registerTask("auto_create_mesh", false);
   registerTask("auto_create_problem", false);
@@ -62,14 +66,30 @@ StochasticToolsApp::registerAll(Factory & f, ActionFactory & af, Syntax & syntax
   // StochasticResults
   registerTask("declare_stochastic_results_vectors", true);
   addTaskDependency("declare_stochastic_results_vectors", "add_vector_postprocessor");
+  addTaskDependency("add_reporter", "declare_stochastic_results_vectors");
 
   // Covariance functions (Gaussian Process)
   registerSyntaxTask("AddCovarianceAction", "Covariance/*", "add_covariance");
   registerMooseObjectTask("add_covariance", CovarianceFunctionBase, false);
   addTaskDependency("add_covariance", "add_user_object");
+  addTaskDependency("add_distribution", "add_covariance");
+  // Mapping objects
+  registerSyntaxTask("AddVariableMappingAction", "VariableMappings/*", "add_variable_mapping");
+  registerMooseObjectTask("add_variable_mapping", VariableMappingBase, false);
+  addTaskDependency("add_variable_mapping", "add_reporter");
   // Adds action for loading Covariance data in model
   registerTask("load_covariance_data", true);
   addTaskDependency("load_covariance_data", "load_surrogate_data");
+  addTaskDependency("setup_function_complete", "load_covariance_data");
+  addTaskDependency("setup_mesh", "auto_create_mesh");
+  addTaskDependency("create_problem", "auto_create_problem");
+  addTaskDependency("setup_executioner", "auto_create_executioner");
+
+  registerSyntaxTask("AdaptiveSamplerAction", "Samplers", "add_user_object");
+  registerSyntaxTask("AdaptiveSamplerAction", "Samplers", "add_postprocessor");
+
+  // Adds [ParameterStudy] block
+  registerSyntax("ParameterStudyAction", "ParameterStudy");
 }
 
 void
@@ -93,9 +113,23 @@ StochasticToolsApp::associateSyntax(Syntax & /*syntax*/, ActionFactory & action_
 }
 
 void
+StochasticToolsApp::requiresTorch(const MooseObject &
+#ifndef LIBTORCH_ENABLED
+                                      obj
+#endif
+)
+{
+#ifndef LIBTORCH_ENABLED
+  obj.mooseError("PyTorch C++ API (libtorch) must be installed to use this object, see "
+                 "https://mooseframework.inl.gov/modules/stochastic_tools/install_pytorch.html for "
+                 "instruction.");
+#endif
+}
+
+void
 StochasticToolsApp::registerExecFlags(Factory & /*factory*/)
 {
-  mooseDeprecated("use registerAll instead of registerExecFlags");
+  mooseDeprecated("Do not use registerExecFlags, apps no longer require flag registration");
 }
 
 extern "C" void

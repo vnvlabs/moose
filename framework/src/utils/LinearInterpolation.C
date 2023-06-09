@@ -10,6 +10,7 @@
 #include "LinearInterpolation.h"
 
 #include "DualRealOps.h"
+#include "ChainedReal.h"
 
 #include <cassert>
 #include <fstream>
@@ -64,24 +65,21 @@ LinearInterpolation::sample(const T & x) const
   {
     if (x < _x[0])
       return _y[0];
-    if (x == _x.back())
-      return _y.back() +
-             (x - _x.back()) / (_x[_x.size() - 2] - _x.back()) * (_y[_y.size() - 2] - _y.back());
-    if (x > _x.back())
+    if (x >= _x.back())
       return _y.back();
   }
 
-  for (unsigned int i = 0; i + 1 < _x.size(); ++i)
-    if (x >= _x[i] && x < _x[i + 1])
-      return _y[i] + (_y[i + 1] - _y[i]) * (x - _x[i]) / (_x[i + 1] - _x[i]);
+  auto upper = std::upper_bound(_x.begin(), _x.end(), x);
+  int i = std::distance(_x.begin(), upper) - 1;
+  return _y[i] + (_y[i + 1] - _y[i]) * (x - _x[i]) / (_x[i + 1] - _x[i]);
 
-  mooseError("Unreachable!");
-  throw std::out_of_range("Unreachable");
-  return 0;
+  // If this point is reached, x must be a NaN.
+  mooseException("Sample point in LinearInterpolation is a NaN.");
 }
 
 template Real LinearInterpolation::sample<Real>(const Real &) const;
 template ADReal LinearInterpolation::sample<ADReal>(const ADReal &) const;
+template ChainedReal LinearInterpolation::sample<ChainedReal>(const ChainedReal &) const;
 
 template <typename T>
 T
@@ -99,20 +97,21 @@ LinearInterpolation::sampleDerivative(const T & x) const
   {
     if (x < _x[0])
       return 0.0;
-    if (x >= _x[_x.size() - 1])
+    if (x >= _x.back())
       return 0.0;
   }
 
-  for (unsigned int i = 0; i + 1 < _x.size(); ++i)
-    if (x >= _x[i] && x < _x[i + 1])
-      return (_y[i + 1] - _y[i]) / (_x[i + 1] - _x[i]);
+  auto upper = std::upper_bound(_x.begin(), _x.end(), x);
+  int i = std::distance(_x.begin(), upper) - 1;
+  return (_y[i + 1] - _y[i]) / (_x[i + 1] - _x[i]);
 
-  throw std::out_of_range("Unreachable");
-  return 0;
+  // If this point is reached, x must be a NaN.
+  mooseException("Sample point in LinearInterpolation is a NaN.");
 }
 
 template Real LinearInterpolation::sampleDerivative<Real>(const Real &) const;
 template ADReal LinearInterpolation::sampleDerivative<ADReal>(const ADReal &) const;
+template ChainedReal LinearInterpolation::sampleDerivative<ChainedReal>(const ChainedReal &) const;
 
 Real
 LinearInterpolation::integrate()

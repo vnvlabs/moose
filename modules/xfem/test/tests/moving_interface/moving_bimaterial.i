@@ -75,7 +75,7 @@
 [Functions]
   [./ls_func]
     type = ParsedFunction
-    value = 'y-3.153 + t'
+    expression = 'y-3.153 + t'
   [../]
 []
 
@@ -310,7 +310,6 @@
 [Outputs]
   exodus = true
   execute_on = timestep_end
-  csv = true
   [./console]
     type = Console
     output_linear = true

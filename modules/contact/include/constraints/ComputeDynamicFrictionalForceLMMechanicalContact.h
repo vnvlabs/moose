@@ -58,29 +58,32 @@ protected:
    */
   virtual void enforceConstraintOnDof3d(const DofObject * const dof);
 
-  /**
-   * Communicate weighted velocities to the owning process
-   */
-  void communicateVelocities();
+  void timestepSetup() override;
 
   /**
    * Apply constant or function-based friction coefficient
    */
   ADReal computeFrictionValue(const ADReal & contact_pressure,
-                              const ADReal & tangential_vel,
-                              const ADReal & tangential_vel_dir);
+                              const Real & tangential_vel,
+                              const Real & tangential_vel_dir);
 
-  /// A map from node to two tangential velocities
+  /// A map from node to two weighted tangential velocities
   std::unordered_map<const DofObject *, std::array<ADReal, 2>> _dof_to_weighted_tangential_velocity;
+
+  /// A map from node to two tangential velocities. Required to have direct connection to physics.
+  std::unordered_map<const DofObject *, std::array<Real, 2>> _dof_to_real_tangential_velocity;
+
+  /// A map from node to two old tangential velocities. Required to have direct connection to physics.
+  std::unordered_map<const DofObject *, std::array<Real, 2>> _dof_to_old_real_tangential_velocity;
 
   /// An array of two pointers to avoid copies
   std::array<const ADReal *, 2> _tangential_vel_ptr = {{nullptr, nullptr}};
 
-  /// The value of the tangential velocity values at the current quadrature point
-  std::array<ADReal, 2> _qp_tangential_velocity;
-
   /// The value of the tangential velocity vectors at the current node
   ADRealVectorValue _qp_tangential_velocity_nodal;
+
+  /// The value of the tangential velocity vectors at the current node
+  ADRealVectorValue _qp_real_tangential_velocity_nodal;
 
   /// Numerical factor used in the tangential constraints for convergence purposes
   const Real _c_t;
@@ -120,7 +123,4 @@ protected:
 
   /// Automatic flag to determine whether we are doing three-dimensional work
   bool _3d;
-
-  /// Nodal tangent vectors on the secondary faces (householder from normal vectors)
-  std::array<std::vector<Point>, 2> _nodal_tangents;
 };

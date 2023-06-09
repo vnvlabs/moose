@@ -17,13 +17,15 @@
 #include "NS.h"
 #include "Assembly.h"
 #include "INSFVVelocityVariable.h"
-#include "INSFVPressureVariable.h"
 #include "PiecewiseByBlockLambdaFunctor.h"
 #include "VectorCompositeFunctor.h"
+#include "FVElementalKernel.h"
+#include "NSFVUtils.h"
 
 #include "libmesh/mesh_base.h"
 #include "libmesh/elem_range.h"
 #include "libmesh/parallel_algebra.h"
+#include "libmesh/remote_elem.h"
 #include "metaphysicl/dualsemidynamicsparsenumberarray.h"
 #include "metaphysicl/parallel_dualnumber.h"
 #include "metaphysicl/parallel_dynamic_std_array_wrapper.h"
@@ -44,6 +46,9 @@ INSFVRhieChowInterpolator::validParams()
   exec_enum.addAvailableFlags(EXEC_PRE_KERNELS);
   exec_enum = {EXEC_PRE_KERNELS};
   params.suppressParameter<ExecFlagEnum>("execute_on");
+
+  // Avoid uninitialized residual objects
+  params.suppressParameter<bool>("force_preic");
 
   MooseEnum velocity_interp_method("average rc", "rc");
   params.addParam<MooseEnum>(
@@ -74,6 +79,16 @@ INSFVRhieChowInterpolator::validParams()
       "supplied when the mesh dimension is greater than 2. It represents the on-diagonal "
       "coefficients for the 'z' component velocity, solved "
       "via the Navier-Stokes equations.");
+  params.addParam<bool>(
+      "pull_all_nonlocal_a",
+      false,
+      "Whether to pull all nonlocal 'a' coefficient data to our process. Note that 'nonlocal' "
+      "means elements that we have access to (this may not be all the elements in the mesh if the "
+      "mesh is distributed) but that we do not own.");
+  params.addParam<NonlinearSystemName>("mass_momentum_system",
+                                       "nl0",
+                                       "The nonlinear system in which the monolithic momentum and "
+                                       "continuity equations are located.");
   return params;
 }
 
@@ -81,9 +96,10 @@ INSFVRhieChowInterpolator::INSFVRhieChowInterpolator(const InputParameters & par
   : GeneralUserObject(params),
     TaggingInterface(this),
     BlockRestrictable(this),
+    ADFunctorInterface(this),
     _moose_mesh(UserObject::_subproblem.mesh()),
     _mesh(_moose_mesh.getMesh()),
-    _dim(_moose_mesh.dimension()),
+    _dim(blocksMaxDimension()),
     _vel(libMesh::n_threads()),
     _p(dynamic_cast<INSFVPressureVariable *>(
         &UserObject::_subproblem.getVariable(0, getParam<VariableName>(NS::pressure)))),
@@ -104,9 +120,11 @@ INSFVRhieChowInterpolator::INSFVRhieChowInterpolator(const InputParameters & par
     _ax(_a, 0),
     _ay(_a, 1),
     _az(_a, 2),
+    _nl_sys_number(_fe_problem.nlSysNum(getParam<NonlinearSystemName>("mass_momentum_system"))),
     _sys(*getCheckedPointerParam<SystemBase *>("_sys")),
     _example(0),
-    _a_data_provided(false)
+    _a_data_provided(false),
+    _pull_all_nonlocal(getParam<bool>("pull_all_nonlocal_a"))
 {
   if (!_p)
     paramError(NS::pressure, "the pressure must be a INSFVPressureVariable.");
@@ -123,12 +141,59 @@ INSFVRhieChowInterpolator::INSFVRhieChowInterpolator(const InputParameters & par
 
   auto check_blocks = [this](const auto & var)
   {
-    if (blockIDs() != var.blockIDs())
+    const auto & var_blocks = var.blockIDs();
+    const auto & uo_blocks = blockIDs();
+
+    // Error if this UO has any blocks that the variable does not
+    std::set<SubdomainID> uo_blocks_minus_var_blocks;
+    std::set_difference(
+        uo_blocks.begin(),
+        uo_blocks.end(),
+        var_blocks.begin(),
+        var_blocks.end(),
+        std::inserter(uo_blocks_minus_var_blocks, uo_blocks_minus_var_blocks.end()));
+    if (uo_blocks_minus_var_blocks.size() > 0)
       mooseError("Block restriction of interpolator user object '",
                  this->name(),
-                 "' doesn't match the block restriction of variable '",
+                 "' (",
+                 Moose::stringify(blocks()),
+                 ") includes blocks not in the block restriction of variable '",
                  var.name(),
-                 "'");
+                 "' (",
+                 Moose::stringify(var.blocks()),
+                 ")");
+
+    // Get the blocks in the variable but not this UO
+    std::set<SubdomainID> var_blocks_minus_uo_blocks;
+    std::set_difference(
+        var_blocks.begin(),
+        var_blocks.end(),
+        uo_blocks.begin(),
+        uo_blocks.end(),
+        std::inserter(var_blocks_minus_uo_blocks, var_blocks_minus_uo_blocks.end()));
+
+    // For each block in the variable but not this UO, error if there is connection
+    // to any blocks on the UO.
+    for (auto & block_id : var_blocks_minus_uo_blocks)
+    {
+      const auto connected_blocks = _moose_mesh.getBlockConnectedBlocks(block_id);
+      std::set<SubdomainID> connected_blocks_on_uo;
+      std::set_intersection(connected_blocks.begin(),
+                            connected_blocks.end(),
+                            uo_blocks.begin(),
+                            uo_blocks.end(),
+                            std::inserter(connected_blocks_on_uo, connected_blocks_on_uo.end()));
+      if (connected_blocks_on_uo.size() > 0)
+        mooseError("Block restriction of interpolator user object '",
+                   this->name(),
+                   "' (",
+                   Moose::stringify(uo_blocks),
+                   ") doesn't match the block restriction of variable '",
+                   var.name(),
+                   "' (",
+                   Moose::stringify(var_blocks),
+                   ")");
+    }
   };
 
   fill_container(NS::pressure, _ps);
@@ -229,16 +294,19 @@ INSFVRhieChowInterpolator::fillARead()
     {
       const Moose::FunctorBase<ADReal> *v_comp, *w_comp;
       if (_dim > 1)
-        v_comp = &UserObject::_subproblem.getFunctor<ADReal>(deduceFunctorName("a_v"), tid, name());
+        v_comp = &UserObject::_subproblem.getFunctor<ADReal>(
+            deduceFunctorName("a_v"), tid, name(), true);
       else
         v_comp = &_zero_functor;
       if (_dim > 2)
-        w_comp = &UserObject::_subproblem.getFunctor<ADReal>(deduceFunctorName("a_w"), tid, name());
+        w_comp = &UserObject::_subproblem.getFunctor<ADReal>(
+            deduceFunctorName("a_w"), tid, name(), true);
       else
         w_comp = &_zero_functor;
 
-      _a_aux[tid] = std::make_unique<VectorCompositeFunctor<ADReal>>(
-          UserObject::_subproblem.getFunctor<ADReal>(deduceFunctorName("a_u"), tid, name()),
+      _a_aux[tid] = std::make_unique<Moose::VectorCompositeFunctor<ADReal>>(
+          "RC_a_coeffs",
+          UserObject::_subproblem.getFunctor<ADReal>(deduceFunctorName("a_u"), tid, name(), true),
           *v_comp,
           *w_comp);
       _a_read[tid] = _a_aux[tid].get();
@@ -260,6 +328,8 @@ INSFVRhieChowInterpolator::fillARead()
 void
 INSFVRhieChowInterpolator::initialSetup()
 {
+  insfvSetup();
+
   if (_velocity_interp_method == Moose::FV::InterpMethod::Average)
     return;
   for (const auto var_num : _var_numbers)
@@ -272,11 +342,23 @@ INSFVRhieChowInterpolator::initialSetup()
         .template condition<AttribSysNum>(_u->sys().number())
         .queryInto(var_objects);
     for (auto * const var_object : var_objects)
-      if (!dynamic_cast<INSFVMomentumResidualObject *>(var_object))
+    {
+      // Allow FVElementalKernel that are not INSFVMomentumResidualObject for now, refs #20695
+      if (!dynamic_cast<INSFVMomentumResidualObject *>(var_object) &&
+          !dynamic_cast<FVElementalKernel *>(var_object))
         mooseError("Object ",
                    var_object->name(),
                    " is not a INSFVMomentumResidualObject. Make sure that all the objects applied "
                    "to the momentum equation are INSFV or derived objects.");
+      else if (!dynamic_cast<INSFVMomentumResidualObject *>(var_object) &&
+               dynamic_cast<FVElementalKernel *>(var_object))
+        mooseWarning(
+            "Elemental kernel ",
+            var_object->name(),
+            " is not a INSFVMomentumResidualObject. Make sure that all the objects applied "
+            "to the momentum equation are INSFV or derived objects.");
+    }
+
     if (var_objects.size() == 0 && !_a_data_provided)
       mooseError(
           "No INSFVKernels detected for the velocity variables. "
@@ -294,25 +376,24 @@ INSFVRhieChowInterpolator::insfvSetup()
 }
 
 void
-INSFVRhieChowInterpolator::residualSetup()
-{
-  if (!_initial_setup_done)
-    insfvSetup();
-
-  _initial_setup_done = true;
-}
-
-void
 INSFVRhieChowInterpolator::meshChanged()
 {
   insfvSetup();
+
+  // If the mesh has been modified:
+  // - the boundary elements may have changed
+  // - some elements may have been refined
+  _elements_to_push_pull.clear();
+  _a.clear();
 }
 
 void
 INSFVRhieChowInterpolator::initialize()
 {
-  _elements_to_push_pull.clear();
-  _a.clear();
+  // Reset map of coefficients to zero.
+  // The keys should not have changed unless the mesh has changed
+  for (const auto & pair : _a)
+    _a[pair.first] = 0;
 }
 
 void
@@ -325,25 +406,27 @@ INSFVRhieChowInterpolator::execute()
   if (_sys.number() != _u->sys().number())
     return;
 
+  TIME_SECTION("execute", 1, "Computing Rhie-Chow coefficients");
+
   // A lot of RC data gathering leverages the automatic differentiation system, e.g. for linear
-  // operators we pull out the 'a' coefficents by querying the ADReal residual derivatives member at
-  // the element or neighbor dof locations. Consequently we need to enable derivative computation.
-  // We do this here outside the threaded regions
+  // operators we pull out the 'a' coefficients by querying the ADReal residual derivatives member
+  // at the element or neighbor dof locations. Consequently we need to enable derivative
+  // computation. We do this here outside the threaded regions
   const auto saved_do_derivatives = ADReal::do_derivatives;
   ADReal::do_derivatives = true;
 
   PARALLEL_TRY
   {
-    GatherRCDataElementThread et(_fe_problem, _var_numbers);
+    GatherRCDataElementThread et(_fe_problem, _nl_sys_number, _var_numbers);
     Threads::parallel_reduce(*_elem_range, et);
   }
   PARALLEL_CATCH;
 
   PARALLEL_TRY
   {
-    using FVRange = StoredRange<std::vector<const FaceInfo *>::const_iterator, const FaceInfo *>;
-    GatherRCDataFaceThread<FVRange> fvr(_fe_problem, _var_numbers);
-    FVRange faces(_fe_problem.mesh().faceInfo().begin(), _fe_problem.mesh().faceInfo().end());
+    using FVRange = StoredRange<MooseMesh::const_face_info_iterator, const FaceInfo *>;
+    GatherRCDataFaceThread<FVRange> fvr(_fe_problem, _nl_sys_number, _var_numbers);
+    FVRange faces(_fe_problem.mesh().ownedFaceInfoBegin(), _fe_problem.mesh().ownedFaceInfoEnd());
     Threads::parallel_reduce(faces, fvr);
   }
   PARALLEL_CATCH;
@@ -354,7 +437,6 @@ INSFVRhieChowInterpolator::execute()
 void
 INSFVRhieChowInterpolator::finalize()
 {
-#ifdef MOOSE_GLOBAL_AD_INDEXING
   if (_a_data_provided || this->n_processors() == 1 ||
       _velocity_interp_method == Moose::FV::InterpMethod::Average)
     return;
@@ -364,14 +446,28 @@ INSFVRhieChowInterpolator::finalize()
   std::unordered_map<processor_id_type, std::vector<dof_id_type>> pull_requests;
   static const VectorValue<ADReal> example;
 
-  for (auto * const elem : _elements_to_push_pull)
+  // Create push data
+  for (const auto * const elem : _elements_to_push_pull)
   {
     const auto id = elem->id();
     const auto pid = elem->processor_id();
     auto it = _a.find(id);
     mooseAssert(it != _a.end(), "We definitely should have found something");
     push_data[pid].push_back(std::make_pair(id, it->second));
-    pull_requests[pid].push_back(id);
+  }
+
+  // Create pull data
+  if (_pull_all_nonlocal)
+  {
+    for (const auto * const elem :
+         as_range(_mesh.active_not_local_elements_begin(), _mesh.active_not_local_elements_end()))
+      if (_sub_ids.count(elem->subdomain_id()))
+        pull_requests[elem->processor_id()].push_back(elem->id());
+  }
+  else
+  {
+    for (const auto * const elem : _elements_to_push_pull)
+      pull_requests[elem->processor_id()].push_back(elem->id());
   }
 
   // First push
@@ -410,24 +506,46 @@ INSFVRhieChowInterpolator::finalize()
       mooseAssert(pid != this->processor_id(), "The request filler shouldn't have been ourselves");
       mooseAssert(elem_ids.size() == filled_data.size(), "I think these should be the same size");
       for (const auto i : index_range(elem_ids))
-      {
-        const auto id = elem_ids[i];
-        auto it = _a.find(id);
-        mooseAssert(it != _a.end(), "We requested this so we must have it in the map");
-        it->second = filled_data[i];
-      }
+        _a[elem_ids[i]] = filled_data[i];
     };
     TIMPI::pull_parallel_vector_data(
         _communicator, pull_requests, gather_functor, action_functor, &example);
   }
-#else
-  mooseError("INSFVRhieChowInterpolator only supported for global AD indexing.");
-#endif
+}
+
+void
+INSFVRhieChowInterpolator::ghostADataOnBoundary(const BoundaryID boundary_id)
+{
+  if (_a_data_provided || this->n_processors() == 1 ||
+      _velocity_interp_method == Moose::FV::InterpMethod::Average)
+    return;
+
+  // Ghost a for the elements on the boundary
+  for (auto elem_id : _moose_mesh.getBoundaryActiveSemiLocalElemIds(boundary_id))
+  {
+    const auto & elem = _moose_mesh.elemPtr(elem_id);
+    // no need to ghost if locally owned or far from local process
+    if (elem->processor_id() != this->processor_id() && elem->is_semilocal(this->processor_id()))
+      // Adding to the a coefficient will make sure the final result gets communicated
+      addToA(elem, 0, 0);
+  }
+
+  // Ghost a for the neighbors of the elements on the boundary
+  for (auto neighbor_id : _moose_mesh.getBoundaryActiveNeighborElemIds(boundary_id))
+  {
+    const auto & neighbor = _moose_mesh.queryElemPtr(neighbor_id);
+    // no need to ghost if locally owned or far from local process
+    if (neighbor->processor_id() != this->processor_id() &&
+        neighbor->is_semilocal(this->processor_id()))
+      // Adding to the a coefficient will make sure the final result gets communicated
+      addToA(neighbor, 0, 0);
+  }
 }
 
 VectorValue<ADReal>
 INSFVRhieChowInterpolator::getVelocity(const Moose::FV::InterpMethod m,
                                        const FaceInfo & fi,
+                                       const Moose::StateArg & time,
                                        const THREAD_ID tid) const
 {
   const Elem * const elem = &fi.elem();
@@ -444,29 +562,28 @@ INSFVRhieChowInterpolator::getVelocity(const Moose::FV::InterpMethod m,
 
   if (Moose::FV::onBoundary(*this, fi))
   {
-    const auto sub_id =
-        hasBlocks(elem->subdomain_id()) ? elem->subdomain_id() : neighbor->subdomain_id();
-    const Moose::SingleSidedFaceArg boundary_face{&fi,
-                                                  Moose::FV::LimiterType::CentralDifference,
-                                                  true,
-                                                  correct_skewness,
-                                                  correct_skewness,
-                                                  sub_id};
-    return vel(boundary_face);
+    const Elem * const boundary_elem = hasBlocks(elem->subdomain_id()) ? elem : neighbor;
+    const Moose::FaceArg boundary_face{
+        &fi, Moose::FV::LimiterType::CentralDifference, true, correct_skewness, boundary_elem};
+    return vel(boundary_face, time);
   }
 
   VectorValue<ADReal> velocity;
 
+  Moose::FaceArg face{
+      &fi, Moose::FV::LimiterType::CentralDifference, true, correct_skewness, nullptr};
   // Create the average face velocity (not corrected using RhieChow yet)
-  velocity(0) = u->getInternalFaceValue(fi, correct_skewness);
+  velocity(0) = (*u)(face, time);
   if (v)
-    velocity(1) = v->getInternalFaceValue(fi, correct_skewness);
+    velocity(1) = (*v)(face, time);
   if (w)
-    velocity(2) = w->getInternalFaceValue(fi, correct_skewness);
+    velocity(2) = (*w)(face, time);
 
-  // Return if Rhie-Chow was not requested
-  if (m == Moose::FV::InterpMethod::Average)
+  // Return if Rhie-Chow was not requested or if we have a porosity jump
+  if (m == Moose::FV::InterpMethod::Average ||
+      std::get<0>(NS::isPorosityJumpFace(epsilon(tid), fi, time)))
     return velocity;
+
   mooseAssert(((m == Moose::FV::InterpMethod::RhieChow) &&
                (_velocity_interp_method == Moose::FV::InterpMethod::RhieChow)) ||
                   _a_data_provided,
@@ -478,11 +595,11 @@ INSFVRhieChowInterpolator::getVelocity(const Moose::FV::InterpMethod m,
 
   // Get pressure gradient. This is the uncorrected gradient plus a correction from cell centroid
   // values on either side of the face
-  const VectorValue<ADReal> & grad_p = p.adGradSln(fi);
+  const VectorValue<ADReal> & grad_p = p.adGradSln(fi, time);
 
   // Get uncorrected pressure gradient. This will use the element centroid gradient if we are
   // along a boundary face
-  const VectorValue<ADReal> & unc_grad_p = p.uncorrectedAdGradSln(fi);
+  const VectorValue<ADReal> & unc_grad_p = p.uncorrectedAdGradSln(fi, time);
 
   const Point & elem_centroid = fi.elemCentroid();
   const Point & neighbor_centroid = fi.neighborCentroid();
@@ -490,7 +607,7 @@ INSFVRhieChowInterpolator::getVelocity(const Moose::FV::InterpMethod m,
   Real neighbor_volume = fi.neighborVolume();
 
   // Now we need to perform the computations of D
-  const auto elem_a = (*_a_read[tid])(makeElemArg(elem));
+  const auto elem_a = (*_a_read[tid])(makeElemArg(elem), time);
 
   mooseAssert(UserObject::_subproblem.getCoordSystem(elem->subdomain_id()) ==
                   UserObject::_subproblem.getCoordSystem(neighbor->subdomain_id()),
@@ -510,7 +627,7 @@ INSFVRhieChowInterpolator::getVelocity(const Moose::FV::InterpMethod m,
 
   VectorValue<ADReal> face_D;
 
-  const auto neighbor_a = (*_a_read[tid])(makeElemArg(neighbor));
+  const auto neighbor_a = (*_a_read[tid])(makeElemArg(neighbor), time);
 
   coordTransformFactor(UserObject::_subproblem, neighbor->subdomain_id(), neighbor_centroid, coord);
   neighbor_volume *= coord;
@@ -530,11 +647,8 @@ INSFVRhieChowInterpolator::getVelocity(const Moose::FV::InterpMethod m,
                                                     : Moose::FV::InterpMethod::Average;
   Moose::FV::interpolate(coeff_interp_method, face_D, elem_D, neighbor_D, fi, true);
 
-  const auto face = Moose::FV::makeCDFace(
-      fi, Moose::FV::faceArgSubdomains(*this, fi), correct_skewness, correct_skewness);
-
   // evaluate face porosity, see (18) in Hanimann 2021 or (11) in Nordlund 2016
-  const auto face_eps = epsilon(tid)(face);
+  const auto face_eps = epsilon(tid)(face, time);
 
   // Perform the pressure correction. We don't use skewness-correction on the pressure since
   // it only influences the averaged cell gradients which cancel out in the correction
@@ -543,4 +657,13 @@ INSFVRhieChowInterpolator::getVelocity(const Moose::FV::InterpMethod m,
     velocity(i) -= face_D(i) * face_eps * (grad_p(i) - unc_grad_p(i));
 
   return velocity;
+}
+
+bool
+INSFVRhieChowInterpolator::hasFaceSide(const FaceInfo & fi, const bool fi_elem_side) const
+{
+  if (fi_elem_side)
+    return hasBlocks(fi.elem().subdomain_id());
+  else
+    return fi.neighborPtr() && hasBlocks(fi.neighbor().subdomain_id());
 }

@@ -13,6 +13,8 @@
 
 #include <unordered_map>
 
+class WeightedGapUserObject;
+
 /**
  * Computes the weighted gap that will later be used to enforce the
  * zero-penetration mechanical contact conditions
@@ -58,11 +60,6 @@ protected:
    * information into the system residual and Jacobian
    */
   virtual void enforceConstraintOnDof(const DofObject * const dof);
-
-  /**
-   * Communicate weighted gaps to the owning process
-   */
-  void communicateGaps();
 
   /// x-displacement on the secondary face
   const ADVariableValue & _secondary_disp_x;
@@ -113,4 +110,7 @@ protected:
   /// A pointer members that can be used to help avoid copying ADReals
   const ADReal * _weighted_gap_ptr = nullptr;
   const Real * _normalization_ptr = nullptr;
+
+  /// The weighted gap user object
+  const WeightedGapUserObject & _weighted_gap_uo;
 };

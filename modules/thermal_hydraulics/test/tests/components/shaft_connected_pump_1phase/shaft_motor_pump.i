@@ -19,7 +19,7 @@ dt = 1.e-2
   fp = fp
 []
 
-[Modules/FluidProperties]
+[FluidProperties]
   [fp]
     type = IdealGasFluidProperties
   []
@@ -90,15 +90,15 @@ dt = 1.e-2
 
   [S_energy_fcn]
     type = ParsedFunction
-    value = '-tau_hyd * omega'
-    vars = 'tau_hyd  omega'
-    vals = 'pump:hydraulic_torque shaft:omega'
+    expression = '-tau_hyd * omega'
+    symbol_names = 'tau_hyd  omega'
+    symbol_values = 'pump:hydraulic_torque shaft:omega'
   []
   [energy_conservation_fcn]
     type = ParsedFunction
-    value = '(E_change - S_energy * dt) / E_tot'
-    vars = 'E_change S_energy dt E_tot'
-    vals = 'E_change S_energy ${dt} E_tot'
+    expression = '(E_change - S_energy * dt) / E_tot'
+    symbol_names = 'E_change S_energy dt E_tot'
+    symbol_values = 'E_change S_energy ${dt} E_tot'
   []
 []
 
@@ -163,6 +163,7 @@ dt = 1.e-2
     type = FunctionValuePostprocessor
     function = energy_conservation_fcn
     execute_on = 'timestep_end'
+    indirect_dependencies = 'E_tot E_change S_energy'
   []
 []
 
@@ -181,8 +182,10 @@ dt = 1.e-2
   dt = ${dt}
   num_steps = 6
 
-  solve_type = 'PJFNK'
+  solve_type = 'NEWTON'
   line_search = 'basic'
+  petsc_options_iname = '-pc_type'
+  petsc_options_value = ' lu'
   nl_rel_tol = 1e-8
   nl_abs_tol = 1e-6
   nl_max_its = 15

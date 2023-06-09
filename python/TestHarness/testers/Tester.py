@@ -54,10 +54,9 @@ class Tester(MooseObject):
         params.addParam('petsc_version_release', ['ALL'], "A test that runs against PETSc master if FALSE ('ALL', 'TRUE', 'FALSE')")
         params.addParam('slepc_version', [], "A list of slepc versions for which this test will run on, supports normal comparison operators ('<', '>', etc...)")
         params.addParam('exodus_version', ['ALL'], "A list of Exodus versions for which this test will run on, supports normal comparison operators ('<', '>', etc...)")
+        params.addParam('vtk_version', ['ALL'], "A list of VTK versions for which this test will run on, supports normal comparison operators ('<', '>', etc...)")
         params.addParam('mesh_mode',     ['ALL'], "A list of mesh modes for which this test will run ('DISTRIBUTED', 'REPLICATED')")
         params.addParam('min_ad_size',   None, "A minimum AD size for which this test will run")
-        params.addParam('ad_mode',       ['ALL'], "A list of AD modes for which this test will run ('SPARSE', 'NONSPARSE')")
-        params.addParam('ad_indexing_type', ['ALL'], "A list of AD indexing types for which this test will run ('LOCAL', 'GLOBAL')")
         params.addParam('method',        ['ALL'], "A test that runs under certain executable configurations ('ALL', 'OPT', 'DBG', 'DEVEL', 'OPROF', 'PRO')")
         params.addParam('library_mode',  ['ALL'], "A test that only runs when libraries are built under certain configurations ('ALL', 'STATIC', 'DYNAMIC')")
         params.addParam('dtk',           ['ALL'], "A test that runs only if DTK is detected ('ALL', 'TRUE', 'FALSE')")
@@ -82,7 +81,9 @@ class Tester(MooseObject):
         params.addParam('asio',          ['ALL'], "A test that runs only if ASIO is available ('ALL', 'TRUE', 'FALSE')")
         params.addParam('fparser_jit',   ['ALL'], "A test that runs only if FParser JIT is available ('ALL', 'TRUE', 'FALSE')")
         params.addParam('libpng',        ['ALL'], "A test that runs only if libpng is available ('ALL', 'TRUE', 'FALSE')")
-        params.addParam('installed',     ['ALL'], "A test that runs only if it is installed ('ALL', 'TRUE', 'FALSE')")
+        params.addParam('libtorch',      ['ALL'], "A test that runs only if libtorch is available ('ALL', 'TRUE', 'FALSE')")
+        params.addParam('libtorch_version', ['ALL'], "A list of libtorch versions for which this test will run on, supports normal comparison operators ('<', '>', etc...)")
+        params.addParam('installation_type',['ALL'], "A test that runs under certain executable installation configurations ('ALL', 'IN_TREE', 'RELOCATED')")
 
         params.addParam('depend_files',  [], "A test that only runs if all depend files exist (files listed are expected to be relative to the base directory, not the test directory")
         params.addParam('env_vars',      [], "A test that only runs if all the environment variables listed exist")
@@ -150,7 +151,7 @@ class Tester(MooseObject):
         self.diff = self.test_status.diff
         self.deleted = self.test_status.deleted
 
-        self.__failed_statuses = [self.fail, self.diff, self.deleted]
+        self.__failed_statuses = self.test_status.getFailingStatuses()
         self.__skipped_statuses = [self.skip, self.silent]
 
     def getStatus(self):
@@ -539,10 +540,26 @@ class Tester(MooseObject):
             else:
                 reasons['exodus_version'] = 'Exodus version not detected. REQ: ' + exodus_version
 
+        # Check for VTK versions
+        (vtk_status, vtk_version) = util.checkVTKVersion(checks, self.specs)
+        if not vtk_status:
+            if checks['vtk_version'] != None:
+                reasons['vtk_version'] = 'using VTK ' + str(checks['vtk_version']) + ' REQ: ' + vtk_version
+            else:
+                reasons['vtk_version'] = 'VTK version not detected. REQ: ' + vtk_version
+
+        # Check for libtorch version
+        (libtorch_status, libtorch_version) = util.checkLibtorchVersion(checks, self.specs)
+        if not libtorch_status:
+            reasons['libtorch_version'] = 'using libtorch ' + str(checks['libtorch_version']) + ' REQ: ' + libtorch_version
+
         # PETSc and SLEPc is being explicitly checked above
-        local_checks = ['platform', 'compiler', 'mesh_mode', 'ad_mode', 'ad_indexing_type', 'method', 'library_mode', 'dtk', 'unique_ids', 'vtk', 'tecplot',
-                        'petsc_debug', 'curl', 'superlu', 'mumps', 'strumpack', 'cxx11', 'asio', 'unique_id', 'slepc', 'petsc_version_release', 'boost', 'fparser_jit',
-                        'parmetis', 'chaco', 'party', 'ptscotch', 'threading', 'libpng', 'installed']
+        local_checks = ['platform', 'compiler', 'mesh_mode', 'method', 'library_mode', 'dtk',
+                        'unique_ids', 'vtk', 'tecplot', 'petsc_debug', 'curl', 'superlu', 'mumps',
+                        'strumpack', 'cxx11', 'asio', 'unique_id', 'slepc', 'petsc_version_release',
+                        'boost', 'fparser_jit', 'parmetis', 'chaco', 'party', 'ptscotch',
+                        'threading', 'libpng', 'libtorch']
+
         for check in local_checks:
             test_platforms = set()
             operator_display = '!='
@@ -564,6 +581,11 @@ class Tester(MooseObject):
             # or we did find the match when we wanted to exclude it
             if inverse_set == match_found:
                 reasons[check] = re.sub(r'\[|\]', '', check).upper() + operator_display + ', '.join(test_platforms)
+
+        # Check for binary location
+        if (self.specs['installation_type'] and
+            self.specs['installation_type'][0].upper() not in checks['installation_type']):
+            reasons['installation_type'] = f'test requires "{self.specs["installation_type"][0]}" binary'
 
         # Check for heavy tests
         if options.all_tests or options.heavy_tests:
@@ -594,11 +616,12 @@ class Tester(MooseObject):
 
         # We extract the registered apps only if we need them
         if self.specs["required_applications"] and checks["registered_apps"] is None:
-            checks["registered_apps"] = util.getExeRegisteredApps(self.specs["executable"])
+            checks["registered_apps"] = util.getRegisteredApps(self.specs["executable"],
+                                                               self.specs["app_name"])
 
         # Check to see if we have the required application names
         for var in self.specs['required_applications']:
-            if var not in checks["registered_apps"]:
+            if var.upper() not in checks["registered_apps"]:
                 reasons['required_applications'] = 'App %s not registered in executable' % var
                 break
 
@@ -649,6 +672,13 @@ class Tester(MooseObject):
         if self.specs['working_directory']:
             if self.specs['working_directory'][:1] == os.path.sep:
                 self.setStatus(self.fail, 'ABSOLUTE PATH DETECTED')
+
+        # We can't offer the option of reading output files outside of initial TestDir
+        if self.specs['working_directory'] and (options.pbs
+                                                or options.ok_files
+                                                or options.fail_files
+                                                or options.sep_files):
+            reasons['working_directory'] = '--sep-files* enabled'
 
         ##### The below must be performed last to register all above caveats #####
         # Remove any matching user supplied caveats from accumulated checkRunnable caveats that

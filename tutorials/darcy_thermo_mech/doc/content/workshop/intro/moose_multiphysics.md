@@ -80,6 +80,7 @@ NodalKernels\\
 Outputs\\
 Parser\\
 Partitioner\\
+Positions\\
 Postprocessors\\
 Preconditioners\\
 Predictors\\
@@ -87,6 +88,7 @@ Predictors\\
 
 !col! small=12 medium=6 large=3 style=margin-right:10%;
 Problems\\
+Reporters\\
 RelationshipManagers\\
 Samplers\\
 Splits\\
@@ -105,30 +107,45 @@ VectorPostprocessors\\
 
 ## Finite-Element Reactor Fuel Simulation
 
-!media darcy_thermo_mech/simulator.m4v style=width:70%;margin-left:auto;margin-right:auto;display:block;
+!media darcy_thermo_mech/simulator.mp4 style=width:70%;margin-left:auto;margin-right:auto;display:block;
 
 !---
 
-## MOOSE Physics Modules
+## MOOSE Modules
 
-!style halign=center
+!style! halign=center
+!row!
+!col! small=12 medium=6 large=3 style=margin-right:2%;
++Physics+\\
 Chemical Reactions\\
 Contact\\
-External PETSc Solver\\
+Electromagnetics\\
 Fluid Properties\\
-Function Expansion Tools\\
+Fluid Structure Interaction (FSI)\\
+Geochemistry\\
 Heat Conduction\\
 Level Set\\
 Navier Stokes\\
+Peridynamics\\
 Phase Field\\
 Porous Flow\\
+Reactor\\
+Tensor (solid) Mechanics\\
+Thermal Hydraulics\\
+XFEM\\
+!col-end!
+
+!col! small=12 medium=6 large=3 style=margin-right:2%;
++Numerics+\\
+External PETSc Solver\\
+Function Expansion Tools\\
+Ray Tracing\\
 rDG\\
 Stochastic Tools\\
-Tensor (solid) Mechanics\\
-XFEM\\
-Shallow Water (work in progress)\\
-Ray Tracing (work in progress)
+!col-end!
+!row-end!
+!style-end!
 
 !---
 
-!media darcy_thermo_mech/moose_herd_2019.png style=margin-left:auto;margin-right:auto;display:block;
+!media darcy_thermo_mech/moose_herd_2022.png style=margin-left:auto;margin-right:auto;display:block;

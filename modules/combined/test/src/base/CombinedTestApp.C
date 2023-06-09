@@ -13,9 +13,11 @@
 #include "ActionFactory.h"
 #include "AppFactory.h"
 #include "MooseSyntax.h"
+#include "CombinedRevision.h"
 
 #include "ChemicalReactionsTestApp.h"
 #include "ContactTestApp.h"
+#include "ElectromagneticsTestApp.h"
 #include "ExternalPetscSolverTestApp.h"
 #include "FluidPropertiesTestApp.h"
 #include "FsiTestApp.h"
@@ -25,15 +27,16 @@
 #include "LevelSetTestApp.h"
 #include "MiscTestApp.h"
 #include "NavierStokesTestApp.h"
+#include "OptimizationTestApp.h"
 #include "PeridynamicsTestApp.h"
 #include "PhaseFieldTestApp.h"
 #include "PorousFlowTestApp.h"
-#include "RayTracingTestApp.h"
-#include "RichardsTestApp.h"
-#include "StochasticToolsTestApp.h"
 #include "PorousFlowTestApp.h"
+#include "RayTracingTestApp.h"
 #include "RdgTestApp.h"
 #include "ReactorTestApp.h"
+#include "RichardsTestApp.h"
+#include "StochasticToolsTestApp.h"
 #include "TensorMechanicsTestApp.h"
 #include "ThermalHydraulicsTestApp.h"
 #include "XFEMTestApp.h"
@@ -66,6 +69,7 @@ CombinedTestApp::registerAll(Factory & f, ActionFactory & af, Syntax & s, bool u
 
     ChemicalReactionsTestApp::registerAll(f, af, s, use_test_objs);
     ContactTestApp::registerAll(f, af, s, use_test_objs);
+    ElectromagneticsTestApp::registerAll(f, af, s, use_test_objs);
     ExternalPetscSolverTestApp::registerAll(f, af, s, use_test_objs);
     FluidPropertiesTestApp::registerAll(f, af, s, use_test_objs);
     FsiTestApp::registerAll(f, af, s, use_test_objs);
@@ -75,6 +79,7 @@ CombinedTestApp::registerAll(Factory & f, ActionFactory & af, Syntax & s, bool u
     LevelSetTestApp::registerAll(f, af, s, use_test_objs);
     MiscTestApp::registerAll(f, af, s, use_test_objs);
     NavierStokesTestApp::registerAll(f, af, s, use_test_objs);
+    OptimizationTestApp::registerAll(f, af, s, use_test_objs);
     PeridynamicsTestApp::registerAll(f, af, s, use_test_objs);
     PhaseFieldTestApp::registerAll(f, af, s, use_test_objs);
     PorousFlowTestApp::registerAll(f, af, s, use_test_objs);
@@ -103,6 +108,12 @@ CombinedTestApp::registerApps()
   // need to design the API so that all registered apps and modules also get
   // immediate access to the buildable apps for use in Multiapps.
   registerApp(ThermalHydraulicsApp);
+}
+
+std::string
+CombinedTestApp::getInstallableInputs() const
+{
+  return COMBINED_INSTALLABLE_DIRS;
 }
 
 void

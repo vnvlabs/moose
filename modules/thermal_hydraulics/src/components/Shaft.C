@@ -9,7 +9,7 @@
 
 #include "Shaft.h"
 #include "ShaftConnectable.h"
-#include "FlowConnection.h"
+#include "Component1DConnection.h"
 
 registerMooseObject("ThermalHydraulicsApp", Shaft);
 
@@ -58,7 +58,7 @@ Shaft::check() const
   if (_connected_components.size() == 0)
     logError("No components are connected to the shaft.");
 
-  bool ics_set = _sim.hasInitialConditionsFromFile() || isParamValid("initial_speed");
+  bool ics_set = getTHMProblem().hasInitialConditionsFromFile() || isParamValid("initial_speed");
   if (!ics_set && !_app.isRestarting())
     logError("The `initial_speed` parameter is missing.");
 }
@@ -66,26 +66,11 @@ Shaft::check() const
 void
 Shaft::addVariables()
 {
-  std::vector<SubdomainName> connected_subdomains;
-  for (const auto & comp_name : _connected_components)
-  {
-    const Component & c = getComponentByName<Component>(comp_name);
-    if (dynamic_cast<const FlowConnection *>(&c) != nullptr)
-    {
-      const FlowConnection & fc = dynamic_cast<const FlowConnection &>(c);
-      auto fc_csdn = fc.getConnectedSubdomainNames();
-      connected_subdomains.insert(connected_subdomains.end(), fc_csdn.begin(), fc_csdn.end());
-    }
-  }
-
-  if (connected_subdomains.size() > 0)
-    _sim.addSimVariable(
-        true, _omega_var_name, FEType(FIRST, SCALAR), connected_subdomains, _scaling_factor_omega);
-  else
-    _sim.addSimVariable(true, _omega_var_name, FEType(FIRST, SCALAR), _scaling_factor_omega);
+    getTHMProblem().addSimVariable(
+        true, _omega_var_name, FEType(FIRST, SCALAR), _scaling_factor_omega);
 
   if (isParamValid("initial_speed"))
-    _sim.addConstantScalarIC(_omega_var_name, getParam<Real>("initial_speed"));
+    getTHMProblem().addConstantScalarIC(_omega_var_name, getParam<Real>("initial_speed"));
 }
 
 void
@@ -107,7 +92,7 @@ Shaft::addMooseObjects()
       InputParameters params = _factory.getValidParams(class_name);
       params.set<NonlinearVariableName>("variable") = _omega_var_name;
       params.set<std::vector<UserObjectName>>("uo_names") = {uo_names};
-      _sim.addScalarKernel(class_name, genName(name(), "td"), params);
+      getTHMProblem().addScalarKernel(class_name, genName(name(), "td"), params);
     }
 
     for (std::size_t i = 0; i < uo_names.size(); i++)
@@ -116,7 +101,7 @@ Shaft::addMooseObjects()
       InputParameters params = _factory.getValidParams(class_name);
       params.set<NonlinearVariableName>("variable") = _omega_var_name;
       params.set<UserObjectName>("shaft_connected_component_uo") = uo_names[i];
-      _sim.addScalarKernel(class_name, genName(name(), i, "shaft_speed"), params);
+      getTHMProblem().addScalarKernel(class_name, genName(name(), i, "shaft_speed"), params);
     }
   }
   else
@@ -126,7 +111,7 @@ Shaft::addMooseObjects()
       InputParameters params = _factory.getValidParams(class_name);
       params.set<NonlinearVariableName>("variable") = _omega_var_name;
       params.set<std::vector<UserObjectName>>("uo_names") = {uo_names};
-      _sim.addScalarKernel(class_name, genName(name(), "td"), params);
+      getTHMProblem().addScalarKernel(class_name, genName(name(), "td"), params);
     }
 
     for (std::size_t i = 0; i < uo_names.size(); i++)
@@ -135,7 +120,7 @@ Shaft::addMooseObjects()
       InputParameters params = _factory.getValidParams(class_name);
       params.set<NonlinearVariableName>("variable") = _omega_var_name;
       params.set<UserObjectName>("shaft_connected_component_uo") = uo_names[i];
-      _sim.addScalarKernel(class_name, genName(name(), i, "shaft_speed"), params);
+      getTHMProblem().addScalarKernel(class_name, genName(name(), i, "shaft_speed"), params);
     }
   }
 }

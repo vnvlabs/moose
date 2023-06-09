@@ -34,7 +34,7 @@
 [Functions]
   [./displ]
     type = ParsedFunction
-    value = -1/2*x*(y-0.5)
+    expression = -1/2*x*(y-0.5)
   [../]
 []
 
@@ -89,9 +89,5 @@
     dt = 0.001
   [../]
   dtmin = .001
-[]
-
-[Outputs]
-  exodus = true
 []
 

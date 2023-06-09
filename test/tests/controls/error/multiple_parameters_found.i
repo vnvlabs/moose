@@ -51,14 +51,10 @@
   petsc_options_value = 'hypre boomeramg'
 []
 
-[Outputs]
-  csv = true
-[]
-
 [Functions]
   [./func_coef]
     type = ParsedFunction
-    value = '2*t + 0.1'
+    expression = '2*t + 0.1'
   [../]
 []
 

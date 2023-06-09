@@ -61,7 +61,7 @@ Transient::validParams()
   params.addParam<Real>("start_time", 0.0, "The start time of the simulation");
   params.addParam<Real>("end_time", 1.0e30, "The end time of the simulation");
   params.addParam<Real>("dt", 1., "The timestep size between solves");
-  params.addParam<Real>("dtmin", 1.0e-13, "The minimum timestep size in an adaptive run");
+  params.addParam<Real>("dtmin", 1.0e-12, "The minimum timestep size in an adaptive run");
   params.addParam<Real>("dtmax", 1.0e30, "The maximum timestep size in an adaptive run");
   params.addParam<bool>(
       "reset_dt", false, "Use when restarting a calculation to force a change in dt.");
@@ -115,7 +115,7 @@ Transient::validParams()
       "Throw error when timestep is less than dtmin instead of just aborting solve.");
   params.addParam<MooseEnum>("scheme", schemes, "Time integration scheme used.");
   params.addParam<Real>("timestep_tolerance",
-                        1.0e-13,
+                        1.0e-12,
                         "the tolerance setting for final timestep size and sync times");
 
   params.addParam<bool>("use_multiapp_dt",
@@ -151,6 +151,7 @@ Transient::Transient(const InputParameters & parameters)
     _aux(_fe_problem.getAuxiliarySystem()),
     _check_aux(getParam<bool>("check_aux")),
     _time_scheme(getParam<MooseEnum>("scheme").getEnum<Moose::TimeIntegratorType>()),
+    _time_stepper(nullptr),
     _t_step(_problem.timeStep()),
     _time(_problem.time()),
     _time_old(_problem.timeOld()),
@@ -222,31 +223,10 @@ Transient::Transient(const InputParameters & parameters)
 void
 Transient::init()
 {
-  if (!_time_stepper.get())
-  {
-    InputParameters pars = _app.getFactory().getValidParams("ConstantDT");
-    pars.set<SubProblem *>("_subproblem") = &_problem;
-    pars.set<Transient *>("_executioner") = this;
-
-    /**
-     * We have a default "dt" set in the Transient parameters but it's possible for users to set
-     * other parameters explicitly that could provide a better calculated "dt". Rather than provide
-     * difficult to understand behavior using the default "dt" in this case, we'll calculate "dt"
-     * properly.
-     */
-    if (!_pars.isParamSetByAddParam("end_time") && !_pars.isParamSetByAddParam("num_steps") &&
-        _pars.isParamSetByAddParam("dt"))
-      pars.set<Real>("dt") = (getParam<Real>("end_time") - getParam<Real>("start_time")) /
-                             static_cast<Real>(getParam<unsigned int>("num_steps"));
-    else
-      pars.set<Real>("dt") = getParam<Real>("dt");
-
-    pars.set<bool>("reset_dt") = getParam<bool>("reset_dt");
-    _time_stepper = _app.getFactory().create<TimeStepper>("ConstantDT", "TimeStepper", pars);
-  }
-
   _problem.execute(EXEC_PRE_MULTIAPP_SETUP);
   _problem.initialSetup();
+
+  mooseAssert(getTimeStepper(), "No time stepper was set");
 
   /**
    * If this is a restart run, the user may want to override the start time, which we already set in
@@ -344,8 +324,12 @@ Transient::execute()
      */
     if (!_fixed_point_solve->autoAdvance())
     {
+      _problem.finishMultiAppStep(EXEC_MULTIAPP_FIXED_POINT_BEGIN,
+                                  /*recurse_through_multiapp_levels=*/true);
       _problem.finishMultiAppStep(EXEC_TIMESTEP_BEGIN, /*recurse_through_multiapp_levels=*/true);
       _problem.finishMultiAppStep(EXEC_TIMESTEP_END, /*recurse_through_multiapp_levels=*/true);
+      _problem.finishMultiAppStep(EXEC_MULTIAPP_FIXED_POINT_END,
+                                  /*recurse_through_multiapp_levels=*/true);
     }
   }
 
@@ -400,8 +384,10 @@ Transient::incrementStepOrReject()
        */
       if (!_fixed_point_solve->autoAdvance())
       {
+        _problem.finishMultiAppStep(EXEC_MULTIAPP_FIXED_POINT_BEGIN);
         _problem.finishMultiAppStep(EXEC_TIMESTEP_BEGIN);
         _problem.finishMultiAppStep(EXEC_TIMESTEP_END);
+        _problem.finishMultiAppStep(EXEC_MULTIAPP_FIXED_POINT_END);
       }
 
       /*
@@ -409,14 +395,18 @@ Transient::incrementStepOrReject()
        * when dt selection is made in the master application, we are using
        * the correct time step information
        */
+      _problem.incrementMultiAppTStep(EXEC_MULTIAPP_FIXED_POINT_BEGIN);
       _problem.incrementMultiAppTStep(EXEC_TIMESTEP_BEGIN);
       _problem.incrementMultiAppTStep(EXEC_TIMESTEP_END);
+      _problem.incrementMultiAppTStep(EXEC_MULTIAPP_FIXED_POINT_END);
     }
   }
   else
   {
+    _problem.restoreMultiApps(EXEC_MULTIAPP_FIXED_POINT_BEGIN, true);
     _problem.restoreMultiApps(EXEC_TIMESTEP_BEGIN, true);
     _problem.restoreMultiApps(EXEC_TIMESTEP_END, true);
+    _problem.restoreMultiApps(EXEC_MULTIAPP_FIXED_POINT_END, true);
     _time_stepper->rejectStep();
     _time = _time_old;
   }
@@ -559,27 +549,31 @@ Transient::computeConstrainedDT()
   }
 
   // Constrain by what the multi apps are doing
-  Real multi_app_dt = _problem.computeMultiAppsDT(EXEC_TIMESTEP_BEGIN);
-  if (_use_multiapp_dt || multi_app_dt < dt_cur)
-  {
-    dt_cur = multi_app_dt;
-    _at_sync_point = false;
-    diag << "Limiting dt for MultiApps: " << std::setw(9) << std::setprecision(6)
-         << std::setfill('0') << std::showpoint << std::left << dt_cur << std::endl;
-  }
-  multi_app_dt = _problem.computeMultiAppsDT(EXEC_TIMESTEP_END);
-  if (multi_app_dt < dt_cur)
-  {
-    dt_cur = multi_app_dt;
-    _at_sync_point = false;
-    diag << "Limiting dt for MultiApps: " << std::setw(9) << std::setprecision(6)
-         << std::setfill('0') << std::showpoint << std::left << dt_cur << std::endl;
-  }
+  constrainDTFromMultiApp(dt_cur, diag, EXEC_MULTIAPP_FIXED_POINT_BEGIN);
+  constrainDTFromMultiApp(dt_cur, diag, EXEC_TIMESTEP_BEGIN);
+  constrainDTFromMultiApp(dt_cur, diag, EXEC_TIMESTEP_END);
+  constrainDTFromMultiApp(dt_cur, diag, EXEC_MULTIAPP_FIXED_POINT_END);
 
   if (_verbose)
     _console << diag.str();
 
   return dt_cur;
+}
+
+void
+Transient::constrainDTFromMultiApp(Real & dt_cur,
+                                   std::ostringstream & diag,
+                                   const ExecFlagType & execute_on) const
+{
+  Real multi_app_dt = _problem.computeMultiAppsDT(execute_on);
+  if (_use_multiapp_dt || multi_app_dt < dt_cur)
+  {
+    dt_cur = multi_app_dt;
+    _at_sync_point = false;
+    diag << "Limiting dt for MultiApps on " << execute_on.name() << ": " << std::setw(9)
+         << std::setprecision(6) << std::setfill('0') << std::showpoint << std::left << dt_cur
+         << std::endl;
+  }
 }
 
 Real
@@ -716,7 +710,7 @@ Transient::setupTimeIntegrator()
 }
 
 std::string
-Transient::getTimeStepperName()
+Transient::getTimeStepperName() const
 {
   if (_time_stepper)
   {
@@ -725,6 +719,16 @@ Transient::getTimeStepperName()
   }
   else
     return std::string();
+}
+
+std::string
+Transient::getTimeIntegratorName() const
+{
+  const auto * ti = _nl.getTimeIntegrator();
+  if (ti)
+    return ti->type();
+  else
+    mooseError("Time integrator has not been built yet so we can't retrieve its name");
 }
 
 Real
@@ -738,4 +742,11 @@ Transient::relativeSolutionDifferenceNorm()
   _sln_diff -= old_solution;
 
   return (_sln_diff.l2_norm() / current_solution.l2_norm());
+}
+
+void
+Transient::setTimeStepper(TimeStepper & ts)
+{
+  mooseAssert(!_time_stepper, "Already set");
+  _time_stepper = &ts;
 }

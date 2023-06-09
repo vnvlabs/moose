@@ -26,6 +26,10 @@
 #include "Conversion.h"
 #include "NonlinearSystemBase.h"
 #include "DelimitedFileReader.h"
+#include "MooseAppCoordTransform.h"
+#include "MultiAppTransfer.h"
+#include "Positions.h"
+#include "Transient.h"
 
 #include "libmesh/mesh_tools.h"
 #include "libmesh/numeric_vector.h"
@@ -54,7 +58,6 @@ MultiApp::validParams()
                         "in the case this is true but no "
                         "displacements are provided in the Mesh block "
                         "the undisplaced mesh will still be used.");
-  params.addParamNamesToGroup("use_displaced_mesh", "Advanced");
 
   std::ostringstream app_types_strings;
   registeredMooseAppIterator it = AppFactory::instance().registeredObjectsBegin();
@@ -62,10 +65,11 @@ MultiApp::validParams()
     app_types_strings << it->first << " ";
   MooseEnum app_types_options(app_types_strings.str(), "", true);
 
+  // Dynamic loading
   params.addParam<MooseEnum>("app_type",
                              app_types_options,
                              "The type of application to build (applications not "
-                             "registered can be loaded with dynamic libraries. Master "
+                             "registered can be loaded with dynamic libraries. Parent "
                              "application type will be used if not provided.");
   params.addParam<std::string>("library_path",
                                "",
@@ -76,15 +80,33 @@ MultiApp::validParams()
       "library_name",
       "",
       "The file name of the library (*.la file) that will be dynamically loaded.");
+  params.addParam<bool>("library_load_dependencies",
+                        false,
+                        "Tells MOOSE to manually load library dependencies. This should not be "
+                        "necessary and is here for debugging/troubleshooting.");
+
+  // Subapp positions
   params.addParam<std::vector<Point>>(
       "positions",
       "The positions of the App locations.  Each set of 3 values will represent a "
       "Point.  This and 'positions_file' cannot be both supplied. If this and "
-      "'positions_file' are not supplied, a single position (0,0,0) will be used");
+      "'positions_file'/'_objects' are not supplied, a single position (0,0,0) will be used");
   params.addParam<std::vector<FileName>>("positions_file",
-                                         "A filename that should be looked in for positions. Each "
-                                         "set of 3 values in that file will represent a Point.  "
-                                         "This and 'positions' cannot be both supplied");
+                                         "Filename(s) that should be looked in for positions. Each"
+                                         " set of 3 values in that file will represent a Point.  "
+                                         "This and 'positions(_objects)' cannot be both supplied");
+  params.addParam<std::vector<PositionsName>>("positions_objects",
+                                              "The name of a Positions object that will contain "
+                                              "the locations of the sub-apps created. This and "
+                                              "'positions(_file)' cannot be both supplied");
+  params.addParam<bool>(
+      "output_in_position",
+      false,
+      "If true this will cause the output from the MultiApp to be 'moved' by its position vector");
+  params.addParam<bool>(
+      "run_in_position",
+      false,
+      "If true this will cause the mesh from the MultiApp to be 'moved' by its position vector");
 
   params.addRequiredParam<std::vector<FileName>>(
       "input_files",
@@ -104,32 +126,36 @@ MultiApp::validParams()
   // Set the default execution time
   params.set<ExecFlagEnum>("execute_on", true) = EXEC_TIMESTEP_BEGIN;
 
-  params.addParam<unsigned int>("max_procs_per_app",
-                                std::numeric_limits<unsigned int>::max(),
-                                "Maximum number of processors to give to each App in this "
-                                "MultiApp.  Useful for restricting small solves to just a few "
-                                "procs so they don't get spread out");
-  params.addParam<unsigned int>("min_procs_per_app",
-                                1,
-                                "Minimum number of processors to give to each App in this "
-                                "MultiApp.  Useful for larger, distributed mesh solves.");
-
+  params.addParam<processor_id_type>("max_procs_per_app",
+                                     std::numeric_limits<processor_id_type>::max(),
+                                     "Maximum number of processors to give to each App in this "
+                                     "MultiApp.  Useful for restricting small solves to just a few "
+                                     "procs so they don't get spread out");
+  params.addParam<processor_id_type>("min_procs_per_app",
+                                     1,
+                                     "Minimum number of processors to give to each App in this "
+                                     "MultiApp.  Useful for larger, distributed mesh solves.");
   params.addParam<bool>(
-      "output_in_position",
+      "wait_for_first_app_init",
       false,
-      "If true this will cause the output from the MultiApp to be 'moved' by its position vector");
+      "Create the first sub-application on rank 0, then MPI_Barrier before "
+      "creating the next N-1 apps (on all ranks). "
+      "This is only needed if your sub-application needs to perform some setup "
+      "actions in quiet, without other sub-applications working at the same time.");
 
   params.addParam<Real>("global_time_offset",
                         0,
-                        "The time offset relative to the master application for the purpose of "
-                        "starting a subapp at different time from the master application. The "
+                        "The time offset relative to the parent application for the purpose of "
+                        "starting a subapp at a different time from the parent application. The "
                         "global time will be ahead by the offset specified here.");
-  params.addParam<Real>("reset_time",
-                        std::numeric_limits<Real>::max(),
-                        "The time at which to reset Apps given by the 'reset_apps' parameter.  "
-                        "Resetting an App means that it is destroyed and recreated, possibly "
-                        "modeling the insertion of 'new' material for that app.");
 
+  // Resetting subapps
+  params.addParam<std::vector<Real>>(
+      "reset_time",
+      std::vector<Real>(),
+      "The time(s) at which to reset Apps given by the 'reset_apps' parameter.  "
+      "Resetting an App means that it is destroyed and recreated, possibly "
+      "modeling the insertion of 'new' material for that app.");
   params.addParam<std::vector<unsigned int>>(
       "reset_apps",
       "The Apps that will be reset when 'reset_time' is hit.  These are the App "
@@ -137,6 +163,7 @@ MultiApp::validParams()
       "Resetting an App means that it is destroyed and recreated, possibly modeling "
       "the insertion of 'new' material for that app.");
 
+  // Moving subapps
   params.addParam<Real>(
       "move_time",
       std::numeric_limits<Real>::max(),
@@ -146,7 +173,6 @@ MultiApp::validParams()
       "move_apps",
       "Apps, designated by their 'numbers' starting with 0 corresponding to the order "
       "of the App positions, to be moved at move_time to move_positions");
-
   params.addParam<std::vector<Point>>("move_positions",
                                       "The positions corresponding to each move_app.");
 
@@ -162,6 +188,7 @@ MultiApp::validParams()
       "to pass to the sub apps. Each line of a file is set to each sub app. If only "
       "one line is provided, it will be applied to all sub apps.");
 
+  // Fixed point iterations
   params.addRangeCheckedParam<Real>("relaxation_factor",
                                     1.0,
                                     "relaxation_factor>0 & relaxation_factor<2",
@@ -181,10 +208,6 @@ MultiApp::validParams()
       std::vector<PostprocessorName>(),
       "List of subapp postprocessors to use coupling "
       "algorithm on during Multiapp coupling iterations");
-
-  params.addParam<bool>(
-      "clone_master_mesh", false, "True to clone master mesh and use it for this MultiApp.");
-
   params.addParam<bool>("keep_solution_during_restore",
                         false,
                         "This is useful when doing MultiApp coupling iterations. It takes the "
@@ -192,12 +215,32 @@ MultiApp::validParams()
                         "and re-uses it as the initial guess "
                         "for the next coupling iteration");
 
+  params.addDeprecatedParam<bool>("clone_master_mesh",
+                                  false,
+                                  "True to clone parent app mesh and use it for this MultiApp.",
+                                  "clone_master_mesh is deprecated, use clone_parent_mesh instead");
+  params.addParam<bool>(
+      "clone_parent_mesh", false, "True to clone parent app mesh and use it for this MultiApp.");
+
   params.addPrivateParam<std::shared_ptr<CommandLine>>("_command_line");
   params.addPrivateParam<bool>("use_positions", true);
   params.declareControllable("enable");
   params.declareControllable("cli_args", {EXEC_PRE_MULTIAPP_SETUP});
   params.registerBase("MultiApp");
 
+  params.addParamNamesToGroup("use_displaced_mesh wait_for_first_app_init", "Advanced");
+  params.addParamNamesToGroup("positions positions_file positions_objects run_in_position "
+                              "output_in_position",
+                              "Positions / transformations of the MultiApp frame of reference");
+  params.addParamNamesToGroup("min_procs_per_app max_procs_per_app", "Parallelism");
+  params.addParamNamesToGroup("reset_time reset_apps", "Reset MultiApp");
+  params.addParamNamesToGroup("move_time move_apps move_positions", "Timed move of MultiApps");
+  params.addParamNamesToGroup("relaxation_factor transformed_variables transformed_postprocessors "
+                              "keep_solution_during_restore",
+                              "Fixed point acceleration of MultiApp quantities");
+  params.addParamNamesToGroup("library_name library_path library_load_dependencies",
+                              "Dynamic loading");
+  params.addParamNamesToGroup("cli_args cli_args_files", "Passing command line argument");
   return params;
 }
 
@@ -211,6 +254,7 @@ MultiApp::MultiApp(const InputParameters & parameters)
                                        : _fe_problem.getMooseApp().type()),
     _use_positions(getParam<bool>("use_positions")),
     _input_files(getParam<std::vector<FileName>>("input_files")),
+    _wait_for_first_app_init(getParam<bool>("wait_for_first_app_init")),
     _total_num_apps(0),
     _my_num_apps(0),
     _first_local_app(0),
@@ -220,11 +264,11 @@ MultiApp::MultiApp(const InputParameters & parameters)
     _my_rank(0),
     _inflation(getParam<Real>("bounding_box_inflation")),
     _bounding_box_padding(getParam<Point>("bounding_box_padding")),
-    _max_procs_per_app(getParam<unsigned int>("max_procs_per_app")),
-    _min_procs_per_app(getParam<unsigned int>("min_procs_per_app")),
+    _max_procs_per_app(getParam<processor_id_type>("max_procs_per_app")),
+    _min_procs_per_app(getParam<processor_id_type>("min_procs_per_app")),
     _output_in_position(getParam<bool>("output_in_position")),
     _global_time_offset(getParam<Real>("global_time_offset")),
-    _reset_time(getParam<Real>("reset_time")),
+    _reset_times(getParam<std::vector<Real>>("reset_time")),
     _reset_apps(getParam<std::vector<unsigned int>>("reset_apps")),
     _reset_happened(false),
     _move_time(getParam<Real>("move_time")),
@@ -235,17 +279,33 @@ MultiApp::MultiApp(const InputParameters & parameters)
     _backups(declareRestartableDataWithContext<SubAppBackups>("backups", this)),
     _cli_args(getParam<std::vector<std::string>>("cli_args")),
     _keep_solution_during_restore(getParam<bool>("keep_solution_during_restore")),
-    _solve_step_timer(registerTimedSection("solveStep", 3, "Taking Step")),
+    _run_in_position(getParam<bool>("run_in_position")),
+    _solve_step_timer(registerTimedSection("solveStep", 3, "Executing MultiApps", false)),
     _init_timer(registerTimedSection("init", 3, "Initializing MultiApp")),
     _backup_timer(registerTimedSection("backup", 3, "Backing Up MultiApp")),
     _restore_timer(registerTimedSection("restore", 3, "Restoring MultiApp")),
     _reset_timer(registerTimedSection("resetApp", 3, "Resetting MultiApp"))
 {
-
   if (parameters.isParamSetByUser("cli_args") && parameters.isParamValid("cli_args") &&
       parameters.isParamValid("cli_args_files"))
     paramError("cli_args",
                "'cli_args' and 'cli_args_files' cannot be specified simultaneously in MultiApp ");
+
+  if (!_use_positions && (isParamValid("positions") || isParamValid("positions_file") ||
+                          isParamValid("positions_objects")))
+    paramError("use_positions",
+               "This MultiApps has been set to not use positions, "
+               "but a 'positions' parameter has been set.");
+
+  if ((_reset_apps.size() > 0 && _reset_times.size() == 0) ||
+      (_reset_apps.size() == 0 && _reset_times.size() > 0))
+    mooseError("reset_time and reset_apps may only be specified together");
+
+  // Check that the reset times are sorted by the user
+  auto sorted_times = _reset_times;
+  std::sort(sorted_times.begin(), sorted_times.end());
+  if (_reset_times.size() && _reset_times != sorted_times)
+    paramError("reset_time", "List of reset times must be sorted in increasing order");
 }
 
 void
@@ -269,11 +329,22 @@ MultiApp::init(unsigned int num_apps, const LocalRankConfig & config)
     _backups.emplace_back(std::make_shared<Backup>());
 
   _has_bounding_box.resize(_my_num_apps, false);
+  _reset_happened.resize(_reset_times.size(), false);
   _bounding_box.resize(_my_num_apps);
 
   if ((_cli_args.size() > 1) && (_total_num_apps != _cli_args.size()))
     paramError("cli_args",
                "The number of items supplied must be 1 or equal to the number of sub apps.");
+
+  // if cliArgs() != _cli_args, then cliArgs() was overridden and we need to check it
+  auto cla = cliArgs();
+  if (cla != _cli_args)
+  {
+    if ((cla.size() > 1) && (_total_num_apps != cla.size()))
+      mooseError("The number of items supplied as command line argument to subapps must be 1 or "
+                 "equal to the number of sub apps. Note: you use a multiapp that provides its own "
+                 "command line parameters so the error is not in cli_args");
+  }
 }
 
 void
@@ -293,6 +364,8 @@ MultiApp::createApps()
   if (!_has_an_app)
     return;
 
+  TIME_SECTION("createApps", 2, "Instantiating Sub-Apps", false);
+
   // Read commandLine arguments that will be used when creating apps
   readCommandLineArguments();
 
@@ -302,14 +375,38 @@ MultiApp::createApps()
 
   // If the user provided an unregistered app type, see if we can load it dynamically
   if (!AppFactory::instance().isRegistered(_app_type))
-    _app.dynamicAppRegistration(
-        _app_type, getParam<std::string>("library_path"), getParam<std::string>("library_name"));
+    _app.dynamicAppRegistration(_app_type,
+                                getParam<std::string>("library_path"),
+                                getParam<std::string>("library_name"),
+                                getParam<bool>("library_load_dependencies"));
+
+  bool rank_did_quiet_init = false;
+  unsigned int local_app = libMesh::invalid_uint;
+  if (_wait_for_first_app_init)
+  {
+    if (hasLocalApp(0))
+    {
+      rank_did_quiet_init = true;
+      local_app = globalAppToLocal(0);
+      createLocalApp(local_app);
+    }
+
+    MPI_Barrier(_orig_comm);
+  }
 
   for (unsigned int i = 0; i < _my_num_apps; i++)
   {
-    createApp(i, _global_time_offset);
-    _app.parser().hitCLIFilter(_apps[i]->name(), _app.commandLine()->getArguments());
+    if (rank_did_quiet_init && i == local_app)
+      continue;
+    createLocalApp(i);
   }
+}
+
+void
+MultiApp::createLocalApp(const unsigned int i)
+{
+  createApp(i, _global_time_offset);
+  _app.parser().hitCLIFilter(_apps[i]->name(), _app.commandLine()->getArguments());
 }
 
 void
@@ -414,8 +511,8 @@ MultiApp::readCommandLineArguments()
                "number of sub apps ",
                _total_num_apps);
 
-  if (_cli_args_from_file.size() && _cli_args.size())
-    mooseError("Can not set commandLine arguments from both input_file and external files");
+  if (_cli_args_from_file.size() && cliArgs().size())
+    mooseError("Cannot set commandLine arguments from both input_file and external files");
 }
 
 void
@@ -426,10 +523,10 @@ MultiApp::fillPositions()
                "MultiApp ",
                _name);
 
-  if (isParamValid("positions") && isParamValid("positions_file"))
-    mooseError(
-        "Both 'positions' and 'positions_file' cannot be specified simultaneously in MultiApp ",
-        name());
+  if (isParamValid("positions") + isParamValid("positions_file") +
+          isParamValid("positions_objects") >
+      1)
+    mooseError("Only one 'positions' parameter may be specified");
 
   if (isParamValid("positions"))
   {
@@ -472,6 +569,52 @@ MultiApp::fillPositions()
           _input_files.push_back(input_files[p_file_it]);
     }
   }
+  else if (isParamValid("positions_objects"))
+  {
+    const auto & positions_param_objs = getParam<std::vector<PositionsName>>("positions_objects");
+    const auto & input_files = getParam<std::vector<FileName>>("input_files");
+
+    if (input_files.size() != 1 && positions_param_objs.size() != input_files.size())
+      mooseError("Number of input_files for MultiApp ",
+                 name(),
+                 " must either be only one or match the number of positions_objects specified");
+
+    // Clear out the _input_files because we're going to rebuild it
+    if (input_files.size() != 1)
+      _input_files.clear();
+
+    // Keeps track of where each positions object start in terms of subapp numbers
+    unsigned int offset = 0;
+
+    for (const auto p_obj_it : index_range(positions_param_objs))
+    {
+      const std::string & positions_name = positions_param_objs[p_obj_it];
+      auto positions_obj = &_fe_problem.getPositionsObject(positions_name);
+
+      const auto & data = positions_obj->getPositions(true);
+
+      // Append all positions from this object
+      for (const auto & d : data)
+        _positions.push_back(d);
+
+      // Save the number of positions for this input file
+      _npositions_inputfile.push_back(data.size());
+
+      if (!positions_obj)
+        paramError("positions_objects",
+                   "'" + positions_name + "' is not of the expected type. Should be a Positions");
+
+      // Keep track of which positions is tied to what subapp
+      for (unsigned int i = 0; i < data.size(); ++i)
+      {
+        if (input_files.size() != 1)
+          _input_files.push_back(input_files[p_obj_it]);
+        _positions_objs.push_back(positions_obj);
+        _positions_index_offsets.push_back(offset);
+      }
+      offset += data.size();
+    }
+  }
   else
   {
     _positions = {Point()};
@@ -488,16 +631,52 @@ MultiApp::fillPositions()
 void
 MultiApp::preTransfer(Real /*dt*/, Real target_time)
 {
-  // First, see if any Apps need to be Reset
-  if (!_reset_happened && target_time + 1e-14 >= _reset_time)
+  // Get a transient executioner to get a user-set tolerance
+  Real timestep_tol = 1e-13;
+  if (dynamic_cast<Transient *>(_fe_problem.getMooseApp().getExecutioner()))
+    timestep_tol =
+        dynamic_cast<Transient *>(_fe_problem.getMooseApp().getExecutioner())->timestepTol();
+
+  // First, see if any Apps need to be reset
+  for (unsigned int i = 0; i < _reset_times.size(); i++)
   {
-    _reset_happened = true;
-    for (auto & app : _reset_apps)
-      resetApp(app);
+    if (!_reset_happened[i] && (target_time + timestep_tol >= _reset_times[i]))
+    {
+      _reset_happened[i] = true;
+      if (_reset_apps.size() > 0)
+        for (auto & app : _reset_apps)
+          resetApp(app);
+
+      // If we reset an application, then we delete the old objects, including the coordinate
+      // transformation classes. Consequently we need to reset the coordinate transformation classes
+      // in the associated transfer classes
+      for (auto * const transfer : _associated_transfers)
+        transfer->getAppInfo();
+
+      // Similarly we need to transform the mesh again
+      if (_run_in_position)
+        for (const auto i : make_range(_my_num_apps))
+        {
+          auto app_ptr = _apps[i];
+          if (usingPositions())
+            app_ptr->getExecutioner()->feProblem().coordTransform().transformMesh(
+                app_ptr->getExecutioner()->feProblem().mesh(), _positions[_first_local_app + i]);
+          else
+            app_ptr->getExecutioner()->feProblem().coordTransform().transformMesh(
+                app_ptr->getExecutioner()->feProblem().mesh(), Point(0, 0, 0));
+        }
+
+      // If the time step covers multiple reset times, set them all as having 'happened'
+      for (unsigned int j = i; j < _reset_times.size(); j++)
+        if (target_time + timestep_tol >= _reset_times[j])
+          _reset_happened[j] = true;
+
+      break;
+    }
   }
 
   // Now move any apps that should be moved
-  if (_use_positions && !_move_happened && target_time + 1e-14 >= _move_time)
+  if (_use_positions && !_move_happened && target_time + timestep_tol >= _move_time)
   {
     _move_happened = true;
     for (unsigned int i = 0; i < _move_apps.size(); i++)
@@ -544,8 +723,14 @@ MultiApp::backup()
 {
   TIME_SECTION(_backup_timer);
 
+  if (_fe_problem.verboseMultiApps())
+    _console << "Backed up MultiApp ... ";
+
   for (unsigned int i = 0; i < _my_num_apps; i++)
     _backups[i] = _apps[i]->backup();
+
+  if (_fe_problem.verboseMultiApps())
+    _console << name() << std::endl;
 }
 
 void
@@ -580,10 +765,14 @@ MultiApp::restore(bool force)
       }
     }
 
-    _console << "Begining restoring MultiApp " << name() << std::endl;
+    if (_fe_problem.verboseMultiApps())
+      _console << "Restoring MultiApp ... ";
+
     for (unsigned int i = 0; i < _my_num_apps; i++)
       _apps[i]->restore(_backups[i]);
-    _console << "Finished restoring MultiApp " << name() << std::endl;
+
+    if (_fe_problem.verboseMultiApps())
+      _console << name() << std::endl;
 
     // Now copy the latest solutions back for each subapp
     if (_keep_solution_during_restore)
@@ -616,13 +805,55 @@ MultiApp::keepSolutionDuringRestore(bool keep_solution_during_restore)
 {
   if (_pars.isParamSetByUser("keep_solution_during_restore"))
     paramError("keep_solution_during_restore",
-               "This parameter should be provided in only master app");
+               "This parameter should only be provided in parent app");
 
   _keep_solution_during_restore = keep_solution_during_restore;
 }
 
+void
+MultiApp::transformBoundingBox(BoundingBox & box, const MultiAppCoordTransform & transform)
+{
+  const Real min_x = box.first(0);
+  const Real max_x = box.second(0);
+  const Real min_y = box.first(1);
+  const Real max_y = box.second(1);
+  const Real min_z = box.first(2);
+  const Real max_z = box.second(2);
+
+  std::array<Point, 8> box_corners = {{Point(min_x, min_y, min_z),
+                                       Point(max_x, min_y, min_z),
+                                       Point(min_x, max_y, min_z),
+                                       Point(max_x, max_y, min_z),
+                                       Point(min_x, min_y, max_z),
+                                       Point(max_x, min_y, max_z),
+                                       Point(min_x, max_y, max_z),
+                                       Point(max_x, max_y, max_z)}};
+
+  // transform each corner
+  for (auto & corner : box_corners)
+    corner = transform(corner);
+
+  // Create new bounding box
+  Point new_box_min = box_corners[0];
+  Point new_box_max = new_box_min;
+  for (const auto p : make_range(1, 8))
+    for (const auto d : make_range(Moose::dim))
+    {
+      const Point & pt = box_corners[p];
+      if (new_box_min(d) > pt(d))
+        new_box_min(d) = pt(d);
+
+      if (new_box_max(d) < pt(d))
+        new_box_max(d) = pt(d);
+    }
+  box.first = new_box_min;
+  box.second = new_box_max;
+}
+
 BoundingBox
-MultiApp::getBoundingBox(unsigned int app, bool displaced_mesh)
+MultiApp::getBoundingBox(unsigned int app,
+                         bool displaced_mesh,
+                         const MultiAppCoordTransform * const coord_transform)
 {
   if (!_has_an_app)
     mooseError("No app for ", name(), " on processor ", _orig_rank);
@@ -658,16 +889,14 @@ MultiApp::getBoundingBox(unsigned int app, bool displaced_mesh)
   Point inflated_min = min - inflation_amount;
   Point inflated_max = max + inflation_amount;
 
-  // This is where the app is located.  We need to shift by this amount.
-  Point p = position(app);
-
   Point shifted_min = inflated_min;
   Point shifted_max = inflated_max;
 
-  // If the problem is RZ then we're going to invent a box that would cover the whole "3D" app
-  // FIXME: Assuming all subdomains are the same coordinate system type!
-  if (fe_problem_base.getCoordSystem(*(mesh.meshSubdomains().begin())) == Moose::COORD_RZ)
+  if ((!coord_transform || coord_transform->skipCoordinateCollapsing()) &&
+      fe_problem_base.getCoordSystem(*(mesh.meshSubdomains().begin())) == Moose::COORD_RZ)
   {
+    // If the problem is RZ then we're going to invent a box that would cover the whole "3D" app
+    // FIXME: Assuming all subdomains are the same coordinate system type!
     shifted_min(0) = -inflated_max(0);
     shifted_min(1) = inflated_min(1);
     shifted_min(2) = -inflated_max(0);
@@ -677,11 +906,22 @@ MultiApp::getBoundingBox(unsigned int app, bool displaced_mesh)
     shifted_max(2) = inflated_max(0);
   }
 
-  // Shift them to the position they're supposed to be
-  shifted_min += p;
-  shifted_max += p;
+  if (coord_transform)
+  {
+    BoundingBox transformed_bbox(shifted_min, shifted_max);
+    transformBoundingBox(transformed_bbox, *coord_transform);
+    return transformed_bbox;
+  }
+  else
+  {
+    // This is where the app is located.  We need to shift by this amount.
+    Point p = position(app);
 
-  return BoundingBox(shifted_min, shifted_max);
+    // Shift them to the position they're supposed to be
+    shifted_min += p;
+    shifted_max += p;
+    return BoundingBox(shifted_min, shifted_max);
+  }
 }
 
 FEProblemBase &
@@ -727,13 +967,19 @@ MultiApp::appPostprocessorValue(unsigned int app, const std::string & name)
 }
 
 NumericVector<Number> &
-MultiApp::appTransferVector(unsigned int app, std::string /*var_name*/)
+MultiApp::appTransferVector(unsigned int app, std::string var_name)
 {
-  return appProblemBase(app).getAuxiliarySystem().solution();
+  return *(appProblemBase(app).getSystem(var_name).solution);
 }
 
 bool
-MultiApp::hasLocalApp(unsigned int global_app)
+MultiApp::isFirstLocalRank() const
+{
+  return _rank_config.is_first_local_rank;
+}
+
+bool
+MultiApp::hasLocalApp(unsigned int global_app) const
 {
   if (_has_an_app && global_app >= _first_local_app &&
       global_app <= _first_local_app + (_my_num_apps - 1))
@@ -783,6 +1029,8 @@ MultiApp::moveApp(unsigned int global_app, Point p)
 
       if (_output_in_position)
         _apps[local_app]->setOutputPosition(p);
+      if (_run_in_position)
+        paramError("run_in_position", "Moving apps and running apps in position is not supported");
     }
   }
 }
@@ -799,16 +1047,14 @@ void
 MultiApp::createApp(unsigned int i, Real start_time)
 {
   // Define the app name
-  std::ostringstream multiapp_name;
+  const std::string multiapp_name = getMultiAppName(name(), _first_local_app + i, _total_num_apps);
   std::string full_name;
-  multiapp_name << name() << std::setw(std::ceil(std::log10(_total_num_apps)))
-                << std::setprecision(0) << std::setfill('0') << std::right << _first_local_app + i;
 
-  // Only add parent name if it the parent is not the main app
+  // Only add parent name if the parent is not the main app
   if (_app.multiAppLevel() > 0)
-    full_name = _app.name() + "_" + multiapp_name.str();
+    full_name = _app.name() + "_" + multiapp_name;
   else
-    full_name = multiapp_name.str();
+    full_name = multiapp_name;
 
   InputParameters app_params = AppFactory::instance().getValidParams(_app_type);
   app_params.set<FEProblemBase *>("_parent_fep") = &_fe_problem;
@@ -817,28 +1063,31 @@ MultiApp::createApp(unsigned int i, Real start_time)
   // the copy is required so that the addArgument command below doesn't accumulate more and more
   // of the same cli_args, which is important when running in batch mode.
   std::shared_ptr<CommandLine> app_cli = std::make_shared<CommandLine>(*_app.commandLine());
-  app_cli->initForMultiApp(full_name);
-  app_params.set<std::shared_ptr<CommandLine>>("_command_line") = app_cli;
 
-  if (_cli_args.size() > 0 || _cli_args_from_file.size() > 0)
+  if (cliArgs().size() > 0 || _cli_args_from_file.size() > 0)
   {
     for (const std::string & str : MooseUtils::split(getCommandLineArgsParamHelper(i), ";"))
     {
       std::ostringstream oss;
       oss << full_name << ":" << str;
-      app_params.get<std::shared_ptr<CommandLine>>("_command_line")->addArgument(oss.str());
+      app_cli->addArgument(oss.str());
     }
   }
+  app_cli->initForMultiApp(full_name);
+  app_params.set<std::shared_ptr<CommandLine>>("_command_line") = app_cli;
 
-  _console << COLOR_CYAN << "Creating MultiApp " << name() << " of type " << _app_type
-           << " of level " << _app.multiAppLevel() + 1 << " and number " << _first_local_app + i
-           << ":" << COLOR_DEFAULT << std::endl;
+  if (_fe_problem.verboseMultiApps())
+    _console << COLOR_CYAN << "Creating MultiApp " << name() << " of type " << _app_type
+             << " of level " << _app.multiAppLevel() + 1 << " and number " << _first_local_app + i
+             << " on processor " << processor_id() << " with full name " << full_name
+             << COLOR_DEFAULT << std::endl;
   app_params.set<unsigned int>("_multiapp_level") = _app.multiAppLevel() + 1;
   app_params.set<unsigned int>("_multiapp_number") = _first_local_app + i;
-  if (getParam<bool>("clone_master_mesh"))
+  if (getParam<bool>("clone_master_mesh") || getParam<bool>("clone_parent_mesh"))
   {
-    _console << COLOR_CYAN << "Cloned master mesh will be used for subapp " << name()
-             << COLOR_DEFAULT << std::endl;
+    if (_fe_problem.verboseMultiApps())
+      _console << COLOR_CYAN << "Cloned parent app mesh will be used for MultiApp " << name()
+               << COLOR_DEFAULT << std::endl;
     app_params.set<const MooseMesh *>("_master_mesh") = &_fe_problem.mesh();
     auto displaced_problem = _fe_problem.getDisplacedProblem();
     if (displaced_problem)
@@ -868,15 +1117,19 @@ MultiApp::createApp(unsigned int i, Real start_time)
 
   if (_use_positions && getParam<bool>("output_in_position"))
     app->setOutputPosition(_app.getOutputPosition() + _positions[_first_local_app + i]);
+  if (_output_in_position && _run_in_position)
+    paramError("run_in_position",
+               "Sub-apps are already displaced, so they are already output in position");
 
   // Update the MultiApp level for the app that was just created
   app->setupOptions();
   // if multiapp does not have file base in Outputs input block, output file base will
   // be empty here since setupOptions() does not set the default file base with the multiapp
-  // input file name. Master will create the default file base for multiapp by taking the
-  // output base of the master problem and appending the name of the multiapp plus a number to it
+  // input file name. Parent app will create the default file base for multiapp by taking the
+  // output base of the parent app problem and appending the name of the multiapp plus a number to
+  // it
   if (app->getOutputFileBase().empty())
-    app->setOutputFileBase(_app.getOutputFileBase() + "_" + multiapp_name.str());
+    setAppOutputFileBase(i);
   preRunInputFile();
 
   // Transfer coupling relaxation information to the subapps
@@ -894,33 +1147,44 @@ MultiApp::createApp(unsigned int i, Real start_time)
   auto fixed_point_solve = &(_apps[i]->getExecutioner()->fixedPointSolve());
   if (fixed_point_solve)
     fixed_point_solve->allocateStorage(false);
+
+  // Transform the app mesh if requested
+  if (_run_in_position)
+  {
+    if (usingPositions())
+      app->getExecutioner()->feProblem().coordTransform().transformMesh(
+          app->getExecutioner()->feProblem().mesh(), _positions[_first_local_app + i]);
+    else
+      app->getExecutioner()->feProblem().coordTransform().transformMesh(
+          app->getExecutioner()->feProblem().mesh(), Point(0, 0, 0));
+  }
 }
 
 std::string
 MultiApp::getCommandLineArgsParamHelper(unsigned int local_app)
 {
+  auto cla = cliArgs();
 
-  mooseAssert(_cli_args.size() || _cli_args_from_file.size(),
-              "There is no commandLine argument \n");
+  mooseAssert(cla.size() || _cli_args_from_file.size(), "There is no commandLine argument \n");
 
   // Single set of "cli_args" to be applied to all sub apps
-  if (_cli_args.size() == 1)
-    return _cli_args[0];
+  if (cla.size() == 1)
+    return cla[0];
   else if (_cli_args_from_file.size() == 1)
     return _cli_args_from_file[0];
-  else if (_cli_args.size())
+  else if (cla.size())
     // Unique set of "cli_args" to be applied to each sub apps
-    return _cli_args[local_app + _first_local_app];
+    return cla[local_app + _first_local_app];
   else
     return _cli_args_from_file[local_app + _first_local_app];
 }
 
 LocalRankConfig
-rankConfig(dof_id_type rank,
-           dof_id_type nprocs,
+rankConfig(processor_id_type rank,
+           processor_id_type nprocs,
            dof_id_type napps,
-           dof_id_type min_app_procs,
-           dof_id_type max_app_procs,
+           processor_id_type min_app_procs,
+           processor_id_type max_app_procs,
            bool batch_mode)
 {
   if (min_app_procs > nprocs)
@@ -933,19 +1197,25 @@ rankConfig(dof_id_type rank,
   // A "slot" is a group of procs/ranks that are grouped together to run a
   // single (sub)app/sim in parallel.
 
-  auto slot_size = std::max(std::min(nprocs / napps, max_app_procs), min_app_procs);
-  dof_id_type nslots = std::min(nprocs / slot_size, napps);
-  auto leftover_procs = nprocs - nslots * slot_size;
-  auto apps_per_slot = napps / nslots;
-  auto leftover_apps = napps % nslots;
+  const processor_id_type slot_size =
+      std::max(std::min(cast_int<processor_id_type>(nprocs / napps), max_app_procs), min_app_procs);
+  const processor_id_type nslots = std::min(
+      nprocs / slot_size,
+      cast_int<processor_id_type>(std::min(
+          static_cast<dof_id_type>(std::numeric_limits<processor_id_type>::max()), napps)));
+  mooseAssert(nprocs >= (nslots * slot_size),
+              "Ensure that leftover procs is represented by an unsigned type");
+  const processor_id_type leftover_procs = nprocs - nslots * slot_size;
+  const dof_id_type apps_per_slot = napps / nslots;
+  const dof_id_type leftover_apps = napps % nslots;
 
   std::vector<int> slot_for_rank(nprocs);
-  dof_id_type slot = 0;
-  dof_id_type procs_in_slot = 0;
-  for (dof_id_type rankiter = 0; rankiter <= rank; rankiter++)
+  processor_id_type slot = 0;
+  processor_id_type procs_in_slot = 0;
+  for (processor_id_type rankiter = 0; rankiter <= rank; rankiter++)
   {
     if (slot < nslots)
-      slot_for_rank[rankiter] = slot;
+      slot_for_rank[rankiter] = cast_int<int>(slot);
     else
       slot_for_rank[rankiter] = -1;
     procs_in_slot++;
@@ -961,22 +1231,30 @@ rankConfig(dof_id_type rank,
 
   if (slot_for_rank[rank] < 0)
     // ranks assigned a negative slot don't have any apps running on them.
-    return {0, 0, 0, 0, false};
-  dof_id_type slot_num = slot_for_rank[rank];
+    return {0, 0, 0, 0, false, 0};
+  const processor_id_type slot_num = cast_int<processor_id_type>(slot_for_rank[rank]);
 
-  bool is_first_local_rank = rank == 0 || (slot_for_rank[rank - 1] != slot_for_rank[rank]);
-  auto n_local_apps = apps_per_slot + 1 * (slot_num < leftover_apps);
+  const bool is_first_local_rank = rank == 0 || (slot_for_rank[rank - 1] != slot_for_rank[rank]);
+  const dof_id_type n_local_apps = apps_per_slot + 1 * (slot_num < leftover_apps);
+
+  processor_id_type my_first_rank = 0;
+  for (processor_id_type rankiter = rank; rankiter > 0; rankiter--)
+    if (slot_for_rank[rank] != slot_for_rank[rankiter])
+    {
+      my_first_rank = cast_int<processor_id_type>(slot_for_rank[rankiter + 1]);
+      break;
+    }
 
   dof_id_type app_index = 0;
-  for (dof_id_type slot = 0; slot < slot_num; slot++)
+  for (processor_id_type slot = 0; slot < slot_num; slot++)
   {
-    auto num_slot_apps = apps_per_slot + 1 * (slot < leftover_apps);
+    const dof_id_type num_slot_apps = apps_per_slot + 1 * (slot < leftover_apps);
     app_index += num_slot_apps;
   }
 
   if (batch_mode)
-    return {n_local_apps, app_index, 1, slot_num, is_first_local_rank};
-  return {n_local_apps, app_index, n_local_apps, app_index, is_first_local_rank};
+    return {n_local_apps, app_index, 1, slot_num, is_first_local_rank, my_first_rank};
+  return {n_local_apps, app_index, n_local_apps, app_index, is_first_local_rank, my_first_rank};
 }
 
 void
@@ -1043,4 +1321,45 @@ MultiApp::globalAppToLocal(unsigned int global_app)
 void
 MultiApp::preRunInputFile()
 {
+}
+
+void
+MultiApp::addAssociatedTransfer(MultiAppTransfer & transfer)
+{
+  _associated_transfers.push_back(&transfer);
+}
+
+void
+MultiApp::setAppOutputFileBase()
+{
+  for (unsigned int i = 0; i < _my_num_apps; ++i)
+    setAppOutputFileBase(i);
+}
+
+void
+MultiApp::setAppOutputFileBase(unsigned int index)
+{
+  const std::string multiapp_name =
+      getMultiAppName(name(), _first_local_app + index, _total_num_apps);
+  _apps[index]->setOutputFileBase(_app.getOutputFileBase() + "_" + multiapp_name);
+}
+
+std::string
+MultiApp::getMultiAppName(const std::string & base_name, dof_id_type index, dof_id_type total)
+{
+  std::ostringstream multiapp_name;
+  multiapp_name << base_name << std::setw(std::ceil(std::log10(total))) << std::setprecision(0)
+                << std::setfill('0') << std::right << index;
+  return multiapp_name.str();
+}
+
+const Point &
+MultiApp::position(unsigned int app) const
+{
+  // If we're not using positions, it won't have changed
+  if (_positions_objs.empty())
+    return _positions[app];
+  else
+    // Find which Positions object is specifying it, and query a potentially updated value
+    return _positions_objs[app]->getPosition(app - _positions_index_offsets[app], false);
 }

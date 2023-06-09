@@ -12,8 +12,8 @@ advected_interp_method = 'average'
 [UserObjects]
   [rc]
     type = INSFVRhieChowInterpolator
-    u = u
-    v = v
+    u = vel_x
+    v = vel_y
     pressure = pressure
   []
 []
@@ -32,16 +32,16 @@ advected_interp_method = 'average'
 []
 
 [Variables]
-  [u]
+  [vel_x]
     type = INSFVVelocityVariable
   []
-  [v]
+  [vel_y]
     type = INSFVVelocityVariable
   []
   [pressure]
     type = INSFVPressureVariable
   []
-  [T]
+  [T_fluid]
     type = INSFVEnergyVariable
   []
   [lambda]
@@ -62,8 +62,8 @@ advected_interp_method = 'average'
   [mag]
     type = VectorMagnitudeAux
     variable = U
-    x = u
-    y = v
+    x = vel_x
+    y = vel_y
   []
 []
 
@@ -76,14 +76,14 @@ advected_interp_method = 'average'
     rho = ${rho}
   []
   [mean_zero_pressure]
-    type = FVScalarLagrangeMultiplier
+    type = FVIntegralValueConstraint
     variable = pressure
     lambda = lambda
   []
 
   [u_advection]
     type = INSFVMomentumAdvection
-    variable = u
+    variable = vel_x
     velocity_interp_method = ${velocity_interp_method}
     advected_interp_method = ${advected_interp_method}
     rho = ${rho}
@@ -92,21 +92,21 @@ advected_interp_method = 'average'
 
   [u_viscosity]
     type = INSFVMomentumDiffusion
-    variable = u
+    variable = vel_x
     mu = ${mu}
     momentum_component = 'x'
   []
 
   [u_pressure]
     type = INSFVMomentumPressure
-    variable = u
+    variable = vel_x
     momentum_component = 'x'
     pressure = pressure
   []
 
   [v_advection]
     type = INSFVMomentumAdvection
-    variable = v
+    variable = vel_y
     velocity_interp_method = ${velocity_interp_method}
     advected_interp_method = ${advected_interp_method}
     rho = ${rho}
@@ -115,14 +115,14 @@ advected_interp_method = 'average'
 
   [v_viscosity]
     type = INSFVMomentumDiffusion
-    variable = v
+    variable = vel_y
     mu = ${mu}
     momentum_component = 'y'
   []
 
   [v_pressure]
     type = INSFVMomentumPressure
-    variable = v
+    variable = vel_y
     momentum_component = 'y'
     pressure = pressure
   []
@@ -130,12 +130,12 @@ advected_interp_method = 'average'
   [temp_conduction]
     type = FVDiffusion
     coeff = 'k'
-    variable = T
+    variable = T_fluid
   []
 
   [temp_advection]
     type = INSFVEnergyAdvection
-    variable = T
+    variable = T_fluid
     velocity_interp_method = ${velocity_interp_method}
     advected_interp_method = ${advected_interp_method}
   []
@@ -144,35 +144,35 @@ advected_interp_method = 'average'
 [FVBCs]
   [top_x]
     type = INSFVNoSlipWallBC
-    variable = u
+    variable = vel_x
     boundary = 'top'
     function = 'lid_function'
   []
 
   [no_slip_x]
     type = INSFVNoSlipWallBC
-    variable = u
+    variable = vel_x
     boundary = 'left right bottom'
     function = 0
   []
 
   [no_slip_y]
     type = INSFVNoSlipWallBC
-    variable = v
+    variable = vel_y
     boundary = 'left right top bottom'
     function = 0
   []
 
   [T_hot]
     type = FVDirichletBC
-    variable = T
+    variable = T_fluid
     boundary = 'bottom'
     value = 1
   []
 
   [T_cold]
     type = FVDirichletBC
-    variable = T
+    variable = T_fluid
     boundary = 'top'
     value = 0
   []
@@ -186,7 +186,7 @@ advected_interp_method = 'average'
   []
   [ins_fv]
     type = INSFVEnthalpyMaterial
-    temperature = 'T'
+    temperature = 'T_fluid'
     rho = ${rho}
   []
 []
@@ -194,16 +194,15 @@ advected_interp_method = 'average'
 [Functions]
   [lid_function]
     type = ParsedFunction
-    value = '4*x*(1-x)'
+    expression = '4*x*(1-x)'
   []
 []
-
 
 [Executioner]
   type = Steady
   solve_type = 'NEWTON'
-  petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_pc_type -sub_pc_factor_shift_type'
-  petsc_options_value = 'asm      300                lu           NONZERO'
+  petsc_options_iname = '-pc_type -pc_factor_shift_type'
+  petsc_options_value = 'lu NONZERO'
   nl_rel_tol = 1e-12
 []
 

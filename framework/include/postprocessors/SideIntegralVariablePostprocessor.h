@@ -11,6 +11,7 @@
 
 #include "SideIntegralPostprocessor.h"
 #include "MooseVariableInterface.h"
+#include "FaceArgInterface.h"
 
 /**
  * This postprocessor computes a surface integral of the specified variable.
@@ -19,15 +20,19 @@
  * class and overriding computeQpIntegral().
  */
 class SideIntegralVariablePostprocessor : public SideIntegralPostprocessor,
-                                          public MooseVariableInterface<Real>
+                                          public MooseVariableInterface<Real>,
+                                          public FaceArgProducerInterface
 {
 public:
   static InputParameters validParams();
 
   SideIntegralVariablePostprocessor(const InputParameters & parameters);
 
+  bool hasFaceSide(const FaceInfo & fi, const bool fi_elem_side) const override;
+
 protected:
-  virtual Real computeQpIntegral() override;
+  Real computeQpIntegral() override;
+  Real computeFaceInfoIntegral(const FaceInfo * fi) override;
 
   /// Holds the solution at current quadrature points
   const VariableValue & _u;

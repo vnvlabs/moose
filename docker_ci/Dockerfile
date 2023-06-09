@@ -51,11 +51,18 @@ COPY docker_ci/install_packages.sh docker_ci/apt_installs.sh docker_ci/yum_insta
 RUN ./install_packages.sh || exit 1; rm *.sh
 
 #-----------------------------------------------------------------------------#
-# Install mpich-3.3 to system path
+# Ensure all local repos are marked as safe for all users
 #-----------------------------------------------------------------------------#
-RUN curl -L -O http://www.mpich.org/static/downloads/3.3/mpich-3.3.tar.gz ; \
-tar -xf mpich-3.3* ; \
-cd mpich-3.3 && mkdir gcc-build && cd gcc-build ; \
+RUN for CURR_USR in root dev; do \
+    sudo -u $CURR_USR /bin/bash -c "printf '[safe]\n\tdirectory = *\n' > ~/.gitconfig" ; \
+done
+
+#-----------------------------------------------------------------------------#
+# Install mpich-4.0.2 to system path
+#-----------------------------------------------------------------------------#
+RUN curl -L -O https://www.mpich.org/static/downloads/4.0.2/mpich-4.0.2.tar.gz ; \
+tar -xf mpich-4.0.2.tar.gz ; \
+cd mpich-4.0.2 && mkdir gcc-build && cd gcc-build ; \
 # Configure build env
 ../configure --prefix=/usr/local \
 --enable-shared \
@@ -63,7 +70,7 @@ cd mpich-3.3 && mkdir gcc-build && cd gcc-build ; \
 --enable-fast=O2 \
 --enable-debuginfo \
 --enable-totalview \
---enable-two-level-namespace \
+--with-device=ch3 \
 CC=gcc \
 CXX=g++ \
 FC=gfortran \
@@ -79,7 +86,7 @@ F77FLAGS='' ; \
 make -j ${MOOSE_JOBS} ; \
 make install ; \
 # Cleanup
-cd ../../ ; rm -rf mpich-3.3* ; \
+cd ../../ ; rm -rf mpich-4.0.2 ; \
 # Ensure mpich was installed by checking for binary
 if [ ! -f $(which mpicc) ]; then exit 1; fi
 
@@ -107,7 +114,7 @@ if [ ! -d $PETSC_DIR/lib/petsc ]; then exit 1; fi
 #-----------------------------------------------------------------------------#
 # Install Libmesh to system path
 #-----------------------------------------------------------------------------#
-ARG LIBMESH_REV=7315cdb99555e4d774fc149b8c659f1e56955053
+ARG LIBMESH_REV=5e720a226ba3740dbe92c135936612461f489ada
 ARG LIBMESH_OPTIONS
 ARG LIBMESH_METHODS="opt dbg"
 ENV LIBMESH_DIR=/usr/local \
@@ -127,6 +134,25 @@ rm -rf libmesh/* libmesh/.* || true ; \
 if [ ! -d $LIBMESH_DIR/include/libmesh ]; then exit 1; fi
 
 #-----------------------------------------------------------------------------#
+# Install wasp to system path
+#-----------------------------------------------------------------------------#
+ARG WASP_REV=827479b89fb5b76a0865974d9f4ca404d55acce0
+ENV WASP_DIR=/usr/local/wasp
+
+COPY scripts/update_and_rebuild_wasp.sh ${MOOSE_DIR}/scripts/update_and_rebuild_wasp.sh
+COPY scripts/configure_wasp.sh ${MOOSE_DIR}/scripts/configure_wasp.sh
+
+RUN mkdir -p framework/contrib ; \
+cd framework/contrib ; \
+git clone https://code.ornl.gov/neams-workbench/wasp.git ; \
+cd wasp ; \
+git checkout ${WASP_REV} ; \
+git submodule update --init --recursive ; \
+cd ../../.. ; \
+./scripts/update_and_rebuild_wasp.sh -D CMAKE_INSTALL_PREFIX:STRING=${WASP_DIR} ; \
+rm -rf framework || true
+
+#-----------------------------------------------------------------------------#
 # Copy and build MOOSE framework, test, and optionally modules
 #-----------------------------------------------------------------------------#
 RUN chown -R dev:dev /opt /home/dev
@@ -138,12 +164,15 @@ ARG BUILD_MODULES
 ARG MOOSE_METHODS=opt
 RUN ./docker_ci/build_moose.sh ; \
 # Ensure a MOOSE test binary was built
-if [ ! -f $MOOSE_DIR/test/moose_test* ]; then exit 1; fi
+if [ ! -f $MOOSE_DIR/test/moose_test* ]; then exit 1; fi ; \
+git submodule init
 
 #-----------------------------------------------------------------------------#
 # Add needed env vars to /etc/environment
 #-----------------------------------------------------------------------------#
 USER root
-RUN for CURR_VAR in $(env | grep 'CC\|CXX\|_DIR'); do \
+
+RUN : > /etc/environment ; \
+for CURR_VAR in $(env | grep '^CC\|^CXX\|_DIR\|^PATH'); do \
     echo "$CURR_VAR" >> /etc/environment ; \
 done

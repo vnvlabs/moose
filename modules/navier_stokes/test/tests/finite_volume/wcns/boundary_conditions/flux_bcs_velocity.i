@@ -35,18 +35,18 @@ inlet_velocity = 0.001
 [UserObjects]
   [rc]
     type = INSFVRhieChowInterpolator
-    u = u
-    v = v
+    u = vel_x
+    v = vel_y
     pressure = pressure
   []
 []
 
 [Variables]
-  [u]
+  [vel_x]
     type = INSFVVelocityVariable
     initial_condition = ${inlet_velocity}
   []
-  [v]
+  [vel_y]
     type = INSFVVelocityVariable
     initial_condition = 1e-15
   []
@@ -54,7 +54,7 @@ inlet_velocity = 0.001
     type = INSFVPressureVariable
     initial_condition = ${outlet_pressure}
   []
-  [T]
+  [T_fluid]
     type = INSFVEnergyVariable
     initial_condition = ${inlet_temp}
   []
@@ -87,14 +87,14 @@ inlet_velocity = 0.001
 
   [u_time]
     type = WCNSFVMomentumTimeDerivative
-    variable = u
+    variable = vel_x
     drho_dt = drho_dt
     rho = rho
     momentum_component = 'x'
   []
   [u_advection]
     type = INSFVMomentumAdvection
-    variable = u
+    variable = vel_x
     velocity_interp_method = ${velocity_interp_method}
     advected_interp_method = ${advected_interp_method}
     rho = ${rho}
@@ -102,27 +102,27 @@ inlet_velocity = 0.001
   []
   [u_viscosity]
     type = INSFVMomentumDiffusion
-    variable = u
+    variable = vel_x
     mu = ${mu}
     momentum_component = 'x'
   []
   [u_pressure]
     type = INSFVMomentumPressure
-    variable = u
+    variable = vel_x
     momentum_component = 'x'
     pressure = pressure
   []
 
   [v_time]
     type = WCNSFVMomentumTimeDerivative
-    variable = v
+    variable = vel_y
     drho_dt = drho_dt
     rho = rho
     momentum_component = 'y'
   []
   [v_advection]
     type = INSFVMomentumAdvection
-    variable = v
+    variable = vel_y
     velocity_interp_method = ${velocity_interp_method}
     advected_interp_method = ${advected_interp_method}
     rho = ${rho}
@@ -130,45 +130,44 @@ inlet_velocity = 0.001
   []
   [v_viscosity]
     type = INSFVMomentumDiffusion
-    variable = v
+    variable = vel_y
     mu = ${mu}
     momentum_component = 'y'
   []
   [v_pressure]
     type = INSFVMomentumPressure
-    variable = v
+    variable = vel_y
     momentum_component = 'y'
     pressure = pressure
   []
 
   [temp_time]
     type = WCNSFVEnergyTimeDerivative
-    variable = T
+    variable = T_fluid
     cp = cp
     rho = rho
     drho_dt = drho_dt
-    dcp_dt = dcp_dt
   []
   [temp_conduction]
     type = FVDiffusion
     coeff = 'k'
-    variable = T
+    variable = T_fluid
   []
   [temp_advection]
     type = INSFVEnergyAdvection
-    variable = T
+    variable = T_fluid
     velocity_interp_method = ${velocity_interp_method}
     advected_interp_method = ${advected_interp_method}
   []
   [heat_source]
     type = FVCoupledForce
-    variable = T
+    variable = T_fluid
     v = power_density
   []
 
   # Scalar concentration equation
   [scalar_time]
-    type = FVTimeKernel
+    type = FVFunctorTimeKernel
     variable = scalar
   []
   [scalar_advection]
@@ -200,7 +199,7 @@ inlet_velocity = 0.001
   []
   [inlet_u]
     type = WCNSFVMomentumFluxBC
-    variable = u
+    variable = vel_x
     boundary = 'left'
     velocity_pp = 'inlet_u'
     rho = 'rho'
@@ -208,7 +207,7 @@ inlet_velocity = 0.001
   []
   [inlet_v]
     type = WCNSFVMomentumFluxBC
-    variable = v
+    variable = vel_y
     boundary = 'left'
     velocity_pp = 0
     rho = 'rho'
@@ -216,7 +215,7 @@ inlet_velocity = 0.001
   []
   [inlet_T]
     type = WCNSFVEnergyFluxBC
-    variable = T
+    variable = T_fluid
     boundary = 'left'
     velocity_pp = 'inlet_u'
     temperature_pp = 'inlet_T'
@@ -241,13 +240,13 @@ inlet_velocity = 0.001
   # Walls
   [no_slip_x]
     type = INSFVNoSlipWallBC
-    variable = u
+    variable = vel_x
     boundary = 'top bottom'
     function = 0
   []
   [no_slip_y]
     type = INSFVNoSlipWallBC
-    variable = v
+    variable = vel_y
     boundary = 'top bottom'
     function = 0
   []
@@ -259,7 +258,7 @@ inlet_velocity = 0.001
     type = Receiver
     default = ${inlet_velocity}
   []
-  [surface_inlet]
+  [area_pp_left]
     type = AreaPostprocessor
     boundary = 'left'
     execute_on = 'INITIAL'
@@ -274,29 +273,27 @@ inlet_velocity = 0.001
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [fp]
-      type = FlibeFluidProperties
-    []
+[FluidProperties]
+  [fp]
+    type = FlibeFluidProperties
   []
 []
 
 [Materials]
   [const_functor]
     type = ADGenericFunctorMaterial
-    prop_names = 'cp k dcp_dt'
-    prop_values = '${cp} ${k} 0'
+    prop_names = 'cp k'
+    prop_values = '${cp} ${k}'
   []
   [rho]
     type = RhoFromPTFunctorMaterial
     fp = fp
-    temperature = T
+    temperature = T_fluid
     pressure = pressure
   []
   [ins_fv]
     type = INSFVEnthalpyMaterial
-    temperature = 'T'
+    temperature = 'T_fluid'
     rho = ${rho}
   []
 []

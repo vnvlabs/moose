@@ -50,8 +50,8 @@
 [ICs]
   [velocity]
     type = VectorConstantIC
-    x_value = 1e-15
-    y_value = 1e-15
+    x_value = 0
+    y_value = 0
     variable = velocity
   []
 []
@@ -132,7 +132,7 @@
     # space so that the Dirichlet conditions are the same regardless
     # of the mesh spacing.
     type = ParsedFunction
-    value = '4*x*(1-x)'
+    expression = '4*x*(1-x)'
   [../]
 []
 

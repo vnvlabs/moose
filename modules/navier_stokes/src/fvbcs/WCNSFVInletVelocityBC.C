@@ -56,7 +56,7 @@ WCNSFVInletVelocityBC::WCNSFVInletVelocityBC(const InputParameters & params)
     mooseError("Mass flow rate, area and density should be provided if velocity is not");
 }
 
-Real
+ADReal
 WCNSFVInletVelocityBC::boundaryValue(const FaceInfo & fi) const
 {
   if (_area_pp)
@@ -67,8 +67,8 @@ WCNSFVInletVelocityBC::boundaryValue(const FaceInfo & fi) const
     return _scaling_factor * (*_velocity_pp);
   else
   {
-    ADReal rho = (*_rho)(singleSidedFaceArg(&fi));
+    ADReal rho = (*_rho)(singleSidedFaceArg(&fi), determineState());
 
-    return _scaling_factor * (*_mdot_pp) / (*_area_pp * rho.value());
+    return _scaling_factor * (*_mdot_pp) / (*_area_pp * rho);
   }
 }

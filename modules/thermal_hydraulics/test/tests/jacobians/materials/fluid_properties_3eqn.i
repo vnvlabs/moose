@@ -6,7 +6,7 @@
   fp_1phase = fp_1phase
 []
 
-[Modules/FluidProperties]
+[FluidProperties]
   [fp_1phase]
     type = StiffenedGasFluidProperties
     gamma = 2.35
@@ -22,6 +22,6 @@
     type = MaterialDerivativeTestKernel
     variable = rhoA
     material_property = <none>
-    args = 'rhoA rhouA rhoEA'
+    coupled_variables = 'rhoA rhouA rhoEA'
   []
 []

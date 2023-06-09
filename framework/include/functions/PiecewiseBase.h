@@ -39,4 +39,6 @@ protected:
   std::vector<Real> _raw_x;
   std::vector<Real> _raw_y;
   ///@}
+
+  using Function::_name;
 };

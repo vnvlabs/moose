@@ -41,11 +41,9 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [simple_fluid]
-      type = SimpleFluidProperties
-    []
+[FluidProperties]
+  [simple_fluid]
+    type = SimpleFluidProperties
   []
 []
 
@@ -113,7 +111,7 @@
 [Functions]
   [sink_strength_fcn]
     type = ParsedFunction
-    value = '30'
+    expression = '30'
   []
 []
 

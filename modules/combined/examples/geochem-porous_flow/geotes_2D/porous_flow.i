@@ -201,18 +201,22 @@ production_rate = 1.0 # kg/s/m
   [mole_rate_Na_produced]
     type = FunctionValuePostprocessor
     function = moles_Na
+    indirect_dependencies = 'kg_Na_produced_this_timestep dt'
   []
   [mole_rate_Cl_produced]
     type = FunctionValuePostprocessor
     function = moles_Cl
+    indirect_dependencies = 'kg_Cl_produced_this_timestep dt'
   []
   [mole_rate_SiO2_produced]
     type = FunctionValuePostprocessor
     function = moles_SiO2
+    indirect_dependencies = 'kg_SiO2_produced_this_timestep dt'
   []
   [mole_rate_H2O_produced]
     type = FunctionValuePostprocessor
     function = moles_H2O
+    indirect_dependencies = 'kg_H2O_produced_this_timestep dt'
   []
   [heat_joules_extracted_this_timestep]
     type = PorousFlowPlotQuantity
@@ -228,41 +232,39 @@ production_rate = 1.0 # kg/s/m
 [Functions]
   [moles_Na]
     type = ParsedFunction
-    vars = 'kg_Na dt'
-    vals = 'kg_Na_produced_this_timestep dt'
-    value = 'kg_Na * 1000 / 22.9898 / dt'
+    symbol_names = 'kg_Na dt'
+    symbol_values = 'kg_Na_produced_this_timestep dt'
+    expression = 'kg_Na * 1000 / 22.9898 / dt'
   []
   [moles_Cl]
     type = ParsedFunction
-    vars = 'kg_Cl dt'
-    vals = 'kg_Cl_produced_this_timestep dt'
-    value = 'kg_Cl * 1000 / 35.453 / dt'
+    symbol_names = 'kg_Cl dt'
+    symbol_values = 'kg_Cl_produced_this_timestep dt'
+    expression = 'kg_Cl * 1000 / 35.453 / dt'
   []
   [moles_SiO2]
     type = ParsedFunction
-    vars = 'kg_SiO2 dt'
-    vals = 'kg_SiO2_produced_this_timestep dt'
-    value = 'kg_SiO2 * 1000 / 60.0843 / dt'
+    symbol_names = 'kg_SiO2 dt'
+    symbol_values = 'kg_SiO2_produced_this_timestep dt'
+    expression = 'kg_SiO2 * 1000 / 60.0843 / dt'
   []
   [moles_H2O]
     type = ParsedFunction
-    vars = 'kg_H2O dt'
-    vals = 'kg_H2O_produced_this_timestep dt'
-    value = 'kg_H2O * 1000 / 18.0152 / dt'
+    symbol_names = 'kg_H2O dt'
+    symbol_values = 'kg_H2O_produced_this_timestep dt'
+    expression = 'kg_H2O * 1000 / 18.0152 / dt'
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [the_simple_fluid]
-      type = SimpleFluidProperties
-      thermal_expansion = 0
-      bulk_modulus = 2E9
-      viscosity = 1E-3
-      density0 = 1000
-      cv = 4000.0
-      cp = 4000.0
-    []
+[FluidProperties]
+  [the_simple_fluid]
+    type = SimpleFluidProperties
+    thermal_expansion = 0
+    bulk_modulus = 2E9
+    viscosity = 1E-3
+    density0 = 1000
+    cv = 4000.0
+    cp = 4000.0
   []
 []
 
@@ -368,16 +370,14 @@ production_rate = 1.0 # kg/s/m
 [Transfers]
   [changes_due_to_flow]
     type = MultiAppCopyTransfer
-    direction = to_multiapp
     source_variable = 'rate_H2O rate_Na rate_Cl rate_SiO2 temperature'
     variable = 'pf_rate_H2O pf_rate_Na pf_rate_Cl pf_rate_SiO2 temperature'
-    multi_app = react
+    to_multi_app = react
   []
   [massfrac_from_geochem]
     type = MultiAppCopyTransfer
-    direction = from_multiapp
     source_variable = 'massfrac_Na massfrac_Cl massfrac_SiO2'
     variable = 'f0 f1 f2'
-    multi_app = react
+    from_multi_app = react
   []
 []

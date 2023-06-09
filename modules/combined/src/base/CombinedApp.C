@@ -15,6 +15,8 @@
 
 #include "ChemicalReactionsApp.h"
 #include "ContactApp.h"
+#include "ElectromagneticsApp.h"
+#include "ExternalPetscSolverApp.h"
 #include "FluidPropertiesApp.h"
 #include "FsiApp.h"
 #include "FunctionalExpansionToolsApp.h"
@@ -23,18 +25,20 @@
 #include "LevelSetApp.h"
 #include "MiscApp.h"
 #include "NavierStokesApp.h"
+#include "OptimizationApp.h"
+#include "PeridynamicsApp.h"
 #include "PhaseFieldApp.h"
 #include "PorousFlowApp.h"
 #include "RayTracingApp.h"
 #include "RdgApp.h"
 #include "ReactorApp.h"
 #include "RichardsApp.h"
+#include "ScalarTransportApp.h"
+#include "SolidPropertiesApp.h"
 #include "StochasticToolsApp.h"
-#include "PeridynamicsApp.h"
 #include "TensorMechanicsApp.h"
 #include "ThermalHydraulicsApp.h"
 #include "XFEMApp.h"
-#include "ExternalPetscSolverApp.h"
 
 InputParameters
 CombinedApp::validParams()
@@ -70,6 +74,7 @@ CombinedApp::registerAll(Factory & f, ActionFactory & af, Syntax & s)
 
   ChemicalReactionsApp::registerAll(f, af, s);
   ContactApp::registerAll(f, af, s);
+  ElectromagneticsApp::registerAll(f, af, s);
   ExternalPetscSolverApp::registerAll(f, af, s);
   FluidPropertiesApp::registerAll(f, af, s);
   FsiApp::registerAll(f, af, s);
@@ -79,6 +84,7 @@ CombinedApp::registerAll(Factory & f, ActionFactory & af, Syntax & s)
   LevelSetApp::registerAll(f, af, s);
   MiscApp::registerAll(f, af, s);
   NavierStokesApp::registerAll(f, af, s);
+  OptimizationApp::registerAll(f, af, s);
   PeridynamicsApp::registerAll(f, af, s);
   PhaseFieldApp::registerAll(f, af, s);
   PorousFlowApp::registerAll(f, af, s);
@@ -86,11 +92,12 @@ CombinedApp::registerAll(Factory & f, ActionFactory & af, Syntax & s)
   RdgApp::registerAll(f, af, s);
   ReactorApp::registerAll(f, af, s);
   RichardsApp::registerAll(f, af, s);
+  ScalarTransportApp::registerAll(f, af, s);
+  SolidPropertiesApp::registerAll(f, af, s);
   StochasticToolsApp::registerAll(f, af, s);
   TensorMechanicsApp::registerAll(f, af, s);
   ThermalHydraulicsApp::registerAll(f, af, s);
   XFEMApp::registerAll(f, af, s);
-  ExternalPetscSolverApp::registerAll(f, af, s);
 }
 
 void

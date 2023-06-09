@@ -24,6 +24,9 @@ typedef TransientSystem<ExplicitSystem> TransientExplicitSystem;
 class DisplacedSystem : public SystemBase
 {
 public:
+  DisplacedSystem(DisplacedSystem &&) = delete;
+  DisplacedSystem & operator=(DisplacedSystem &&) = delete;
+
   DisplacedSystem(DisplacedProblem & problem,
                   SystemBase & undisplaced_system,
                   const std::string & name,
@@ -214,6 +217,21 @@ public:
     return _undisplaced_system.hasMatrix(tag_id);
   }
 
+  virtual void initSolutionState() override;
+  virtual NumericVector<Number> & solutionState(
+      const unsigned int state,
+      Moose::SolutionIterationType iteration_type = Moose::SolutionIterationType::Time) override;
+  virtual const NumericVector<Number> &
+  solutionState(const unsigned int state,
+                Moose::SolutionIterationType iteration_type =
+                    Moose::SolutionIterationType::Time) const override;
+  virtual void needSolutionState(
+      const unsigned int state,
+      Moose::SolutionIterationType iteration_type = Moose::SolutionIterationType::Time) override;
+  virtual bool hasSolutionState(const unsigned int state,
+                                Moose::SolutionIterationType iteration_type =
+                                    Moose::SolutionIterationType::Time) const override;
+
   virtual SparseMatrix<Number> & getMatrix(TagID tag) override
   {
     return _undisplaced_system.getMatrix(tag);
@@ -240,3 +258,37 @@ protected:
   SystemBase & _undisplaced_system;
   TransientExplicitSystem & _sys;
 };
+
+inline void
+DisplacedSystem::initSolutionState()
+{
+  _undisplaced_system.initSolutionState();
+}
+
+inline NumericVector<Number> &
+DisplacedSystem::solutionState(const unsigned int state,
+                               const Moose::SolutionIterationType iteration_type)
+{
+  return _undisplaced_system.solutionState(state, iteration_type);
+}
+
+inline const NumericVector<Number> &
+DisplacedSystem::solutionState(const unsigned int state,
+                               const Moose::SolutionIterationType iteration_type) const
+{
+  return _undisplaced_system.solutionState(state, iteration_type);
+}
+
+inline void
+DisplacedSystem::needSolutionState(const unsigned int state,
+                                   const Moose::SolutionIterationType iteration_type)
+{
+  _undisplaced_system.needSolutionState(state, iteration_type);
+}
+
+inline bool
+DisplacedSystem::hasSolutionState(const unsigned int state,
+                                  const Moose::SolutionIterationType iteration_type) const
+{
+  return _undisplaced_system.hasSolutionState(state, iteration_type);
+}

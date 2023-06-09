@@ -19,8 +19,7 @@ PINSFVMomentumPressurePorosityGradient::validParams()
   InputParameters params = FVElementalKernel::validParams();
   params.addClassDescription("Introduces the coupled pressure times porosity gradient term "
                              "into the Navier-Stokes porous media momentum equation.");
-  params.addRequiredCoupledVar(NS::pressure, "The pressure");
-  params.addDeprecatedCoupledVar("p", NS::pressure, "1/1/2022");
+  params.addRequiredParam<MooseFunctorName>(NS::pressure, "The pressure");
   MooseEnum momentum_component("x=0 y=1 z=2");
   params.addRequiredParam<MooseEnum>(
       "momentum_component",
@@ -34,16 +33,10 @@ PINSFVMomentumPressurePorosityGradient::validParams()
 PINSFVMomentumPressurePorosityGradient::PINSFVMomentumPressurePorosityGradient(
     const InputParameters & params)
   : FVElementalKernel(params),
-    _p(coupledValue(NS::pressure)),
+    _p(getFunctor<ADReal>(NS::pressure)),
     _eps(getFunctor<ADReal>(NS::porosity)),
     _index(getParam<MooseEnum>("momentum_component"))
 {
-#ifndef MOOSE_GLOBAL_AD_INDEXING
-  mooseError("PINSFV is not supported by local AD indexing. In order to use PINSFV, please run "
-             "the configure script in the root MOOSE directory with the configure option "
-             "'--with-ad-indexing-type=global'");
-#endif
-
   if (!dynamic_cast<PINSFVSuperficialVelocityVariable *>(&_var))
     mooseError(
         "PINSFVMomentumPressurePorosityGradient may only be used with a superficial velocity "
@@ -53,5 +46,7 @@ PINSFVMomentumPressurePorosityGradient::PINSFVMomentumPressurePorosityGradient(
 ADReal
 PINSFVMomentumPressurePorosityGradient::computeQpResidual()
 {
-  return -_p[_qp] * _eps.gradient(makeElemArg(_current_elem))(_index);
+  const auto & elem = makeElemArg(_current_elem);
+  const auto state = determineState();
+  return -_p(elem, state) * _eps.gradient(elem, state)(_index);
 }

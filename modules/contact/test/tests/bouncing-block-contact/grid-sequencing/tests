@@ -1,6 +1,6 @@
 [Tests]
   design = FEProblemBase.md
-  issues = '#14166'
+  issues = '#14166 #20773'
   [grid_sequencing]
     type = Exodiff
     input = grid-sequencing.i

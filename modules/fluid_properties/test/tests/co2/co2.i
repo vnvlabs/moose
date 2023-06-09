@@ -97,7 +97,7 @@
 [Functions]
   [./tic]
     type = ParsedFunction
-    value = if(x<1,280,if(x<2,360,500))
+    expression = if(x<1,280,if(x<2,360,500))
   [../]
 []
 
@@ -152,12 +152,10 @@
   [../]
 []
 
-[Modules]
-  [./FluidProperties]
-    [./co2]
-      type = CO2FluidProperties
-    [../]
-  []
+[FluidProperties]
+  [./co2]
+    type = CO2FluidProperties
+  [../]
 []
 
 [Materials]

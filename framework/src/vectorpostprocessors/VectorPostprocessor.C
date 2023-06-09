@@ -37,7 +37,7 @@ VectorPostprocessor::validParams()
       "parallel_type",
       parallel_type,
       "Set how the data is represented within the VectorPostprocessor (VPP); 'distributed' "
-      "indicates that data within the VPP is distributed and no auto communication is preformed, "
+      "indicates that data within the VPP is distributed and no auto communication is performed, "
       "this setting will result in parallel output within the CSV output; 'replicated' indicates "
       "that the data within the VPP is correct on processor 0, the data will automatically be "
       "broadcast to all processors unless the '_auto_broadcast' param is set to false within the "
@@ -91,8 +91,6 @@ VectorPostprocessor::getVectorNames() const
   return _vector_names;
 }
 
-// Explicit instantiation
-template class VectorPostprocessorContext<VectorPostprocessorValue>;
 const ReporterMode REPORTER_MODE_VPP_SCATTER("VPP_SCATTER");
 
 template <typename T>
@@ -147,3 +145,6 @@ VectorPostprocessorContext<T>::getScatterValueOld() const
 {
   return _scatter_value_old;
 }
+
+// Explicit instantiation
+template class VectorPostprocessorContext<VectorPostprocessorValue>;

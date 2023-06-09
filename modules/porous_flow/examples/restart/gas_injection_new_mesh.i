@@ -166,9 +166,9 @@
 [Functions]
   [injection_rate]
     type = ParsedFunction
-    vals = injection_area
-    vars = area
-    value = '-1/area'
+    symbol_values = injection_area
+    symbol_names = area
+    expression = '-1/area'
   []
   [ppliq_ic]
     type = SolutionFunction
@@ -197,19 +197,17 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [brine]
-      type = BrineFluidProperties
-    []
-    [methane]
-      type = MethaneFluidProperties
-    []
-    [methane_tab]
-      type = TabulatedFluidProperties
-      fp = methane
-      save_file = false
-    []
+[FluidProperties]
+  [brine]
+    type = BrineFluidProperties
+  []
+  [methane]
+    type = MethaneFluidProperties
+  []
+  [methane_tab]
+    type = TabulatedFluidProperties
+    fp = methane
+    save_file = false
   []
 []
 

@@ -19,7 +19,8 @@ InputParameters
 MeshInfo::validParams()
 {
   InputParameters params = GeneralReporter::validParams();
-  params.addClassDescription("Report the time and iteration information for the simulation.");
+  params.addClassDescription(
+      "Report mesh information, such as the number of elements, nodes, and degrees of freedom.");
 
   MultiMooseEnum items(
       "num_dofs num_dofs_nonlinear num_dofs_auxiliary num_elements num_nodes num_local_dofs "
@@ -40,6 +41,8 @@ MeshInfo::MeshInfo(const InputParameters & parameters)
     _num_dofs(declareHelper<unsigned int>("num_dofs", REPORTER_MODE_REPLICATED)),
     _num_dofs_nl(declareHelper<unsigned int>("num_dofs_nonlinear", REPORTER_MODE_REPLICATED)),
     _num_dofs_aux(declareHelper<unsigned int>("num_dofs_auxiliary", REPORTER_MODE_REPLICATED)),
+    _num_dofs_constrained(
+        declareHelper<unsigned int>("num_dofs_constrained", REPORTER_MODE_REPLICATED)),
     _num_elem(declareHelper<unsigned int>("num_elements", REPORTER_MODE_REPLICATED)),
     _num_node(declareHelper<unsigned int>("num_nodes", REPORTER_MODE_REPLICATED)),
     _num_local_dofs(declareHelper<unsigned int>("num_local_dofs", REPORTER_MODE_DISTRIBUTED)),
@@ -80,6 +83,10 @@ MeshInfo::execute()
   _num_dofs_nl = _nonlinear_system.n_dofs();
   _num_dofs_aux = _aux_system.n_dofs();
   _num_dofs = _equation_systems.n_dofs();
+  _num_dofs_constrained = 0;
+  for (auto s : make_range(_equation_systems.n_systems()))
+    _num_dofs_constrained += _equation_systems.get_system(s).n_constrained_dofs();
+
   _num_node = _mesh.n_nodes();
   _num_elem = _mesh.n_elem();
   _num_local_dofs_nl = _nonlinear_system.n_local_dofs();

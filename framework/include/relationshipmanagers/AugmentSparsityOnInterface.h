@@ -17,6 +17,7 @@
 #include "libmesh/mesh_base.h"
 
 using libMesh::boundary_id_type;
+using libMesh::CouplingMatrix;
 using libMesh::Elem;
 using libMesh::GhostingFunctor;
 using libMesh::MeshBase;
@@ -51,13 +52,6 @@ public:
   }
 
   /**
-   * According to the base class docs, "We call mesh_reinit() whenever
-   * the relevant Mesh has changed, but before remote elements on a
-   * distributed mesh are deleted."
-   */
-  virtual void mesh_reinit() override;
-
-  /**
    * Update the cached _lower_to_upper map whenever our Mesh has been
    * redistributed.  We'll be lazy and just recalculate from scratch.
    */
@@ -70,16 +64,52 @@ public:
 protected:
   virtual void internalInitWithMesh(const MeshBase &) override;
 
-  BoundaryName _primary_boundary_name;
-  BoundaryName _secondary_boundary_name;
-  SubdomainName _primary_subdomain_name;
-  SubdomainName _secondary_subdomain_name;
+  /**
+   * Ghost the mortar interface couplings of the provided element
+   */
+  void ghostMortarInterfaceCouplings(const processor_id_type p,
+                                     const Elem * const elem,
+                                     map_type & coupled_elements,
+                                     const AutomaticMortarGeneration & amg) const;
+
+  /**
+   * Query the mortar interface couplings of the query element. If a lower dimensional secondary
+   * element is found, then we search for its point neighbors, which we ghost, as well as all of the
+   * mortar interface couplings of the point neighbors. This kind of ghosting is required for mortar
+   * nodal auxiliary kernels
+   */
+  void ghostLowerDSecondaryElemPointNeighbors(const processor_id_type p,
+                                              const Elem * const query_elem,
+                                              map_type & coupled_elements,
+                                              BoundaryID secondary_boundary_id,
+                                              SubdomainID secondary_subdomain_id,
+                                              const AutomaticMortarGeneration & amg) const;
+
+  void ghostHigherDNeighbors(const processor_id_type p,
+                             const Elem * const query_elem,
+                             map_type & coupled_elements,
+                             BoundaryID secondary_boundary_id,
+                             SubdomainID secondary_subdomain_id,
+                             const AutomaticMortarGeneration & amg) const;
+
+  const BoundaryName _primary_boundary_name;
+  const BoundaryName _secondary_boundary_name;
+  const SubdomainName _primary_subdomain_name;
+  const SubdomainName _secondary_subdomain_name;
 
   /// Whether this relationship manager is called when coupling functors are called when building
   /// the matrix sparsity pattern
   const bool _is_coupling_functor;
 
-  /// Whether to ghost point neighbors of secondary lower subdomain elements and consequently their
-  /// cross mortar interface counterparts
+  /// Whether to ghost point neighbors of secondary lower subdomain elements and their
+  /// cross mortar interface counterparts for applications such as mortar nodal auxiliary kernels
   const bool _ghost_point_neighbors;
+
+  /// Whether we should ghost higher-dimensional neighbors. This is necessary when we are doing
+  /// second order mortar with finite volume primal variables, because in order for the method to be
+  /// second order we must use cell gradients, which couples in the neighbor cells
+  const bool _ghost_higher_d_neighbors;
+
+  /// null matrix for generating full variable coupling
+  const CouplingMatrix * const _null_mat = nullptr;
 };

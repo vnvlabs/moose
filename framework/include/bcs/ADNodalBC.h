@@ -25,12 +25,6 @@ public:
 
   const MooseVariableFE<T> & variable() const override { return _var; }
 
-private:
-  void computeResidual() override final;
-  void computeJacobian() override final;
-  void computeOffDiagJacobian(unsigned int jvar) override final;
-  void computeOffDiagJacobianScalar(unsigned int jvar) override final;
-
 protected:
   /**
    * Compute this NodalBC's contribution to the residual at the current quadrature point
@@ -49,7 +43,31 @@ protected:
   /// Value of the unknown variable this BC is acting on
   const typename Moose::ADType<T>::type & _u;
 
-  const std::vector<bool> _set_components;
+  const std::array<bool, 3> _set_components;
+
+private:
+  void computeResidual() override final;
+  void computeJacobian() override final;
+  void computeResidualAndJacobian() override;
+  void computeOffDiagJacobian(unsigned int jvar) override final;
+  void computeOffDiagJacobianScalar(unsigned int jvar) override final;
+
+  /**
+   * process the residual into the global data structures
+   */
+  template <typename ADResidual>
+  void addResidual(const ADResidual & residual, const std::vector<dof_id_type> & dof_indices);
+
+  using NodalBCBase::addJacobian;
+  /**
+   * process the Jacobian into the global data structures
+   */
+  template <typename ADResidual>
+  void addJacobian(const ADResidual & residual, const std::vector<dof_id_type> & dof_indices);
+
+  /// A reference to the undisplaced assembly in order to ensure data gets correctly incorporated
+  /// into the global residual/Jacobian
+  Assembly & _undisplaced_assembly;
 };
 
 using ADNodalBC = ADNodalBCTempl<Real>;

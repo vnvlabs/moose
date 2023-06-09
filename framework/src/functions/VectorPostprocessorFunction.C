@@ -24,6 +24,10 @@ VectorPostprocessorFunction::validParams()
                                        "VectorPostprocessor column tabulating the "
                                        "ordinate (function values) of the sampled "
                                        "function");
+  params.addParam<bool>(
+      "parallel_sync",
+      true,
+      "Whether or not this Function should be synced to all processors when running in parallel.");
 
   MooseEnum component("x=0 y=1 z=2 time=3", "time");
   params.addParam<MooseEnum>(
@@ -41,12 +45,15 @@ VectorPostprocessorFunction::VectorPostprocessorFunction(const InputParameters &
   : Function(parameters),
     VectorPostprocessorInterface(this),
     _argument_column(getVectorPostprocessorValue("vectorpostprocessor_name",
-                                                 getParam<std::string>("argument_column"))),
+                                                 getParam<std::string>("argument_column"),
+                                                 getParam<bool>("parallel_sync"))),
     _value_column(getVectorPostprocessorValue("vectorpostprocessor_name",
-                                              getParam<std::string>("value_column"))),
+                                              getParam<std::string>("value_column"),
+                                              getParam<bool>("parallel_sync"))),
     _component(getParam<MooseEnum>("component")),
     _fe_problem(*getCheckedPointerParam<FEProblemBase *>("_fe_problem_base")),
-    _last_update({libMesh::invalid_uint, libMesh::invalid_uint})
+    _last_update(
+        {std::numeric_limits<Real>::lowest(), libMesh::invalid_uint, libMesh::invalid_uint})
 {
   try
   {
@@ -77,8 +84,9 @@ VectorPostprocessorFunction::valueInternal(const T & t, const P & p) const
   if (_argument_column.empty())
     return 0.0;
 
-  const auto now =
-      std::make_pair(_fe_problem.nNonlinearIterations(), _fe_problem.nLinearIterations());
+  const std::tuple<Real, unsigned int, unsigned int> now = {MetaPhysicL::raw_value(t),
+                                                            _fe_problem.nNonlinearIterations(),
+                                                            _fe_problem.nLinearIterations()};
 
   if (now != _last_update)
   {

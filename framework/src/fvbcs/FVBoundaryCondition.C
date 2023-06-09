@@ -31,7 +31,7 @@ FVBoundaryCondition::validParams()
   params += TransientInterface::validParams();
   params += BoundaryRestrictableRequired::validParams();
   params += TaggingInterface::validParams();
-  params += FunctorInterface::validParams();
+  params += ADFunctorInterface::validParams();
 
   params.addRequiredParam<NonlinearVariableName>(
       "variable", "The name of the variable that this boundary condition applies to");
@@ -68,13 +68,14 @@ FVBoundaryCondition::FVBoundaryCondition(const InputParameters & parameters)
                                  "variable",
                                  Moose::VarKindType::VAR_ANY,
                                  Moose::VarFieldType::VAR_FIELD_STANDARD),
-    FunctorInterface(this),
+    MooseVariableDependencyInterface(this),
+    ADFunctorInterface(this),
     _var(*mooseVariableFV()),
     _subproblem(*getCheckedPointerParam<SubProblem *>("_subproblem")),
     _fv_problem(*getCheckedPointerParam<FVProblemBase *>("_fe_problem_base")),
     _sys(changeSystem(parameters, _var)),
     _tid(parameters.get<THREAD_ID>("_tid")),
-    _assembly(_subproblem.assembly(_tid)),
+    _assembly(_subproblem.assembly(_tid, _var.kind() == Moose::VAR_NONLINEAR ? _sys.number() : 0)),
     _mesh(_subproblem.mesh())
 {
   _subproblem.haveADObjects(true);
@@ -84,22 +85,23 @@ FVBoundaryCondition::FVBoundaryCondition(const InputParameters & parameters)
     paramError("use_displaced_mesh", "FV boundary conditions do not yet support displaced mesh");
 }
 
-Moose::SingleSidedFaceArg
+Moose::FaceArg
 FVBoundaryCondition::singleSidedFaceArg(const FaceInfo * fi,
                                         const Moose::FV::LimiterType limiter_type,
                                         const bool correct_skewness) const
 {
   if (!fi)
     fi = _face_info;
-  const bool use_elem = fi->faceType(_var.name()) == FaceInfo::VarFaceNeighbors::ELEM;
 
-  if (use_elem)
-    return {fi, limiter_type, true, correct_skewness, correct_skewness, fi->elem().subdomain_id()};
+  return makeFace(*fi, limiter_type, true, correct_skewness);
+}
+
+bool
+FVBoundaryCondition::hasFaceSide(const FaceInfo & fi, bool fi_elem_side) const
+{
+  const auto ft = fi.faceType(_var.name());
+  if (fi_elem_side)
+    return ft == FaceInfo::VarFaceNeighbors::ELEM || ft == FaceInfo::VarFaceNeighbors::BOTH;
   else
-    return {fi,
-            limiter_type,
-            true,
-            correct_skewness,
-            correct_skewness,
-            fi->neighborPtr()->subdomain_id()};
+    return ft == FaceInfo::VarFaceNeighbors::NEIGHBOR || ft == FaceInfo::VarFaceNeighbors::BOTH;
 }

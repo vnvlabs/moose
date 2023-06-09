@@ -21,9 +21,27 @@ public:
 
   static InputParameters validParams();
 
-#ifdef MOOSE_GLOBAL_AD_INDEXING
   using INSFVVariable::adGradSln;
   const VectorValue<ADReal> & adGradSln(const Elem * const elem,
+                                        const StateArg & time,
                                         bool correct_skewness = false) const override;
-#endif
+
+  /**
+   * @return the uncorrected surface gradient on face \p fi
+   */
+  using INSFVVariable::uncorrectedAdGradSln;
+  VectorValue<ADReal> uncorrectedAdGradSln(const FaceInfo & fi,
+                                           const StateArg & time,
+                                           const bool correct_skewness = false) const override;
+
+protected:
+  /**
+   * @return the extrapolated value on the boundary face associated with \p fi
+   */
+  using INSFVVariable::getExtrapolatedBoundaryFaceValue;
+  ADReal getExtrapolatedBoundaryFaceValue(const FaceInfo & fi,
+                                          bool two_term_expansion,
+                                          bool correct_skewness,
+                                          const Elem * elem_side_to_extrapolate_from,
+                                          const StateArg & time) const override;
 };

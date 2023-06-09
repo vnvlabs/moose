@@ -15,8 +15,10 @@
 #include "SetupInterface.h"
 #include "MooseTypes.h"
 #include "MooseArray.h"
+#include "MooseError.h"
 
 #include "libmesh/fe_type.h"
+#include "libmesh/enum_fe_family.h"
 
 // libMesh forward declarations
 namespace libMesh
@@ -110,7 +112,18 @@ public:
    * Is this variable nodal
    * @return true if it nodal, otherwise false
    */
-  virtual bool isNodal() const { return true; }
+  virtual bool isNodal() const { mooseError("Base class cannot determine this"); }
+
+  /**
+   * Does this variable have DoFs on nodes
+   * @return true if it does, false if not.
+   */
+  virtual bool hasDoFsOnNodes() const { mooseError("Base class cannot determine this"); };
+
+  /**
+   * Return the continuity of this variable
+   */
+  virtual FEContinuity getContinuity() const { mooseError("Base class cannot determine this"); };
 
   /**
    * The DofMap associated with the system this variable is in.
@@ -152,6 +165,18 @@ public:
   void initialSetup() override;
 
   virtual void clearAllDofIndices() { _dof_indices.clear(); }
+
+  /**
+   * Set the active vector tags
+   * @param vtags Additional vector tags that this variable will need to query at dof indices for,
+   * in addition to our own required solution tags
+   */
+  virtual void setActiveTags(const std::set<TagID> & vtags);
+
+  /**
+   * @return whether this is an array variable
+   */
+  bool isArray() const { return _is_array; }
 
 protected:
   /// System this variable is part of
@@ -204,7 +229,16 @@ protected:
 
   /// If dual mortar approach is used
   bool _use_dual;
+
+  /// Whether this is an array variable
+  const bool _is_array;
 };
+
+inline void
+MooseVariableBase::setActiveTags(const std::set<TagID> &)
+{
+  mooseError("setActiveTags must be overridden in derived classes.");
+}
 
 #define usingMooseVariableBaseMembers                                                              \
   using MooseVariableBase::_sys;                                                                   \

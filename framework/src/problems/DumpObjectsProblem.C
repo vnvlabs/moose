@@ -31,9 +31,9 @@ DumpObjectsProblem::validParams()
 DumpObjectsProblem::DumpObjectsProblem(const InputParameters & parameters)
   : FEProblemBase(parameters), _nl_sys(std::make_shared<DumpObjectsNonlinearSystem>(*this, "nl0"))
 {
-  _nl = _nl_sys;
+  _nl[0] = _nl_sys;
   _aux = std::make_shared<AuxiliarySystem>(*this, "aux0");
-  newAssemblyArray(*_nl_sys);
+  newAssemblyArray(_nl);
 
   // Create extra vectors and matrices if any
   createTagVectors();
@@ -130,7 +130,7 @@ DumpObjectsProblem::dumpVariableHelper(const std::string & system,
 }
 
 void
-DumpObjectsProblem::solve()
+DumpObjectsProblem::solve(unsigned int)
 {
   dumpGeneratedSyntax(getParam<std::string>("dump_path"));
 }
@@ -173,12 +173,14 @@ DumpObjectsProblem::stringifyParameters(const InputParameters & parameters)
       else
       {
         // special treatment for some types
-        auto param_bool = dynamic_cast<InputParameters::Parameter<bool> *>(value_pair.second);
 
         // parameter value
         std::string param_value;
-        if (param_bool)
-          param_value = param_bool->get() ? "true" : "false";
+        if (parameters.have_parameter<bool>(param_name))
+        {
+          const bool & b = parameters.get<bool>(param_name);
+          param_value = b ? "true" : "false";
+        }
         else
         {
           std::stringstream ss;

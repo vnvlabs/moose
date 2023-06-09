@@ -44,6 +44,7 @@ Executioner::validParams()
 
   params.registerBase("Executioner");
 
+  params.addParamNamesToGroup("fixed_point_algorithm", "Fixed point iterations");
   params.addParamNamesToGroup("restart_file_base", "Restart");
 
   return params;
@@ -63,6 +64,8 @@ Executioner::Executioner(const InputParameters & parameters)
     _restart_file_base(getParam<FileNameNoExtension>("restart_file_base")),
     _verbose(getParam<bool>("verbose"))
 {
+  _fe_problem.getNonlinearSystemBase().setVerboseFlag(_verbose);
+
   if (!_restart_file_base.empty())
     _fe_problem.setRestartFile(_restart_file_base);
 

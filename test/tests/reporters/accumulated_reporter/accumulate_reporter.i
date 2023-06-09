@@ -10,7 +10,7 @@
 
 [Functions/fun]
   type = ParsedFunction
-  value = 't * x'
+  expression = 't * x'
 []
 
 [Postprocessors/pp]
@@ -68,6 +68,5 @@
 [Outputs]
   [out]
     type = JSON
-    execute_system_information_on = none
   []
 []

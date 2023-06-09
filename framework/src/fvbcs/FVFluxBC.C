@@ -82,58 +82,9 @@ FVFluxBC::computeResidual(const FaceInfo & fi)
 }
 
 void
-FVFluxBC::computeJacobian(Moose::DGJacobianType type, const ADReal & residual)
+FVFluxBC::computeResidualAndJacobian(const FaceInfo & fi)
 {
-  auto & ce = _assembly.couplingEntries();
-  for (const auto & it : ce)
-  {
-    MooseVariableFieldBase & ivariable = *(it.first);
-    MooseVariableFieldBase & jvariable = *(it.second);
-
-    // We currently only support coupling to other FV variables
-    // Remove this when we enable support for it.
-    if (!jvariable.isFV())
-      continue;
-
-    if (type == Moose::ElementElement &&
-        !jvariable.activeOnSubdomain(_face_info->elemSubdomainID()))
-      continue;
-    else if (type == Moose::NeighborNeighbor &&
-             !jvariable.activeOnSubdomain(_face_info->neighborSubdomainID()))
-      continue;
-
-    unsigned int ivar = ivariable.number();
-    unsigned int jvar = jvariable.number();
-
-    if (ivar != _var.number())
-      continue;
-
-    SystemBase & sys = _subproblem.systemBaseNonlinear();
-    auto dofs_per_elem = sys.getMaxVarNDofsPerElem();
-
-    auto ad_offset = Moose::adOffset(jvar, dofs_per_elem, type, sys.system().n_vars());
-
-    prepareMatrixTagNeighbor(_assembly, ivar, jvar, type);
-
-    mooseAssert(
-        _local_ke.m() == 1,
-        "We are currently only supporting constant monomials for finite volume calculations");
-    mooseAssert(
-        _local_ke.n() == 1,
-        "We are currently only supporting constant monomials for finite volume calculations");
-    mooseAssert(type == Moose::ElementElement ? jvariable.dofIndices().size() == 1
-                                              : jvariable.dofIndicesNeighbor().size() == 1,
-                "The AD derivative indexing below only makes sense for constant monomials, e.g. "
-                "for a number of dof indices equal to  1");
-
-#ifndef MOOSE_SPARSE_AD
-    mooseAssert(ad_offset < MOOSE_AD_MAX_DOFS_PER_ELEM,
-                "Out of bounds access in derivative vector.");
-#endif
-    _local_ke(0, 0) = residual.derivatives()[ad_offset];
-
-    accumulateTaggedLocalMatrix();
-  }
+  computeJacobian(fi);
 }
 
 void
@@ -161,31 +112,7 @@ FVFluxBC::computeJacobian(const FaceInfo & fi)
 
   mooseAssert(dof_indices.size() == 1, "We're currently built to use CONSTANT MONOMIALS");
 
-  auto local_functor = [&](const ADReal & residual, dof_id_type, const std::set<TagID> &)
-  {
-    // Even though the elem element is always the non-null pointer on mesh
-    // external boundary faces, this could be an "internal" boundary - one
-    // created by variable block restriction where the var is only defined on
-    // one side of the face (either elem or neighbor).  We need to make sure
-    // that we add the residual contribution to only the correct side - the one
-    // where the variable is defined.
-    // Also, we don't need to worry about ElementNeighbor or NeighborElement
-    // contributions here because, once again, this is a boundary face with the
-    // variable only defined on one side.
-    if (_face_type == FaceInfo::VarFaceNeighbors::ELEM)
-      computeJacobian(Moose::ElementElement, residual);
-    else if (_face_type == FaceInfo::VarFaceNeighbors::NEIGHBOR)
-      computeJacobian(Moose::NeighborNeighbor, residual);
-    else if (_face_type == FaceInfo::VarFaceNeighbors::BOTH)
-      mooseError("A FVFluxBC is being triggered on an internal face with centroid: ",
-                 fi.faceCentroid());
-    else
-      mooseError("A FVFluxBC is being triggered on a face which does not connect to a block ",
-                 "with the relevant finite volume variable. Its centroid: ",
-                 fi.faceCentroid());
-  };
-
-  _assembly.processDerivatives(r, dof_indices[0], _matrix_tags, local_functor);
+  addResidualsAndJacobian(_assembly, std::array<ADReal, 1>{{r}}, dof_indices, _var.scalingFactor());
 }
 
 const ADReal &
@@ -230,42 +157,14 @@ FVFluxBC::uOnGhost() const
     return _u[_qp];
 }
 
-Moose::ElemFromFaceArg
-FVFluxBC::makeSidedFace(const bool fi_elem, const bool correct_skewness) const
+Moose::ElemArg
+FVFluxBC::elemArg(const bool correct_skewness) const
 {
-  const auto ft = _face_info->faceType(_var.name());
-  const Elem * const elem = fi_elem ? &_face_info->elem() : _face_info->neighborPtr();
-
-  // Are we are on the side that the variable is defined on?
-  if (fi_elem == (ft == FaceInfo::VarFaceNeighbors::ELEM))
-  {
-    mooseAssert(elem, "This should be non-null");
-    return {elem, _face_info, correct_skewness, correct_skewness, elem->subdomain_id()};
-  }
-  else
-  {
-    const Elem * const elem_across = fi_elem ? _face_info->neighborPtr() : &_face_info->elem();
-    mooseAssert(elem_across,
-                "The elem across should be non-null and the element across should have dof indices "
-                "for this variable defined on it");
-    return {elem, _face_info, correct_skewness, correct_skewness, elem_across->subdomain_id()};
-  }
+  return {&_face_info->elem(), correct_skewness};
 }
 
-Moose::ElemFromFaceArg
-FVFluxBC::elemFromFace(const bool correct_skewness) const
+Moose::ElemArg
+FVFluxBC::neighborArg(const bool correct_skewness) const
 {
-  return makeSidedFace(true, correct_skewness);
-}
-
-Moose::ElemFromFaceArg
-FVFluxBC::neighborFromFace(const bool correct_skewness) const
-{
-  return makeSidedFace(false, correct_skewness);
-}
-
-std::pair<SubdomainID, SubdomainID>
-FVFluxBC::faceArgSubdomains() const
-{
-  return std::make_pair(elemFromFace().sub_id, neighborFromFace().sub_id);
+  return {_face_info->neighborPtr(), correct_skewness};
 }

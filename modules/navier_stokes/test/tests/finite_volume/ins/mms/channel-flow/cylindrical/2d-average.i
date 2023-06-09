@@ -17,7 +17,6 @@ velocity_interp_method='average'
 []
 
 [Problem]
-  fv_bcs_integrity_check = true
   coord_type = 'RZ'
 []
 
@@ -179,45 +178,45 @@ velocity_interp_method='average'
 [Functions]
   [exact_u]
     type = ParsedFunction
-    value = 'sin(x*pi)^2*sin((1/2)*y*pi)'
+    expression = 'sin(x*pi)^2*sin((1/2)*y*pi)'
   []
   [exact_rhou]
     type = ParsedFunction
-    value = 'rho*sin(x*pi)^2*sin((1/2)*y*pi)'
-    vars = 'rho'
-    vals = '${rho}'
+    expression = 'rho*sin(x*pi)^2*sin((1/2)*y*pi)'
+    symbol_names = 'rho'
+    symbol_values = '${rho}'
   []
   [forcing_u]
-    type = ADParsedFunction
-    value = '(1/4)*pi^2*mu*sin(x*pi)^2*sin((1/2)*y*pi) - pi*sin(x*pi)*cos((1/2)*y*pi) + (4*x*pi*rho*sin(x*pi)^3*sin((1/2)*y*pi)^2*cos(x*pi) + rho*sin(x*pi)^4*sin((1/2)*y*pi)^2)/x + (-x*pi*rho*sin(x*pi)^2*sin((1/2)*y*pi)*sin(y*pi)*cos(x*pi) + (1/2)*x*pi*rho*sin(x*pi)^2*cos(x*pi)*cos((1/2)*y*pi)*cos(y*pi))/x - (-2*x*pi^2*mu*sin(x*pi)^2*sin((1/2)*y*pi) + 2*x*pi^2*mu*sin((1/2)*y*pi)*cos(x*pi)^2 + 2*pi*mu*sin(x*pi)*sin((1/2)*y*pi)*cos(x*pi))/x'
-    vars = 'mu rho'
-    vals = '${mu} ${rho}'
+    type = ParsedFunction
+    expression = '(1/4)*pi^2*mu*sin(x*pi)^2*sin((1/2)*y*pi) - pi*sin(x*pi)*cos((1/2)*y*pi) + (4*x*pi*rho*sin(x*pi)^3*sin((1/2)*y*pi)^2*cos(x*pi) + rho*sin(x*pi)^4*sin((1/2)*y*pi)^2)/x + (-x*pi*rho*sin(x*pi)^2*sin((1/2)*y*pi)*sin(y*pi)*cos(x*pi) + (1/2)*x*pi*rho*sin(x*pi)^2*cos(x*pi)*cos((1/2)*y*pi)*cos(y*pi))/x - (-2*x*pi^2*mu*sin(x*pi)^2*sin((1/2)*y*pi) + 2*x*pi^2*mu*sin((1/2)*y*pi)*cos(x*pi)^2 + 2*pi*mu*sin(x*pi)*sin((1/2)*y*pi)*cos(x*pi))/x'
+    symbol_names = 'mu rho'
+    symbol_values = '${mu} ${rho}'
   []
   [exact_v]
     type = ParsedFunction
-    value = 'cos(x*pi)*cos(y*pi)'
+    expression = 'cos(x*pi)*cos(y*pi)'
   []
   [exact_rhov]
     type = ParsedFunction
-    value = 'rho*cos(x*pi)*cos(y*pi)'
-    vars = 'rho'
-    vals = '${rho}'
+    expression = 'rho*cos(x*pi)*cos(y*pi)'
+    symbol_names = 'rho'
+    symbol_values = '${rho}'
   []
   [forcing_v]
-    type = ADParsedFunction
-    value = 'pi^2*mu*cos(x*pi)*cos(y*pi) - 2*pi*rho*sin(y*pi)*cos(x*pi)^2*cos(y*pi) - 1/2*pi*sin((1/2)*y*pi)*cos(x*pi) - (-x*pi^2*mu*cos(x*pi)*cos(y*pi) - pi*mu*sin(x*pi)*cos(y*pi))/x + (-x*pi*rho*sin(x*pi)^3*sin((1/2)*y*pi)*cos(y*pi) + 2*x*pi*rho*sin(x*pi)*sin((1/2)*y*pi)*cos(x*pi)^2*cos(y*pi) + rho*sin(x*pi)^2*sin((1/2)*y*pi)*cos(x*pi)*cos(y*pi))/x'
-    vars = 'mu rho'
-    vals = '${mu} ${rho}'
+    type = ParsedFunction
+    expression = 'pi^2*mu*cos(x*pi)*cos(y*pi) - 2*pi*rho*sin(y*pi)*cos(x*pi)^2*cos(y*pi) - 1/2*pi*sin((1/2)*y*pi)*cos(x*pi) - (-x*pi^2*mu*cos(x*pi)*cos(y*pi) - pi*mu*sin(x*pi)*cos(y*pi))/x + (-x*pi*rho*sin(x*pi)^3*sin((1/2)*y*pi)*cos(y*pi) + 2*x*pi*rho*sin(x*pi)*sin((1/2)*y*pi)*cos(x*pi)^2*cos(y*pi) + rho*sin(x*pi)^2*sin((1/2)*y*pi)*cos(x*pi)*cos(y*pi))/x'
+    symbol_names = 'mu rho'
+    symbol_values = '${mu} ${rho}'
   []
   [exact_p]
     type = ParsedFunction
-    value = 'cos(x*pi)*cos((1/2)*y*pi)'
+    expression = 'cos(x*pi)*cos((1/2)*y*pi)'
   []
   [forcing_p]
     type = ParsedFunction
-    value = '-pi*rho*sin(y*pi)*cos(x*pi) + (2*x*pi*rho*sin(x*pi)*sin((1/2)*y*pi)*cos(x*pi) + rho*sin(x*pi)^2*sin((1/2)*y*pi))/x'
-    vars = 'rho'
-    vals = '${rho}'
+    expression = '-pi*rho*sin(y*pi)*cos(x*pi) + (2*x*pi*rho*sin(x*pi)*sin((1/2)*y*pi)*cos(x*pi) + rho*sin(x*pi)^2*sin((1/2)*y*pi))/x'
+    symbol_names = 'rho'
+    symbol_values = '${rho}'
   []
 []
 
@@ -230,7 +229,6 @@ velocity_interp_method='average'
 []
 
 [Outputs]
-  exodus = true
   csv = true
   [dof]
     type = DOFMap
@@ -245,23 +243,23 @@ velocity_interp_method='average'
     execute_on = 'timestep_end'
   []
   [./L2u]
-    type = ElementL2Error
-    variable = u
-    function = exact_u
+    type = ElementL2FunctorError
+    approximate = u
+    exact = exact_u
     outputs = 'console csv'
     execute_on = 'timestep_end'
   [../]
   [./L2v]
-    type = ElementL2Error
-    variable = v
-    function = exact_v
+    type = ElementL2FunctorError
+    approximate = v
+    exact = exact_v
     outputs = 'console csv'
     execute_on = 'timestep_end'
   [../]
   [./L2p]
-    variable = pressure
-    function = exact_p
-    type = ElementL2Error
+    approximate = pressure
+    exact = exact_p
+    type = ElementL2FunctorError
     outputs = 'console csv'
     execute_on = 'timestep_end'
   [../]

@@ -7,6 +7,7 @@ offset = -0.19
 
 [Mesh]
   file = long-bottom-block-1elem-blocks.e
+  allow_renumbering = false
 []
 
 [Variables]
@@ -16,11 +17,11 @@ offset = -0.19
   [disp_y]
     block = '1 2'
   []
-  [normal_lm]
+  [mechanical_normal_lm]
     block = 3
     use_dual = true
   []
-  [frictional_lm]
+  [mechanical_tangential_lm]
     block = 3
     use_dual = true
   []
@@ -41,8 +42,8 @@ offset = -0.19
     generate_output = 'stress_xx stress_yy'
     strain = FINITE
     block = '1 2'
-    zeta = 1.0
-    alpha = 0.0
+    stiffness_damping_coefficient = 0.05
+    hht_alpha = 0.0
   []
   [inertia_x]
     type = InertialForce
@@ -163,6 +164,25 @@ offset = -0.19
   []
 []
 
+
+
+# User object provides the contact force (e.g. LM)
+# for the application of the generalized force
+[UserObjects]
+  [weighted_vel_uo]
+    type = LMWeightedVelocitiesUserObject
+    primary_boundary = 20
+    secondary_boundary = 10
+    primary_subdomain = 4
+    secondary_subdomain = 3
+    lm_variable_normal = mechanical_normal_lm
+    lm_variable_tangential_one = mechanical_tangential_lm
+    secondary_variable = disp_x
+    disp_x = disp_x
+    disp_y = disp_y
+  []
+[]
+
 [Constraints]
   [weighted_gap_lm]
     type = ComputeDynamicFrictionalForceLMMechanicalContact
@@ -170,17 +190,17 @@ offset = -0.19
     secondary_boundary = 10
     primary_subdomain = 4
     secondary_subdomain = 3
-    variable = normal_lm
-    friction_lm = frictional_lm
+    variable = mechanical_normal_lm
+    friction_lm = mechanical_tangential_lm
     disp_x = disp_x
     disp_y = disp_y
     use_displaced_mesh = true
     c = 1e4
     c_t = 1e4
     mu = 0.5
-    interpolate_normals = false
     newmark_beta = 0.25
     newmark_gamma = 0.5
+    capture_tolerance = 1.0e-5
   []
   [normal_x]
     type = NormalMortarMechanicalContact
@@ -188,12 +208,12 @@ offset = -0.19
     secondary_boundary = 10
     primary_subdomain = 4
     secondary_subdomain = 3
-    variable = normal_lm
+    variable = mechanical_normal_lm
     secondary_variable = disp_x
     component = x
     use_displaced_mesh = true
     compute_lm_residuals = false
-    interpolate_normals = false
+    weighted_gap_uo = weighted_vel_uo
   []
   [normal_y]
     type = NormalMortarMechanicalContact
@@ -201,12 +221,12 @@ offset = -0.19
     secondary_boundary = 10
     primary_subdomain = 4
     secondary_subdomain = 3
-    variable = normal_lm
+    variable = mechanical_normal_lm
     secondary_variable = disp_y
     component = y
     use_displaced_mesh = true
     compute_lm_residuals = false
-    interpolate_normals = false
+    weighted_gap_uo = weighted_vel_uo
   []
   [tangential_x]
     type = TangentialMortarMechanicalContact
@@ -214,12 +234,12 @@ offset = -0.19
     secondary_boundary = 10
     primary_subdomain = 4
     secondary_subdomain = 3
-    variable = frictional_lm
+    variable = mechanical_tangential_lm
     secondary_variable = disp_x
     component = x
     use_displaced_mesh = true
     compute_lm_residuals = false
-    interpolate_normals = false
+    weighted_velocities_uo = weighted_vel_uo
   []
   [tangential_y]
     type = TangentialMortarMechanicalContact
@@ -227,12 +247,12 @@ offset = -0.19
     secondary_boundary = 10
     primary_subdomain = 4
     secondary_subdomain = 3
-    variable = frictional_lm
+    variable = mechanical_tangential_lm
     secondary_variable = disp_y
     component = y
     use_displaced_mesh = true
     compute_lm_residuals = false
-    interpolate_normals = false
+    weighted_velocities_uo = weighted_vel_uo
   []
 []
 
@@ -290,6 +310,7 @@ offset = -0.19
 
 [Outputs]
   exodus = true
+  csv = true
   checkpoint = true
 []
 
@@ -300,19 +321,12 @@ offset = -0.19
   []
 []
 
-[Postprocessors]
-  active = 'contact'
-  [num_nl]
-    type = NumNonlinearIterations
-  []
-  [cumulative]
-    type = CumulativeValuePostprocessor
-    postprocessor = num_nl
-  []
-  [contact]
-    type = ContactDOFSetSize
-    variable = normal_lm
-    subdomain = '3'
-    execute_on = 'nonlinear timestep_end'
+[VectorPostprocessors]
+  [mechanical_tangential_lm]
+    type = NodalValueSampler
+    block = '3'
+    variable = mechanical_tangential_lm
+    sort_by = 'x'
+    execute_on = TIMESTEP_END
   []
 []

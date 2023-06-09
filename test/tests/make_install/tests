@@ -10,6 +10,18 @@
   issues = '#19022'
   design = 'MooseApp.md'
 
+  [show_copyable_inputs]
+    type = 'RunApp'
+    cli_args = "--show-copyable-inputs"
+    no_additional_cli_args = True
+    expect_out = 'The following directories are installable.*tests'
+    # no_additional_cli_args strips all other options, including valgrind...
+    # so we can't actually test this with valgrind
+    valgrind = none
+
+    requirement = 'The system shall support the ability to report installable inputs on the command line.'
+  []
+
   [test_copy_install]
     requirement = 'The system shall support the ability to "install" inputs:'
     [setup_fake_test_structure]
@@ -20,7 +32,7 @@
                  cp ../misc/version/tests ../../../share/moose_test/tests/version;
                  cp ../../testroot ../../../share/moose_test/tests/;
                  mkdir -p ../../../make_install_test'
-      installed = False
+      installation_type = IN_TREE
 
       detail = 'from a pre-determined user-readable location;'
     []
@@ -31,7 +43,7 @@
       working_directory = '../../../make_install_test'
       no_additional_cli_args = True
       expect_out = 'Directory successfully copied'
-      installed = False
+      installation_type = IN_TREE
       prereq = 'test_copy_install/setup_fake_test_structure'
 
       detail = 'copied using a MOOSE-based binary;'
@@ -42,8 +54,8 @@
       working_directory = '../../../make_install_test'
       input = 'DUMMY'
       should_execute = False
-      check_files = 'moose_test_tests/testroot moose_test_tests/version/tests'
-      installed = False
+      check_files = 'moose_test/tests/testroot moose_test/tests/version/tests'
+      installation_type = IN_TREE
       prereq = 'test_copy_install/copy_tests'
 
       detail = 'verifying a successful copy operation;'
@@ -55,7 +67,7 @@
       cli_args = "--copy-inputs tests"
       no_additional_cli_args = True
       expect_err = 'The directory \S+ already exists.'
-      installed = False
+      installation_type = IN_TREE
       prereq = 'test_copy_install/check_files'
 
       detail = 'able to report an error if overwriting may occur using a MOOSE-based binary;'
@@ -63,12 +75,12 @@
 
     [link_exec_installed]
       type = 'RunCommand'
-      command = 'for bin in `ls ../../test/moose_test-*`
+      command = 'for bin in `ls ../../../test/moose_test-*`
                  do
                  ln -sf $bin .
                  done'
-      working_directory = '../../../make_install_test/moose_test_tests'
-      installed = False
+      working_directory = '../../../make_install_test/moose_test/tests'
+      installation_type = IN_TREE
       prereq = 'test_copy_install/copy_warn_overwrite'
 
       detail = 'able to link a binary to an installed location;'
@@ -77,9 +89,9 @@
     [run]
       type = 'RunApp'
       cli_args = "--run"
-      working_directory = "../../../make_install_test/moose_test_tests"
+      working_directory = "../../../make_install_test/moose_test/tests"
       no_additional_cli_args = True
-      installed = False
+      installation_type = IN_TREE
       prereq = 'test_copy_install/link_exec_installed'
 
       detail = 'able to successfully launch the TestHarness using a MOOSE-based binary;'
@@ -90,7 +102,7 @@
       command = 'rm -rf ../../../share/;
                  rm -rf ../../../make_install_test'
       prereq = 'test_copy_install/run'
-      installed = False
+      installation_type = IN_TREE
 
       detail = 'and cleaned up from a user-readable location.'
     []

@@ -46,6 +46,7 @@ public:
 
   virtual void initialSetup() override;
   virtual void timestepSetup() override;
+  virtual void customSetup(const ExecFlagType & exec_type) override;
   virtual void subdomainSetup() override;
   virtual void residualSetup() override;
   virtual void jacobianSetup() override;
@@ -153,6 +154,14 @@ public:
 
   void clearScalarVariableCoupleableTags();
 
+  const ExecuteMooseObjectWarehouse<AuxKernel> & nodalAuxWarehouse() const;
+  const ExecuteMooseObjectWarehouse<VectorAuxKernel> & nodalVectorAuxWarehouse() const;
+  const ExecuteMooseObjectWarehouse<ArrayAuxKernel> & nodalArrayAuxWarehouse() const;
+
+  const ExecuteMooseObjectWarehouse<AuxKernel> & elemAuxWarehouse() const;
+  const ExecuteMooseObjectWarehouse<VectorAuxKernel> & elemVectorAuxWarehouse() const;
+  const ExecuteMooseObjectWarehouse<ArrayAuxKernel> & elemArrayAuxWarehouse() const;
+
 protected:
   void computeScalarVars(ExecFlagType type);
   void computeNodalVars(ExecFlagType type);
@@ -164,12 +173,10 @@ protected:
   void computeElementalArrayVars(ExecFlagType type);
 
   template <typename AuxKernelType>
-  void computeElementalVarsHelper(const MooseObjectWarehouse<AuxKernelType> & warehouse,
-                                  const std::vector<std::vector<MooseVariableFEBase *>> & vars);
+  void computeElementalVarsHelper(const MooseObjectWarehouse<AuxKernelType> & warehouse);
 
   template <typename AuxKernelType>
-  void computeNodalVarsHelper(const MooseObjectWarehouse<AuxKernelType> & warehouse,
-                              const std::vector<std::vector<MooseVariableFEBase *>> & vars);
+  void computeNodalVarsHelper(const MooseObjectWarehouse<AuxKernelType> & warehouse);
 
   FEProblemBase & _fe_problem;
 
@@ -177,8 +184,9 @@ protected:
 
   /// solution vector from nonlinear solver
   const NumericVector<Number> * _current_solution;
-  /// Serialized version of the solution vector
-  NumericVector<Number> & _serialized_solution;
+  /// Serialized version of the solution vector, or nullptr if a
+  /// serialized solution is not needed
+  std::unique_ptr<NumericVector<Number>> _serialized_solution;
   /// solution vector for u^dot
   NumericVector<Number> * _u_dot;
   /// solution vector for u^dotdot
@@ -192,23 +200,14 @@ protected:
   /// The current states of the solution (0 = current, 1 = old, etc)
   std::vector<NumericVector<Number> *> _solution_state;
 
-  /// Whether or not a copy of the residual needs to be made
-  bool _need_serialized_solution;
-
   // Variables
   std::vector<std::vector<MooseVariableFEBase *>> _nodal_vars;
-  std::vector<std::vector<MooseVariableFEBase *>> _nodal_std_vars;
-  std::vector<std::vector<MooseVariableFEBase *>> _nodal_vec_vars;
-  std::vector<std::vector<MooseVariableFEBase *>> _nodal_array_vars;
 
   ///@{
   /**
    * Elemental variables. These may be either finite element or finite volume variables
    */
   std::vector<std::vector<MooseVariableFieldBase *>> _elem_vars;
-  std::vector<std::vector<MooseVariableFieldBase *>> _elem_std_vars;
-  std::vector<std::vector<MooseVariableFieldBase *>> _elem_vec_vars;
-  std::vector<std::vector<MooseVariableFieldBase *>> _elem_array_vars;
   ///@}
 
   // Storage for AuxScalarKernel objects
@@ -237,3 +236,39 @@ protected:
 
   NumericVector<Number> & solutionInternal() const override { return *_sys.solution; }
 };
+
+inline const ExecuteMooseObjectWarehouse<AuxKernel> &
+AuxiliarySystem::nodalAuxWarehouse() const
+{
+  return _nodal_aux_storage;
+}
+
+inline const ExecuteMooseObjectWarehouse<VectorAuxKernel> &
+AuxiliarySystem::nodalVectorAuxWarehouse() const
+{
+  return _nodal_vec_aux_storage;
+}
+
+inline const ExecuteMooseObjectWarehouse<ArrayAuxKernel> &
+AuxiliarySystem::nodalArrayAuxWarehouse() const
+{
+  return _nodal_array_aux_storage;
+}
+
+inline const ExecuteMooseObjectWarehouse<AuxKernel> &
+AuxiliarySystem::elemAuxWarehouse() const
+{
+  return _elemental_aux_storage;
+}
+
+inline const ExecuteMooseObjectWarehouse<VectorAuxKernel> &
+AuxiliarySystem::elemVectorAuxWarehouse() const
+{
+  return _elemental_vec_aux_storage;
+}
+
+inline const ExecuteMooseObjectWarehouse<ArrayAuxKernel> &
+AuxiliarySystem::elemArrayAuxWarehouse() const
+{
+  return _elemental_array_aux_storage;
+}

@@ -16,8 +16,6 @@ a=1
   [./v]
     type = MooseVariableFVReal
     face_interp_method = 'skewness-corrected'
-    cache_face_gradients = false
-    cache_face_values = true
   [../]
 []
 
@@ -77,11 +75,11 @@ a=1
 [Functions]
   [exact]
     type = ParsedFunction
-    value = 'cos(x)'
+    expression = 'cos(x)'
   []
   [forcing]
     type = ParsedFunction
-    value = 'cos(x) - sin(x)'
+    expression = 'cos(x) - sin(x)'
   []
 []
 
@@ -93,7 +91,6 @@ a=1
 []
 
 [Outputs]
-  exodus = true
   csv = true
 []
 

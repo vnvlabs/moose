@@ -31,7 +31,7 @@ public:
    */
   void compute() override;
 
-  void mortarSetup() override;
+  void initialSetup() override;
 
 protected:
   void precalculateValue() override final;
@@ -46,6 +46,7 @@ protected:
   using AuxKernelTempl<ComputeValueType>::_var;
   using AuxKernelTempl<ComputeValueType>::computeValue;
   using AuxKernelTempl<ComputeValueType>::uOld;
+
   /// Whether we're computing on the displaced mesh
   const bool _displaced;
 
@@ -60,6 +61,25 @@ protected:
 
   /// Old value
   const typename OutputTools<ComputeValueType>::VariableValue & _u_old;
+
+  /// The current test function index
+  unsigned int _i;
+
+  /// The current quadrature point index
+  unsigned int _qp;
+
+  /// The shape functions for the variable associated with the lower-dimensional element, e.g. the
+  /// shape functions for the nodes connected to the lower-dimensional element
+  const typename OutputTools<ComputeValueType>::VariableTestValue & _test_lower;
+
+  /// Member for handling change of coordinate systems (xyz, rz, spherical) on mortar elements
+  const MooseArray<Real> & _coord_msm;
+
+private:
+  // These are invalid for use because they are only meant for working with the higher-dimensional
+  // elements
+  using AuxKernelTempl<ComputeValueType>::_coord;
+  using AuxKernelTempl<ComputeValueType>::_test;
 };
 
 typedef MortarNodalAuxKernelTempl<Real> MortarNodalAuxKernel;

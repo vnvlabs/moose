@@ -22,7 +22,7 @@
   [../]
   [./forcing_fn]
     type = ParsedFunction
-    value = -2*pi*pi*sin(pi*x)*sin(pi*y)-sin(pi*x)*sin(pi*y)
+    expression = -2*pi*pi*sin(pi*x)*sin(pi*y)-sin(pi*x)*sin(pi*y)
   [../]
 []
 
@@ -109,6 +109,5 @@
 [Outputs]
   execute_on = 'timestep_end'
   exodus = true
-  csv = true
   print_mesh_changed_info = true
 []

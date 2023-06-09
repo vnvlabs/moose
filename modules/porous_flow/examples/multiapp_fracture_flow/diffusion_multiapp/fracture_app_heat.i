@@ -50,8 +50,8 @@
   [heat_to_matrix]
     type = ParsedAux
     variable = heat_to_matrix
-    args = 'frac_T transferred_matrix_T'
-    function = '0.004 * (frac_T - transferred_matrix_T)'
+    coupled_variables = 'frac_T transferred_matrix_T'
+    expression = '0.004 * (frac_T - transferred_matrix_T)'
   []
 []
 
@@ -101,15 +101,13 @@
 [Transfers]
   [heat_to_matrix]
     type = MultiAppCopyTransfer
-    direction = to_multiapp
-    multi_app = matrix_app
+    to_multi_app = matrix_app
     source_variable = heat_to_matrix
     variable = heat_from_frac
   []
   [T_from_matrix]
     type = MultiAppCopyTransfer
-    direction = from_multiapp
-    multi_app = matrix_app
+    from_multi_app = matrix_app
     source_variable = matrix_T
     variable = transferred_matrix_T
   []

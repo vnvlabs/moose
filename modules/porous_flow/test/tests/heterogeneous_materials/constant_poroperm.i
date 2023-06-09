@@ -205,15 +205,15 @@
 [Functions]
   [permx]
     type = ParsedFunction
-    value = '(1+x)*1e-11'
+    expression = '(1+x)*1e-11'
   []
   [permy]
     type = ParsedFunction
-    value = '(1+y)*1e-11'
+    expression = '(1+y)*1e-11'
   []
   [permz]
     type = ParsedFunction
-    value = '(1+z)*1e-11'
+    expression = '(1+z)*1e-11'
   []
 []
 
@@ -237,16 +237,14 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [simple_fluid]
-      type = SimpleFluidProperties
-      bulk_modulus = 2e9
-      density0 = 1000
-      viscosity = 1e-3
-      thermal_expansion = 0
-      cv = 2
-    []
+[FluidProperties]
+  [simple_fluid]
+    type = SimpleFluidProperties
+    bulk_modulus = 2e9
+    density0 = 1000
+    viscosity = 1e-3
+    thermal_expansion = 0
+    cv = 2
   []
 []
 

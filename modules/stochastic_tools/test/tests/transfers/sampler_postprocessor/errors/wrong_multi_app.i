@@ -35,16 +35,15 @@
 [Transfers]
   [runner]
     type = SamplerParameterTransfer
-    multi_app = sub
+    to_multi_app = sub
     sampler = sample
     parameters = 'BCs/left/value BCs/right/value'
-    to_control = 'stochastic'
     execute_on = INITIAL
     check_multiapp_execute_on = false
   []
   [data]
     type = SamplerPostprocessorTransfer
-    multi_app = sub
+    from_multi_app = sub
     sampler = sample
     to_vector_postprocessor = storage
     from_postprocessor = avg
@@ -63,8 +62,4 @@
   type = Transient
   num_steps = 5
   dt = 0.01
-[]
-
-[Outputs]
-  csv = true
 []

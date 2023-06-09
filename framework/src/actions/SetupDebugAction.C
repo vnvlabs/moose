@@ -16,6 +16,7 @@
 #include "MooseObjectAction.h"
 #include "ActionFactory.h"
 #include "AddAuxVariableAction.h"
+#include "MooseUtils.h"
 
 registerMooseAction("MooseApp", SetupDebugAction, "add_output");
 
@@ -40,18 +41,31 @@ SetupDebugAction::validParams()
   params.addParam<bool>("show_mesh_meta_data", false, "Print out the available mesh meta data");
   params.addParam<bool>(
       "show_reporters", false, "Print out information about the declared and requested Reporters");
-  params.addParam<bool>(
-      "pid_aux",
-      false,
-      "Add a AuxVariable named \"pid\" that shows the processors and partitioning");
 
-  params.addClassDescription(
-      "Adds various debugging type Output objects to the simulation system.");
+  ExecFlagEnum print_on = MooseUtils::getDefaultExecFlagEnum();
+  print_on.addAvailableFlags(EXEC_TRANSFER);
+  print_on.addAvailableFlags(EXEC_FAILED);
+  params.addParam<ExecFlagEnum>(
+      "show_execution_order",
+      print_on,
+      "Print more information about the order of execution during calculations");
+  params.addDeprecatedParam<bool>(
+      "pid_aux",
+      "Add a AuxVariable named \"pid\" that shows the processors and partitioning",
+      "pid_aux is deprecated, use output_process_domains");
+  params.addParam<bool>(
+      "output_process_domains",
+      false,
+      "Add a AuxVariable named \"pid\" that shows the partitioning for each process");
+  params.addParam<bool>(
+      "show_functors", false, "Whether to print information about the functors in the problem");
+
+  params.addClassDescription("Adds various debugging type output to the simulation system.");
 
   return params;
 }
 
-SetupDebugAction::SetupDebugAction(InputParameters parameters) : Action(parameters)
+SetupDebugAction::SetupDebugAction(const InputParameters & parameters) : Action(parameters)
 {
   _awh.showActionDependencies(getParam<bool>("show_action_dependencies"));
   _awh.showActions(getParam<bool>("show_actions"));
@@ -69,7 +83,7 @@ SetupDebugAction::act()
     _problem->addOutput(type, "_moose_material_property_debug_output", params);
   }
 
-  // Variable residusl norms
+  // Variable residual norms
   if (_pars.get<bool>("show_var_residual_norms"))
   {
     const std::string type = "VariableResidualNormsDebugOutput";
@@ -104,11 +118,16 @@ SetupDebugAction::act()
     _problem->addOutput(type, "_moose_reporter_debug_output", params);
   }
 
+  // Print execution information in all loops
+  if (parameters().isParamSetByUser("show_execution_order"))
+    _problem->setExecutionPrinting(getParam<ExecFlagEnum>("show_execution_order"));
+
   // Add pid aux
-  if (getParam<bool>("pid_aux"))
+  if (getParam<bool>("output_process_domains") ||
+      (isParamValid("pid_aux") && getParam<bool>("pid_aux")))
   {
     if (_problem->hasVariable("pid"))
-      paramError("pid_aux", "Variable with the name \"pid\" already exists");
+      paramError("output_process_domains", "Variable with the name \"pid\" already exists");
 
     auto fe_type = FEType(CONSTANT, MONOMIAL);
     auto type = AddAuxVariableAction::variableType(fe_type);
@@ -119,4 +138,8 @@ SetupDebugAction::act()
     params.set<AuxVariableName>("variable") = "pid";
     _problem->addAuxKernel("ProcessorIDAux", "pid_aux", params);
   }
+
+  // Add functor output
+  if (getParam<bool>("show_functors"))
+    _problem->setFunctorOutput(getParam<bool>("show_functors"));
 }

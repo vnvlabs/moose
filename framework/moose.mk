@@ -2,17 +2,14 @@
 MOOSE_UNITY ?= true
 MOOSE_HEADER_SYMLINKS ?= true
 
+# We ignore this in the contrib folder because we will set up the include
+# directories manually later
+IGNORE_CONTRIB_INC ?= libtorch
+ENABLE_LIBTORCH ?= false
+
 # this allows us to modify the linked names/rpaths safely later for install targets
 ifneq (,$(findstring darwin,$(libmesh_HOST)))
 	libmesh_LDFLAGS += -headerpad_max_install_names
-endif
-
-#
-# Verify Conda
-#
-CONDA_RESULT:=$(shell bash -c "$(MOOSE_DIR)/scripts/verify_conda_libmesh.py $(MOOSE_DIR)")
-ifneq ($(CONDA_RESULT),0)
- $(error Build failed)
 endif
 
 #
@@ -36,10 +33,9 @@ pcre_LIB       :=  $(pcre_DIR)/libpcre-$(METHOD).la
 pcre_deps      := $(patsubst %.cc, %.$(obj-suffix).d, $(pcre_srcfiles)) \
 
 #
-# hit (new getpot parser)
+# hit
 #
 HIT_DIR ?= $(MOOSE_DIR)/framework/contrib/hit
-#$(info Using HIT from $(HIT_DIR))
 hit_CONTENT   := $(shell ls $(HIT_DIR) 2> /dev/null)
 ifeq ($(hit_CONTENT),)
   $(error The HIT input file parser does not seem to be available. If set, make sure the HIT_DIR environment variable is set to the correct location of your HIT parser.)
@@ -57,6 +53,54 @@ hit_CLI          := $(HIT_DIR)/hit
 # hit python bindings
 #
 pyhit_srcfiles  := $(HIT_DIR)/hit.cpp $(HIT_DIR)/lex.cc $(HIT_DIR)/parse.cc $(HIT_DIR)/braceexpr.cc
+
+#
+# Dynamic library suffix
+#
+lib_suffix := so
+ifeq ($(shell uname -s),Darwin)
+	lib_suffix := dylib
+endif
+
+#
+# wasp hit, which can override hit
+#
+WASP_DIR            ?= $(MOOSE_DIR)/framework/contrib/wasp/install
+ifeq ($(shell uname -s),Darwin)
+	wasp_LIBS         := $(shell find -E $(WASP_DIR)/lib -regex ".*/lib[a-z]+.$(lib_suffix)")
+else
+	wasp_LIBS         := $(wildcard $(WASP_DIR)/lib/libwasp*$(lib_suffix))
+endif
+ifneq ($(wasp_LIBS),)
+  wasp_LIBS         := $(notdir $(wasp_LIBS))
+  wasp_LIBS         := $(patsubst %.$(lib_suffix),%,$(wasp_LIBS))
+  wasp_LIBS         := $(patsubst lib%,-l%,$(wasp_LIBS))
+  libmesh_CXXFLAGS  += -DWASP_ENABLED -I$(WASP_DIR)/include
+  libmesh_LDFLAGS   += -Wl,-rpath,$(WASP_DIR)/lib -L$(WASP_DIR)/lib $(wasp_LIBS)
+endif
+
+#
+# Conditional parts if the user wants to compile MOOSE with torchlib
+#
+ifeq ($(ENABLE_LIBTORCH),true)
+	LIBTORCH_LIB := libtorch.$(lib_suffix)
+
+  ifneq ($(wildcard $(LIBTORCH_DIR)/lib/$(LIBTORCH_LIB)),)
+    # Enabling parts that have pytorch dependencies
+    libmesh_CXXFLAGS += -DLIBTORCH_ENABLED
+
+    # Adding the include directories, we use -isystem to silence the warning coming from
+    # libtorch (which would cause errors in the testing phase)
+    libmesh_CXXFLAGS += -isystem $(LIBTORCH_DIR)/include/torch/csrc/api/include
+    libmesh_CXXFLAGS += -isystem $(LIBTORCH_DIR)/include
+
+    # Dynamically linking with the available pytorch library
+    libmesh_LDFLAGS += -Wl,-rpath,$(LIBTORCH_DIR)/lib
+    libmesh_LDFLAGS += -L$(LIBTORCH_DIR)/lib -ltorch
+  else
+    $(error ERROR! Cannot locate any dynamic libraries of libtorch. Make sure to install libtorch (manually or using scripts/setup_libtorch.sh) and to run the configure --with-libtorch before compiling moose!)
+  endif
+endif
 
 #
 # FParser JIT defines
@@ -165,8 +209,14 @@ moose_INC_DIRS := $(shell find $(FRAMEWORK_DIR)/include -type d)
 endif
 
 moose_INC_DIRS += $(shell find $(FRAMEWORK_DIR)/contrib/*/include -type d)
+
+# We filter out the unnecessary include dirs from the contribs
+ignore_contrib_include := $(foreach ex_dir, $(IGNORE_CONTRIB_INC), $(if $(dir $(wildcard $(FRAMEWORK_DIR)/contrib/$(ex_dir)/.)),$(shell find $(FRAMEWORK_DIR)/contrib/$(ex_dir)/include -type d),))
+moose_INC_DIRS := $(filter-out $(ignore_contrib_include), $(moose_INC_DIRS))
+
 moose_INC_DIRS += $(gtest_DIR)
 moose_INC_DIRS += $(HIT_DIR)
+moose_INC_DIRS += $(wasp_incfiles)
 moose_INCLUDE  := $(foreach i, $(moose_INC_DIRS), -I$(i))
 
 #libmesh_INCLUDE := $(moose_INCLUDE) $(libmesh_INCLUDE)
@@ -182,6 +232,12 @@ ifeq ($(MOOSE_UNITY),true)
 srcsubdirs := $(shell find $(FRAMEWORK_DIR)/src -type d -not -path '*/.libs*')
 
 moose_non_unity := %/base %/utils
+
+# Add additional non-unity directories if libtorch is enabled
+ifeq ($(ENABLE_LIBTORCH),true)
+	libtorch_dirs := $(shell find $(FRAMEWORK_DIR)/src/libtorch -type d -not -path '*/.libs*' 2> /dev/null)
+  moose_non_unity += $(libtorch_dirs)
+endif
 
 unity_src_dir := $(FRAMEWORK_DIR)/build/unity_src
 
@@ -289,6 +345,10 @@ $(moose_revision_header): $(moose_HEADER_deps)
 	@echo "Checking if header needs updating: "$@"..."
 	$(shell $(FRAMEWORK_DIR)/scripts/get_repo_revision.py $(FRAMEWORK_DIR) \
 	  $(moose_revision_header) MOOSE)
+  # make sure the header generation step didn't fail
+	@if [ $(.SHELLSTATUS) -ne 0 ]; then \
+	echo "\nFailed to generate MooseRevision.h\n"; exit $(.SHELLSTATUS); \
+	fi
 	@if [ ! -e "$(moose_all_header_dir)/MooseRevision.h" ]; then \
 		ln -sf $(moose_revision_header) $(moose_all_header_dir); \
 	fi
@@ -384,7 +444,11 @@ moose_share_dir = $(share_dir)/moose
 python_install_dir = $(moose_share_dir)/python
 bin_install_dir = $(PREFIX)/bin
 
-install: install_libs install_bin install_harness install_exodiff install_adreal_monolith install_hit
+install: all install_libs install_bin install_harness install_exodiff install_adreal_monolith install_hit install_data
+
+install_data::
+	@mkdir -p $(moose_share_dir)
+	@cp -a $(FRAMEWORK_DIR)/data $(moose_share_dir)/
 
 install_adreal_monolith: ADRealMonolithic.h
 	@ mkdir -p $(moose_include_dir)
@@ -392,25 +456,30 @@ install_adreal_monolith: ADRealMonolithic.h
 
 install_exodiff: all
 	@echo "Installing exodiff"
-	@cp $(MOOSE_DIR)/framework/contrib/exodiff/exodiff $(bin_install_dir)
+	@mkdir -p $(bin_install_dir)
+	@cp $(MOOSE_DIR)/framework/contrib/exodiff/exodiff $(bin_install_dir)/
 
-install_harness:
-	@echo "Installing TestHarness"
+install_python:
+	@echo "Installing python utilities"
 	@rm -rf $(python_install_dir)
 	@mkdir -p $(python_install_dir)
+	@cp -R $(MOOSE_DIR)/python/* $(python_install_dir)/
+	@cp -f $(HIT_DIR)/hit.so $(python_install_dir)/
+
+install_harness: install_python
+	@echo "Installing TestHarness"
 	@mkdir -p $(moose_share_dir)/bin
 	@mkdir -p $(moose_include_dir)
 	@mkdir -p $(bin_install_dir)
-	@cp -R $(MOOSE_DIR)/python/* $(python_install_dir)/
 	@cp -f $(MOOSE_DIR)/scripts/moose_test_runner $(bin_install_dir)/moose_test_runner
 	@cp -f $(MOOSE_DIR)/framework/contrib/exodiff/exodiff $(moose_share_dir)/bin/
 	@cp -f $(MOOSE_DIR)/framework/include/base/MooseConfig.h $(moose_include_dir)/
-	@cp -f $(HIT_DIR)/hit.so $(python_install_dir)/
 	@echo "libmesh_install_dir = '$(LIBMESH_DIR)'" > $(moose_share_dir)/moose_config.py
 
 install_hit: all
 	@echo "Installing HIT"
-	@cp $(MOOSE_DIR)/framework/contrib/hit/hit $(bin_install_dir)
+	@mkdir -p $(bin_install_dir)
+	@cp $(MOOSE_DIR)/framework/contrib/hit/hit $(bin_install_dir)/
 
 lib_install_suffix = lib/$(APPLICATION_NAME)
 lib_install_dir = $(PREFIX)/$(lib_install_suffix)
@@ -422,6 +491,7 @@ else
   patch_relink = :
   patch_rpath = patchelf --set-rpath '$$ORIGIN'/$(2):$$(patchelf --print-rpath $(1)) $(1)
 endif
+patch_la = $(FRAMEWORK_DIR)/scripts/patch_la.py $(1) $(2)
 
 libname_framework = $(shell grep "dlname='.*'" $(MOOSE_DIR)/framework/libmoose-$(METHOD).la 2>/dev/null | sed -E "s/dlname='(.*)'/\1/g")
 libpath_framework = $(MOOSE_DIR)/framework/$(libname_framework)

@@ -10,11 +10,12 @@
 #pragma once
 
 #include "RestartableData.h"
-
+#include "JsonIO.h"
 #include "MooseUtils.h"
 #include "ReporterState.h"
 #include "ReporterContext.h"
 #include "libmesh/parallel_object.h"
+#include "libmesh/dense_vector.h"
 #include <memory>
 
 class MooseApp;
@@ -31,7 +32,7 @@ class Receiver;
  * first value is the current value and the data in the vector are the older data.
  *
  * The ReporterState object is a RestartableData object that serves as a helper for managing the
- * time history. A "context" object also exists that uses the ReporterState for preforming special
+ * time history. A "context" object also exists that uses the ReporterState for performing special
  * operations. Refer to ReporterState.h/C for more information.
  *
  * It is important to note that the Reporter values are not threaded. However, the Reporter
@@ -95,6 +96,25 @@ public:
    * Return a list of all reporter names
    */
   std::set<ReporterName> getReporterNames() const;
+
+  /**
+   * Return a list of all postprocessor names
+   */
+  std::set<std::string> getPostprocessorNames() const;
+
+  /**
+   * Get all real reporter values including postprocessor and vector postprocessor values into a
+   * dense vector
+   */
+  DenseVector<Real> getAllRealReporterValues() const;
+
+  /**
+   * Get full names of all real reporter values
+   * Note: For a postprocessor, the full name is the postprocessor name plus '/value'.
+   *       For a vector postprocessor, the full name is the vector postprocessor name
+   *       plus the vector name followed by '/#' where '#' is the index of the vector.
+   */
+  std::vector<std::string> getAllRealReporterFullNames() const;
 
   /**
    * Method for returning read only references to Reporter values.
@@ -191,7 +211,7 @@ public:
    *
    * If you recall, the original VectorPostprocessor system included the ability to perform some
    * scatter and broadcast actions via the special call on the storage helper object. This
-   * is a replacement for that method that leverages the RepoorterContext objects to perform
+   * is a replacement for that method that leverages the ReporterContext objects to perform
    * value specific actions, including some automatic operations depending how the data is
    * produced and consumed.
    *
@@ -378,7 +398,7 @@ ReporterData::declareReporterValue(const ReporterName & reporter_name,
 
   // They key in _states (ReporterName) is not unique by special type. This is done on purpose
   // because we want to store reporter names a single name regardless of special type.
-  // Beacuse of this, we have the case where someone could request a reporter value
+  // Because of this, we have the case where someone could request a reporter value
   // that is later declared as a pp or a vpp value. In this case, when it is first
   // requested, the _state entry will have a key and name with a special type of ANY.
   // When it's declared here (later), we will still find the correct entry because

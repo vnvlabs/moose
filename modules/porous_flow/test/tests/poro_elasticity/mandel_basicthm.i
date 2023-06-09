@@ -128,22 +128,20 @@
 [AuxKernels]
   [tot_force]
     type = ParsedAux
-    args = 'stress_yy porepressure'
+    coupled_variables = 'stress_yy porepressure'
     execute_on = timestep_end
     variable = tot_force
-    function = '-stress_yy+0.6*porepressure'
+    expression = '-stress_yy+0.6*porepressure'
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [the_simple_fluid]
-      type = SimpleFluidProperties
-      thermal_expansion = 0.0
-      bulk_modulus = 8.0
-      viscosity = 1.0
-      density0 = 1.0
-    []
+[FluidProperties]
+  [the_simple_fluid]
+    type = SimpleFluidProperties
+    thermal_expansion = 0.0
+    bulk_modulus = 8.0
+    viscosity = 1.0
+    density0 = 1.0
   []
 []
 

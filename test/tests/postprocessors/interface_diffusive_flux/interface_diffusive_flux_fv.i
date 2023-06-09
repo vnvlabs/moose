@@ -29,7 +29,7 @@ postprocessor_type = InterfaceDiffusiveFluxAverage
 [Functions]
   [fn_exact]
     type = ParsedFunction
-    value = 'x*x+y*y'
+    expression = 'x*x+y*y'
   []
 []
 
@@ -43,7 +43,6 @@ postprocessor_type = InterfaceDiffusiveFluxAverage
     block = 1
   []
 []
-
 
 [FVKernels]
   [diff_u]
@@ -79,6 +78,7 @@ postprocessor_type = InterfaceDiffusiveFluxAverage
     boundary = 'interface'
     subdomain1 = '0'
     subdomain2 = '1'
+    coeff_interp_method = average
   []
 []
 
@@ -108,6 +108,6 @@ postprocessor_type = InterfaceDiffusiveFluxAverage
 []
 
 [Outputs]
-  file_base = ${raw ${postprocessor_type} _fv}
+  file_base = '${raw ${postprocessor_type} _fv}'
   exodus = true
 []

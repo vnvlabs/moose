@@ -13,11 +13,11 @@
 [Functions]
   [diff_func_x]
     type = ParsedFunction
-    value = 1/t
+    expression = 1/t
   []
   [diff_func_y]
     type = ParsedFunction
-    value = 't*t + x'
+    expression = 't*t + x'
   []
 []
 
@@ -25,7 +25,7 @@
   [diff]
     type = VectorMatDiffusion
     variable = u
-    coef = diffusion
+    coeff = diffusion
   []
   [td]
     type = TimeDerivative

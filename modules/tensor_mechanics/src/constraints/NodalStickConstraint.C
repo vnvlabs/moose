@@ -14,7 +14,7 @@
 #include "Assembly.h"
 #include "SystemBase.h"
 
-#include "libmesh/mesh_inserter_iterator.h"
+#include "libmesh/null_output_iterator.h"
 #include "libmesh/parallel.h"
 #include "libmesh/parallel_elem.h"
 #include "libmesh/parallel_node.h"
@@ -41,6 +41,11 @@ NodalStickConstraint::NodalStickConstraint(const InputParameters & parameters)
     _secondary_boundary_id(getParam<BoundaryName>("secondary")),
     _penalty(getParam<Real>("penalty"))
 {
+  if (_var.number() != _var_secondary.number())
+    paramError("variable_secondary",
+               "Primary variable must be identical to secondary variable. "
+               "Different variables are currently not supported.");
+
   updateConstrainedNodes();
 }
 
@@ -118,12 +123,12 @@ NodalStickConstraint::updateConstrainedNodes()
     _mesh.getMesh().comm().allgather_packed_range(&_mesh.getMesh(),
                                                   nodes_to_ghost.begin(),
                                                   nodes_to_ghost.end(),
-                                                  mesh_inserter_iterator<Node>(_mesh.getMesh()));
+                                                  null_output_iterator<Node>());
 
     _mesh.getMesh().comm().allgather_packed_range(&_mesh.getMesh(),
                                                   primary_elems_to_ghost.begin(),
                                                   primary_elems_to_ghost.end(),
-                                                  mesh_inserter_iterator<Elem>(_mesh.getMesh()));
+                                                  null_output_iterator<Elem>());
 
     _mesh.update(); // Rebuild node_to_elem_map
 
@@ -222,10 +227,10 @@ NodalStickConstraint::computeJacobian(SparseMatrix<Number> & jacobian)
         break;
     }
   }
-  _assembly.cacheJacobianBlock(Kee, primarydof, primarydof, _var.scalingFactor());
-  _assembly.cacheJacobianBlock(Ken, primarydof, secondarydof, _var.scalingFactor());
-  _assembly.cacheJacobianBlock(Kne, secondarydof, primarydof, _var.scalingFactor());
-  _assembly.cacheJacobianBlock(Knn, secondarydof, secondarydof, _var.scalingFactor());
+  addJacobian(_assembly, Kee, primarydof, primarydof, _var.scalingFactor());
+  addJacobian(_assembly, Ken, primarydof, secondarydof, _var.scalingFactor());
+  addJacobian(_assembly, Kne, secondarydof, primarydof, _var.scalingFactor());
+  addJacobian(_assembly, Knn, secondarydof, secondarydof, _var.scalingFactor());
 }
 
 void
@@ -255,8 +260,9 @@ NodalStickConstraint::computeResidual(NumericVector<Number> & residual)
         break;
     }
   }
-  _assembly.cacheResidualNodes(re, primarydof);
-  _assembly.cacheResidualNodes(neighbor_re, secondarydof);
+  // We've already applied scaling
+  addResiduals(_assembly, re, primarydof, /*scaling_factor=*/1);
+  addResiduals(_assembly, neighbor_re, secondarydof, /*scaling_fator=*/1);
 }
 
 Real

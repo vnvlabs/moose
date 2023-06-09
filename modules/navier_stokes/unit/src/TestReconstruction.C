@@ -25,6 +25,7 @@
 #include "MooseTypes.h"
 #include "CellCenteredMapFunctor.h"
 #include "Reconstructions.h"
+#include "MooseUtils.h"
 
 #include "libmesh/elem.h"
 #include "libmesh/tensor_value.h"
@@ -56,7 +57,7 @@ testReconstruction(const Moose::CoordinateSystemType coord_type)
   for (const auto i : index_range(num_elem))
   {
     const auto nx = num_elem[i];
-    auto app = AppFactory::createAppShared("NavierStokesApp", 1, (char **)argv);
+    auto app = AppFactory::createAppShared("NavierStokesUnitApp", 1, (char **)argv);
     auto * factory = &app->getFactory();
     std::string mesh_type = "MeshGeneratorMesh";
 
@@ -80,7 +81,7 @@ testReconstruction(const Moose::CoordinateSystemType coord_type)
       mesh->setMeshBase(std::move(lm_mesh));
     }
 
-    mesh->prepare();
+    mesh->prepare(nullptr);
     mesh->setCoordSystem({}, coord_type_enum);
     mooseAssert(mesh->getAxisymmetricRadialCoord() == 0,
                 "This should be 0 because we haven't set anything.");
@@ -104,7 +105,8 @@ testReconstruction(const Moose::CoordinateSystemType coord_type)
 
     CellCenteredMapFunctor<RealVectorValue, std::unordered_map<dof_id_type, RealVectorValue>>
         up_weller(*mesh, "up_weller");
-    std::unordered_map<dof_id_type, RealVectorValue> up_moukalled;
+    CellCenteredMapFunctor<RealVectorValue, std::unordered_map<dof_id_type, RealVectorValue>>
+        up_moukalled(*mesh, "up_moukalled");
     CellCenteredMapFunctor<RealVectorValue, std::unordered_map<dof_id_type, RealVectorValue>>
         up_tano(*mesh, "up_tano");
 
@@ -112,10 +114,11 @@ testReconstruction(const Moose::CoordinateSystemType coord_type)
     {
       auto moukalled_reconstruct = [&fi](auto & functor, auto & container)
       {
-        auto face = Moose::FV::makeCDFace(fi);
-        const RealVectorValue uf(functor(face));
+        auto face =
+            Moose::FaceArg({&fi, Moose::FV::LimiterType::CentralDifference, true, false, nullptr});
+        const RealVectorValue uf(functor(face, Moose::currentState()));
         const Point surface_vector = fi.normal() * fi.faceArea();
-        auto product = (uf * fi.dCF()) * surface_vector;
+        auto product = (uf * fi.dCN()) * surface_vector;
 
         container[fi.elem().id()] += product * fi.gC() / fi.elemVolume();
         if (fi.neighborPtr())
@@ -126,14 +129,8 @@ testReconstruction(const Moose::CoordinateSystemType coord_type)
       moukalled_reconstruct(u, up_moukalled);
     }
 
-    struct AllBlocks
-    {
-      bool hasBlocks(SubdomainID) const { return true; }
-    };
-
-    AllBlocks consumer;
-    Moose::FV::interpolateReconstruct(up_weller, u, 1, true, faces, consumer);
-    Moose::FV::interpolateReconstruct(up_tano, u, 1, false, faces, consumer);
+    Moose::FV::interpolateReconstruct(up_weller, u, 1, true, faces, Moose::currentState());
+    Moose::FV::interpolateReconstruct(up_tano, u, 1, false, faces, Moose::currentState());
 
     Real error = 0;
     Real weller_error = 0;
@@ -143,14 +140,21 @@ testReconstruction(const Moose::CoordinateSystemType coord_type)
     for (auto * const elem : lm_mesh.active_element_ptr_range())
     {
       const auto elem_id = elem->id();
-      auto elem_arg = Moose::ElemArg{elem, false, false};
-      const RealVectorValue analytic(u(elem_arg));
+      auto elem_arg = Moose::ElemArg{elem, false};
+      const RealVectorValue analytic(u(elem_arg, Moose::currentState()));
 
-      auto compute_elem_error = [elem_id, current_h, &analytic](auto & container, auto & error)
+      auto compute_elem_error =
+          [elem_id, current_h, elem, &analytic](auto & container, auto & error)
       {
         auto & current = libmesh_map_find(container, elem_id);
         const auto diff = analytic - current;
         error += diff * diff * current_h * current_h;
+
+        // Test CellCenteredMapFunctor ElemPointArg overload
+        const auto elem_point_eval = container(
+            Moose::ElemPointArg({elem, elem->vertex_average(), false}), Moose::currentState());
+        for (const auto d : make_range(Moose::dim))
+          EXPECT_TRUE(MooseUtils::absoluteFuzzyEqual(current(d), elem_point_eval(d)));
       };
 
       compute_elem_error(up_weller, weller_error);
@@ -166,14 +170,14 @@ testReconstruction(const Moose::CoordinateSystemType coord_type)
     tano_errors.push_back(tano_error);
 
     up_tano.clear();
-    Moose::FV::interpolateReconstruct(up_tano, u, 2, false, faces, consumer);
+    Moose::FV::interpolateReconstruct(up_tano, u, 2, false, faces, Moose::currentState());
 
     tano_error = 0;
     for (auto * const elem : lm_mesh.active_element_ptr_range())
     {
       const auto elem_id = elem->id();
-      const auto elem_arg = Moose::ElemArg{elem, false, false};
-      const RealVectorValue analytic(u(elem_arg));
+      const auto elem_arg = Moose::ElemArg{elem, false};
+      const RealVectorValue analytic(u(elem_arg, Moose::currentState()));
 
       auto compute_elem_error = [elem_id, current_h, &analytic](auto & container, auto & error)
       {
@@ -190,7 +194,7 @@ testReconstruction(const Moose::CoordinateSystemType coord_type)
         *mesh, "not_restricted");
     try
     {
-      unrestricted_error_test(Moose::ElemArg({lm_mesh.elem_ptr(0), false, false}));
+      unrestricted_error_test(Moose::ElemArg({lm_mesh.elem_ptr(0), false}), Moose::currentState());
       EXPECT_TRUE(false);
     }
     catch (std::runtime_error & e)
@@ -203,7 +207,7 @@ testReconstruction(const Moose::CoordinateSystemType coord_type)
         *mesh, {1}, "is_restricted");
     try
     {
-      restricted_error_test(Moose::ElemArg({lm_mesh.elem_ptr(0), false, false}));
+      restricted_error_test(Moose::ElemArg({lm_mesh.elem_ptr(0), false}), Moose::currentState());
       EXPECT_TRUE(false);
     }
     catch (std::runtime_error & e)

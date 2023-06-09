@@ -1,7 +1,7 @@
-mu=1.1
-rho=1.1
-advected_interp_method='average'
-velocity_interp_method='rc'
+mu = 1.1
+rho = 1.1
+advected_interp_method = 'average'
+velocity_interp_method = 'rc'
 
 [Mesh]
   [mesh]
@@ -52,23 +52,23 @@ velocity_interp_method='rc'
 [Functions]
   [exact_u]
     type = ParsedFunction
-    value = 'cos((1/2)*x*pi)'
+    expression = 'cos((1/2)*x*pi)'
   []
   [forcing_u]
-    type = ADParsedFunction
-    value = '0.25*pi^2*mu*cos((1/2)*x*pi) - 1.25*pi*rho*sin((1/2)*x*pi)*cos((1/2)*x*pi) + 0.8*cos(x)'
-    vars = 'mu rho'
-    vals = '${mu} ${rho}'
+    type = ParsedFunction
+    expression = '0.25*pi^2*mu*cos((1/2)*x*pi) - 1.25*pi*rho*sin((1/2)*x*pi)*cos((1/2)*x*pi) + 0.8*cos(x)'
+    symbol_names = 'mu rho'
+    symbol_values = '${mu} ${rho}'
   []
   [exact_p]
     type = ParsedFunction
-    value = 'sin(x)'
+    expression = 'sin(x)'
   []
   [forcing_p]
     type = ParsedFunction
-    value = '-1/2*pi*rho*sin((1/2)*x*pi)'
-    vars = 'rho'
-    vals = '${rho}'
+    expression = '-1/2*pi*rho*sin((1/2)*x*pi)'
+    symbol_names = 'rho'
+    symbol_values = '${rho}'
   []
 []
 
@@ -135,9 +135,8 @@ velocity_interp_method='rc'
 [Executioner]
   type = Steady
   solve_type = 'NEWTON'
-  petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_pc_type -sub_pc_factor_shift_type'
-  petsc_options_value = 'asm      100                lu           NONZERO'
-  line_search = 'none'
+  petsc_options_iname = '-pc_type -pc_factor_shift_type'
+  petsc_options_value = 'lu NONZERO'
 []
 
 [Postprocessors]
@@ -157,22 +156,21 @@ velocity_interp_method='rc'
     execute_on = 'timestep_end'
   []
   [L2u]
-    type = ElementL2Error
-    variable = u
-    function = exact_u
+    type = ElementL2FunctorError
+    approximate = u
+    exact = exact_u
     outputs = 'console csv'
     execute_on = 'timestep_end'
   []
   [L2p]
-    variable = pressure
-    function = exact_p
-    type = ElementL2Error
+    approximate = pressure
+    exact = exact_p
+    type = ElementL2FunctorError
     outputs = 'console csv'
     execute_on = 'timestep_end'
   []
 []
 
 [Outputs]
-  exodus = true
   csv = true
 []

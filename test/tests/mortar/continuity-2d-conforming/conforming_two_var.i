@@ -22,11 +22,11 @@
 [Functions]
   [./exact_sln]
     type = ParsedFunction
-    value = y
+    expression= y
   [../]
   [./ffn]
     type = ParsedFunction
-    value = 0
+    expression= 0
   [../]
 []
 
@@ -78,6 +78,10 @@
   [../]
 []
 
+[Problem]
+  extra_tag_vectors = 'ref'
+[]
+
 [Constraints]
   [./ced_u]
     type = EqualValueConstraint
@@ -87,6 +91,7 @@
     primary_subdomain = 10000
     secondary_boundary = 101
     secondary_subdomain = 10001
+    absolute_value_vector_tags = 'ref'
   [../]
   [./ced_v]
     type = EqualValueConstraint
@@ -96,6 +101,7 @@
     primary_subdomain = 10000
     secondary_boundary = 101
     secondary_subdomain = 10001
+    absolute_value_vector_tags = 'ref'
   [../]
 []
 

@@ -51,7 +51,7 @@
 [Functions]
   [./ls_func]
     type = ParsedFunction
-    value = 'x-0.76+0.21*t'
+    expression = 'x-0.76+0.21*t'
   [../]
 []
 
@@ -139,7 +139,6 @@
 [Outputs]
   exodus = true
   execute_on = timestep_end
-  csv = true
   perf_graph = true
   [./console]
     type = Console

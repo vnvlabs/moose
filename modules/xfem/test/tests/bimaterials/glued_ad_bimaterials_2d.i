@@ -73,7 +73,7 @@
 [Functions]
   [./ls_func]
     type = ParsedFunction
-    value = 'y-2.5'
+    expression = 'y-2.5'
   [../]
 []
 
@@ -277,7 +277,6 @@
   exodus = true
   file_base = glued_bimaterials_2d_out
   execute_on = timestep_end
-  csv = true
   [./console]
     type = Console
     output_linear = true

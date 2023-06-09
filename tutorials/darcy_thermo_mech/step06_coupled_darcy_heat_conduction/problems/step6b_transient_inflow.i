@@ -1,10 +1,14 @@
 [Mesh]
-  type = GeneratedMesh
-  dim = 2
-  nx = 200
-  ny = 10
-  xmax = 0.304 # Length of test chamber
-  ymax = 0.0257 # Test chamber radius
+  [gmg]
+    type = GeneratedMeshGenerator
+    dim = 2
+    nx = 200
+    ny = 10
+    xmax = 0.304 # Length of test chamber
+    ymax = 0.0257 # Test chamber radius
+  []
+  coord_type = RZ
+  rz_coord_axis = X
 []
 
 [Variables]
@@ -54,11 +58,11 @@
 [Functions]
   [inlet_function]
     type = ParsedFunction
-    value = 2000*sin(0.466*pi*t) # Inlet signal from Fig. 3
+    expression = 2000*sin(0.466*pi*t) # Inlet signal from Fig. 3
   []
   [outlet_function]
     type = ParsedFunction
-    value = 2000*cos(0.466*pi*t) # Outlet signal from Fig. 3
+    expression = 2000*cos(0.466*pi*t) # Outlet signal from Fig. 3
   []
 []
 
@@ -103,8 +107,6 @@
 
 [Problem]
   type = FEProblem
-  coord_type = RZ
-  rz_coord_axis = X
 []
 
 [Executioner]

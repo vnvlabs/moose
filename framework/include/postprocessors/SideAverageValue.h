@@ -28,8 +28,15 @@ public:
   virtual void execute() override;
   virtual Real getValue() override;
   virtual void threadJoin(const UserObject & y) override;
+  virtual void finalize() override;
 
 protected:
+  /**
+   * Compute the volume of the current face
+   * @return volume of the current face
+   */
   virtual Real volume();
+
+  /// Volume of the entire surface to average over
   Real _volume;
 };

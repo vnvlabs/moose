@@ -10,6 +10,8 @@
 #include "ComputeWeightedGapLMMechanicalContact.h"
 #include "DisplacedProblem.h"
 #include "Assembly.h"
+#include "MortarContactUtils.h"
+#include "WeightedGapUserObject.h"
 #include "metaphysicl/dualsemidynamicsparsenumberarray.h"
 #include "metaphysicl/parallel_dualnumber.h"
 #include "metaphysicl/parallel_dynamic_std_array_wrapper.h"
@@ -57,6 +59,8 @@ ComputeWeightedGapLMMechanicalContact::validParams()
       "Lagrange Multiplier values to integrated gap values (LM nodal value is independent of "
       "element size, where integrated values are dependent on element size).");
   params.set<bool>("use_displaced_mesh") = true;
+  params.set<bool>("interpolate_normals") = false;
+  params.addRequiredParam<UserObjectName>("weighted_gap_uo", "The weighted gap user object");
   return params;
 }
 
@@ -75,13 +79,9 @@ ComputeWeightedGapLMMechanicalContact::ComputeWeightedGapLMMechanicalContact(
     _nodal(getVar("disp_x", 0)->feType().family == LAGRANGE),
     _disp_x_var(getVar("disp_x", 0)),
     _disp_y_var(getVar("disp_y", 0)),
-    _disp_z_var(_has_disp_z ? getVar("disp_z", 0) : nullptr)
+    _disp_z_var(_has_disp_z ? getVar("disp_z", 0) : nullptr),
+    _weighted_gap_uo(getUserObject<WeightedGapUserObject>("weighted_gap_uo"))
 {
-#ifndef MOOSE_GLOBAL_AD_INDEXING
-  mooseError("ComputeWeightedGapLMMechanicalContact relies on use of the global indexing container "
-             "in order to make its implementation feasible");
-#endif
-
   if (!getParam<bool>("use_displaced_mesh"))
     paramError(
         "use_displaced_mesh",
@@ -100,101 +100,26 @@ ADReal ComputeWeightedGapLMMechanicalContact::computeQpResidual(Moose::MortarTyp
 void
 ComputeWeightedGapLMMechanicalContact::computeQpProperties()
 {
-#ifdef MOOSE_GLOBAL_AD_INDEXING
-  // Trim interior node variable derivatives
-  const auto & primary_ip_lowerd_map = amg().getPrimaryIpToLowerElementMap(
-      *_lower_primary_elem, *_lower_primary_elem->interior_parent(), *_lower_secondary_elem);
-  const auto & secondary_ip_lowerd_map =
-      amg().getSecondaryIpToLowerElementMap(*_lower_secondary_elem);
-
-  std::array<const MooseVariable *, 3> var_array{{_disp_x_var, _disp_y_var, _disp_z_var}};
-  std::array<ADReal, 3> primary_disp{
-      {_primary_disp_x[_qp], _primary_disp_y[_qp], _has_disp_z ? (*_primary_disp_z)[_qp] : 0}};
-  std::array<ADReal, 3> secondary_disp{{_secondary_disp_x[_qp],
-                                        _secondary_disp_y[_qp],
-                                        _has_disp_z ? (*_secondary_disp_z)[_qp] : 0}};
-
-  trimInteriorNodeDerivatives(primary_ip_lowerd_map, var_array, primary_disp, false);
-  trimInteriorNodeDerivatives(secondary_ip_lowerd_map, var_array, secondary_disp, true);
-
-  const ADReal & prim_x = primary_disp[0];
-  const ADReal & prim_y = primary_disp[1];
-  const ADReal * prim_z = nullptr;
-  if (_has_disp_z)
-    prim_z = &primary_disp[2];
-
-  const ADReal & sec_x = secondary_disp[0];
-  const ADReal & sec_y = secondary_disp[1];
-  const ADReal * sec_z = nullptr;
-  if (_has_disp_z)
-    sec_z = &secondary_disp[2];
-
-  // Compute gap vector
-  ADRealVectorValue gap_vec = _phys_points_primary[_qp] - _phys_points_secondary[_qp];
-
-  gap_vec(0).derivatives() = prim_x.derivatives() - sec_x.derivatives();
-  gap_vec(1).derivatives() = prim_y.derivatives() - sec_y.derivatives();
-  if (_has_disp_z)
-    gap_vec(2).derivatives() = prim_z->derivatives() - sec_z->derivatives();
-
-  // Compute integration point quantities
-  if (_interpolate_normals)
-    _qp_gap = gap_vec * (_normals[_qp] * _JxW_msm[_qp] * _coord[_qp]);
-  else
-    _qp_gap_nodal = gap_vec * (_JxW_msm[_qp] * _coord[_qp]);
-
-  // To do normalization of constraint coefficient (c_n)
-  _qp_factor = _JxW_msm[_qp] * _coord[_qp];
-#endif
 }
 
 void
 ComputeWeightedGapLMMechanicalContact::computeQpIProperties()
 {
-  mooseAssert(_normals.size() ==
-                  (_interpolate_normals ? _test[_i].size() : _lower_secondary_elem->n_nodes()),
-              "Making sure that _normals is the expected size");
-
-  // Get the _dof_to_weighted_gap map
-  const DofObject * dof = _var->isNodal()
-                              ? static_cast<const DofObject *>(_lower_secondary_elem->node_ptr(_i))
-                              : static_cast<const DofObject *>(_lower_secondary_elem);
-
-  if (_interpolate_normals)
-    _dof_to_weighted_gap[dof].first += _test[_i][_qp] * _qp_gap;
-  else
-    _dof_to_weighted_gap[dof].first += _test[_i][_qp] * _qp_gap_nodal * _normals[_i];
-
-  if (_normalize_c)
-    _dof_to_weighted_gap[dof].second += _test[_i][_qp] * _qp_factor;
 }
 
 void
 ComputeWeightedGapLMMechanicalContact::residualSetup()
 {
-  _dof_to_weighted_gap.clear();
 }
 
 void
 ComputeWeightedGapLMMechanicalContact::jacobianSetup()
 {
-  residualSetup();
 }
 
 void
-ComputeWeightedGapLMMechanicalContact::computeResidual(const Moose::MortarType mortar_type)
+ComputeWeightedGapLMMechanicalContact::computeResidual(const Moose::MortarType /*mortar_type*/)
 {
-  if (mortar_type != Moose::MortarType::Lower)
-    return;
-
-  mooseAssert(_var, "LM variable is null");
-
-  for (_qp = 0; _qp < _qrule_msm->n_points(); _qp++)
-  {
-    computeQpProperties();
-    for (_i = 0; _i < _test.size(); ++_i)
-      computeQpIProperties();
-  }
 }
 
 void
@@ -210,61 +135,22 @@ ComputeWeightedGapLMMechanicalContact::computeJacobian(const Moose::MortarType m
 }
 
 void
-ComputeWeightedGapLMMechanicalContact::communicateGaps()
-{
-#ifdef MOOSE_SPARSE_AD
-  // We may have weighted gap information that should go to other processes that own the dofs
-  using Datum = std::tuple<dof_id_type, ADReal, Real>;
-  std::unordered_map<processor_id_type, std::vector<Datum>> push_data;
-
-  for (auto & pr : _dof_to_weighted_gap)
-  {
-    const auto * const dof_object = pr.first;
-    const auto proc_id = dof_object->processor_id();
-    if (proc_id == this->processor_id())
-      continue;
-
-    push_data[proc_id].push_back(
-        std::make_tuple(dof_object->id(), std::move(pr.second.first), pr.second.second));
-  }
-
-  const auto & lm_mesh = _mesh.getMesh();
-
-  auto action_functor = [this, &lm_mesh](const processor_id_type libmesh_dbg_var(pid),
-                                         const std::vector<Datum> & sent_data)
-  {
-    mooseAssert(pid != this->processor_id(), "We do not send messages to ourself here");
-    for (auto & tup : sent_data)
-    {
-      const auto dof_id = std::get<0>(tup);
-      const auto * const dof_object =
-          _nodal ? static_cast<const DofObject *>(lm_mesh.node_ptr(dof_id))
-                 : static_cast<const DofObject *>(lm_mesh.elem_ptr(dof_id));
-      mooseAssert(dof_object, "This should be non-null");
-      auto & weighted_gap_pr = _dof_to_weighted_gap[dof_object];
-      weighted_gap_pr.first += std::move(std::get<1>(tup));
-      if (_normalize_c)
-        weighted_gap_pr.second += std::get<2>(tup);
-    }
-  };
-  TIMPI::push_parallel_vector_data(_communicator, push_data, action_functor);
-#endif
-}
-
-void
 ComputeWeightedGapLMMechanicalContact::post()
 {
-  communicateGaps();
+  parallel_object_only();
 
-  for (const auto & pr : _dof_to_weighted_gap)
+  const auto & dof_to_weighted_gap = _weighted_gap_uo.dofToWeightedGap();
+
+  for (const auto & [dof_object, weighted_gap_pr] : dof_to_weighted_gap)
   {
-    if (pr.first->processor_id() != this->processor_id())
+    if (dof_object->processor_id() != this->processor_id())
       continue;
 
-    _weighted_gap_ptr = &pr.second.first;
-    _normalization_ptr = &pr.second.second;
+    const auto & [weighted_gap, normalization] = weighted_gap_pr;
+    _weighted_gap_ptr = &weighted_gap;
+    _normalization_ptr = &normalization;
 
-    enforceConstraintOnDof(pr.first);
+    enforceConstraintOnDof(dof_object);
   }
 }
 
@@ -272,18 +158,20 @@ void
 ComputeWeightedGapLMMechanicalContact::incorrectEdgeDroppingPost(
     const std::unordered_set<const Node *> & inactive_lm_nodes)
 {
-  communicateGaps();
+  const auto & dof_to_weighted_gap = _weighted_gap_uo.dofToWeightedGap();
 
-  for (const auto & pr : _dof_to_weighted_gap)
+  for (const auto & [dof_object, weighted_gap_pr] : dof_to_weighted_gap)
   {
-    if ((inactive_lm_nodes.find(static_cast<const Node *>(pr.first)) != inactive_lm_nodes.end()) ||
-        (pr.first->processor_id() != this->processor_id()))
+    if ((inactive_lm_nodes.find(static_cast<const Node *>(dof_object)) !=
+         inactive_lm_nodes.end()) ||
+        (dof_object->processor_id() != this->processor_id()))
       continue;
 
-    _weighted_gap_ptr = &pr.second.first;
-    _normalization_ptr = &pr.second.second;
+    const auto & [weighted_gap, normalization] = weighted_gap_pr;
+    _weighted_gap_ptr = &weighted_gap;
+    _normalization_ptr = &normalization;
 
-    enforceConstraintOnDof(pr.first);
+    enforceConstraintOnDof(dof_object);
   }
 }
 
@@ -299,10 +187,8 @@ ComputeWeightedGapLMMechanicalContact::enforceConstraintOnDof(const DofObject * 
 
   const ADReal dof_residual = std::min(lm_value, weighted_gap * c);
 
-#ifdef MOOSE_GLOBAL_AD_INDEXING
-  if (_subproblem.currentlyComputingJacobian())
-    _assembly.processUnconstrainedDerivatives({dof_residual}, {dof_index}, _matrix_tags);
-  else
-    _assembly.processResidual(dof_residual.value(), dof_index, _vector_tags);
-#endif
+  addResidualsAndJacobian(_assembly,
+                          std::array<ADReal, 1>{{dof_residual}},
+                          std::array<dof_id_type, 1>{{dof_index}},
+                          _var->scalingFactor());
 }

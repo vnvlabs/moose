@@ -7,7 +7,7 @@
   closures = simple_closures
 []
 
-[Modules/FluidProperties]
+[FluidProperties]
   [fp]
     type = StiffenedGasFluidProperties
     gamma = 2.35
@@ -37,7 +37,7 @@
 [Functions]
   [Ts_bc]
     type = ParsedFunction
-    value = '2*sin(x*pi/2)+2*sin(pi*y) +507'
+    expression = '2*sin(x*pi/2)+2*sin(pi*y) +507'
   []
 []
 

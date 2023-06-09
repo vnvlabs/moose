@@ -19,6 +19,9 @@
 #ifdef CONTACT_ENABLED
 #include "ContactApp.h"
 #endif
+#ifdef ELECTROMAGNETICS_ENABLED
+#include "ElectromagneticsApp.h"
+#endif
 #ifdef FLUID_PROPERTIES_ENABLED
 #include "FluidPropertiesApp.h"
 #endif
@@ -43,6 +46,9 @@
 #ifdef NAVIER_STOKES_ENABLED
 #include "NavierStokesApp.h"
 #endif
+#ifdef OPTIMIZATION_ENABLED
+#include "OptimizationApp.h"
+#endif
 #ifdef PERIDYNAMICS_ENABLED
 #include "PeridynamicsApp.h"
 #endif
@@ -64,6 +70,12 @@
 #ifdef RICHARDS_ENABLED
 #include "RichardsApp.h"
 #endif
+#ifdef SCALAR_TRANSPORT_ENABLED
+#include "ScalarTransportApp.h"
+#endif
+#ifdef SOLID_PROPERTIES_ENABLED
+#include "SolidPropertiesApp.h"
+#endif
 #ifdef STOCHASTIC_TOOLS_ENABLED
 #include "StochasticToolsApp.h"
 #endif
@@ -79,20 +91,6 @@
 #ifdef EXTERNAL_PETSC_SOLVER_ENABLED
 #include "ExternalPetscSolverApp.h"
 #endif
-
-///@{
-/**
- * Dummy methods to clear unused parameter warnings from compiler
- */
-void
-clearUnusedWarnings(Factory & /*factory*/)
-{
-}
-void
-clearUnusedWarnings(Syntax & /*syntax*/, ActionFactory & /*action_factory*/)
-{
-}
-///@}
 
 InputParameters
 ModulesApp::validParams()
@@ -124,6 +122,10 @@ ModulesApp::registerObjects(Factory & factory)
 
 #ifdef CONTACT_ENABLED
   ContactApp::registerObjects(factory);
+#endif
+
+#ifdef ELECTROMAGNETICS_ENABLED
+  ElectromagneticsApp::registerObjects(factory);
 #endif
 
 #ifdef FLUID_PROPERTIES_ENABLED
@@ -178,6 +180,10 @@ ModulesApp::registerObjects(Factory & factory)
   RichardsApp::registerObjects(factory);
 #endif
 
+#ifdef SOLID_PROPERTIES_ENABLED
+  SolidPropertiesApp::registerObjects(factory);
+#endif
+
 #ifdef STOCHASTIC_TOOLS_ENABLED
   StochasticToolsApp::registerObjects(factory);
 #endif
@@ -194,7 +200,7 @@ ModulesApp::registerObjects(Factory & factory)
   XFEMApp::registerObjects(factory);
 #endif
 
-  clearUnusedWarnings(factory);
+  libmesh_ignore(factory);
 }
 
 void
@@ -207,6 +213,10 @@ ModulesApp::associateSyntax(Syntax & syntax, ActionFactory & action_factory)
 
 #ifdef CONTACT_ENABLED
   ContactApp::associateSyntax(syntax, action_factory);
+#endif
+
+#ifdef ELECTROMAGNETICS_ENABLED
+  ElectromagneticsApp::associateSyntax(syntax, action_factory);
 #endif
 
 #ifdef FLUID_PROPERTIES_ENABLED
@@ -261,6 +271,10 @@ ModulesApp::associateSyntax(Syntax & syntax, ActionFactory & action_factory)
   RichardsApp::associateSyntax(syntax, action_factory);
 #endif
 
+#ifdef SOLID_PROPERTIES_ENABLED
+  SolidPropertiesApp::associateSyntax(syntax, action_factory);
+#endif
+
 #ifdef STOCHASTIC_TOOLS_ENABLED
   StochasticToolsApp::associateSyntax(syntax, action_factory);
 #endif
@@ -277,19 +291,23 @@ ModulesApp::associateSyntax(Syntax & syntax, ActionFactory & action_factory)
   XFEMApp::associateSyntax(syntax, action_factory);
 #endif
 
-  clearUnusedWarnings(syntax, action_factory);
+  libmesh_ignore(syntax, action_factory);
 }
 
 void
 ModulesApp::registerExecFlags(Factory & factory)
 {
-  mooseDeprecated("use registerAll instead of registerExecFlags");
+  mooseDeprecated("Do not use registerExecFlags, apps no longer require flag registration");
 #ifdef CHEMICAL_REACTIONS_ENABLED
   ChemicalReactionsApp::registerExecFlags(factory);
 #endif
 
 #ifdef CONTACT_ENABLED
   ContactApp::registerExecFlags(factory);
+#endif
+
+#ifdef ELECTROMAGNETICS_ENABLED
+  ElectromagneticsApp::registerExecFlags(factory);
 #endif
 
 #ifdef FLUID_PROPERTIES_ENABLED
@@ -340,6 +358,10 @@ ModulesApp::registerExecFlags(Factory & factory)
   RichardsApp::registerExecFlags(factory);
 #endif
 
+#ifdef SOLID_PROPERTIES_ENABLED
+  SolidPropertiesApp::registerExecFlags(factory);
+#endif
+
 #ifdef STOCHASTIC_TOOLS_ENABLED
   StochasticToolsApp::registerExecFlags(factory);
 #endif
@@ -356,18 +378,26 @@ ModulesApp::registerExecFlags(Factory & factory)
   XFEMApp::registerExecFlags(factory);
 #endif
 
-  clearUnusedWarnings(factory);
+  libmesh_ignore(factory);
 }
 
 void
 ModulesApp::registerAll(Factory & f, ActionFactory & af, Syntax & s)
 {
+  mooseDeprecated(
+      "\"registerAll\" in Modules is deprecated. Please update your *App.C file(s) to call the new "
+      "templated \"registerAllObjects\" method (e.g. ModulesApp::registerAllObjects<MyApp>(...))");
+
 #ifdef CHEMICAL_REACTIONS_ENABLED
   ChemicalReactionsApp::registerAll(f, af, s);
 #endif
 
 #ifdef CONTACT_ENABLED
   ContactApp::registerAll(f, af, s);
+#endif
+
+#ifdef ELECTROMAGNETICS_ENABLED
+  ElectromagneticsApp::registerAll(f, af, s);
 #endif
 
 #ifdef FLUID_PROPERTIES_ENABLED
@@ -398,6 +428,10 @@ ModulesApp::registerAll(Factory & f, ActionFactory & af, Syntax & s)
   NavierStokesApp::registerAll(f, af, s);
 #endif
 
+#ifdef OPTIMIZATION_ENABLED
+  OptimizationApp::registerAll(f, af, s);
+#endif
+
 #ifdef PERIDYNAMICS_ENABLED
   PeridynamicsApp::registerAll(f, af, s);
 #endif
@@ -426,6 +460,14 @@ ModulesApp::registerAll(Factory & f, ActionFactory & af, Syntax & s)
   RichardsApp::registerAll(f, af, s);
 #endif
 
+#ifdef SCALAR_TRANSPORT_ENABLED
+  ScalarTransportApp::registerAll(f, af, s);
+#endif
+
+#ifdef SOLID_PROPERTIES_ENABLED
+  SolidPropertiesApp::registerAll(f, af, s);
+#endif
+
 #ifdef STOCHASTIC_TOOLS_ENABLED
   StochasticToolsApp::registerAll(f, af, s);
 #endif
@@ -446,8 +488,7 @@ ModulesApp::registerAll(Factory & f, ActionFactory & af, Syntax & s)
   ExternalPetscSolverApp::registerAll(f, af, s);
 #endif
 
-  clearUnusedWarnings(f);
-  clearUnusedWarnings(s, af);
+  libmesh_ignore(f, s, af);
 }
 
 extern "C" void

@@ -125,16 +125,14 @@
 
 [Transfers]
   [./T_from_sub]
-    type = MultiAppMeshFunctionTransfer
-    direction = from_multiapp
-    multi_app = sub
+    type = MultiAppShapeEvaluationTransfer
+    from_multi_app = sub
     source_variable = T
     variable = T
   [../]
   [./power_to_sub]
-    type = MultiAppMeshFunctionTransfer
-    direction = to_multiapp
-    multi_app = sub
+    type = MultiAppShapeEvaluationTransfer
+    to_multi_app = sub
     source_variable = power
     variable = power
   [../]

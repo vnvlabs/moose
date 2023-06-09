@@ -14,32 +14,22 @@ registerMooseObject("MooseApp", TagVectorAux);
 InputParameters
 TagVectorAux::validParams()
 {
-  InputParameters params = AuxKernel::validParams();
-
+  InputParameters params = TagAuxBase<AuxKernel>::validParams();
   params.addRequiredParam<TagName>("vector_tag", "Tag Name this Aux works on");
-  params.addRequiredCoupledVar("v",
-                               "The coupled variable whose components are coupled to AuxVariable");
-  params.set<ExecFlagEnum>("execute_on", true) = {EXEC_TIMESTEP_END};
-
   params.addClassDescription("Couple a tag vector, and return its nodal value");
   return params;
 }
 
 TagVectorAux::TagVectorAux(const InputParameters & parameters)
-  : AuxKernel(parameters), _v(coupledVectorTagValue("v", "vector_tag"))
+  : TagAuxBase<AuxKernel>(parameters),
+    _v(coupledVectorTagValue("v", "vector_tag")),
+    _v_var(*getFieldVar("v", 0))
 {
-  auto & execute_on = getParam<ExecFlagEnum>("execute_on");
-  if (execute_on.size() != 1 || !execute_on.contains(EXEC_TIMESTEP_END))
-    mooseError("execute_on for TagVectorAux must be set to EXEC_TIMESTEP_END");
-
-  if (getVar("v", 0)->feType() != _var.feType())
-    paramError("variable",
-               "The AuxVariable this AuxKernel is acting on has to have the same order and family "
-               "as the variable 'v'");
+  checkCoupledVariable(&_v_var, &_var);
 }
 
 Real
 TagVectorAux::computeValue()
 {
-  return _v[_qp];
+  return _scaled ? _v[_qp] : _v[_qp] / _v_var.scalingFactor();
 }

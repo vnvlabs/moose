@@ -16,21 +16,19 @@ diff=1.1
 []
 
 [Variables]
-  [./v]
-    family = MONOMIAL
-    order = CONSTANT
-    fv = true
+  [v]
+    type = MooseVariableFVReal
     initial_condition = 1
-  [../]
+  []
 []
 
 [FVKernels]
-  [./advection]
+  [advection]
     type = FVAdvection
     variable = v
     velocity = '${a} ${fparse 2*a} 0'
     advected_interp_method = 'average'
-  [../]
+  []
   [reaction]
     type = FVReaction
     variable = v
@@ -57,38 +55,35 @@ diff=1.1
 []
 
 [Functions]
-[exact]
-  type = ParsedFunction
-  value = 'sin(x)*cos(y)'
-[]
-[forcing]
-  type = ParsedFunction
-  value = '-2*a*sin(x)*sin(y) + a*cos(x)*cos(y) + 2*diff*sin(x)*cos(y) + sin(x)*cos(y)'
-  vars = 'a diff'
-  vals = '${a} ${diff}'
-[]
+  [exact]
+    type = ParsedFunction
+    expression = 'sin(x)*cos(y)'
+  []
+  [forcing]
+    type = ParsedFunction
+    expression = '-2*a*sin(x)*sin(y) + a*cos(x)*cos(y) + 2*diff*sin(x)*cos(y) + sin(x)*cos(y)'
+    symbol_names = 'a diff'
+    symbol_values = '${a} ${diff}'
+  []
 []
 
 [Executioner]
   type = Steady
   solve_type = 'NEWTON'
-  petsc_options_iname = '-pc_type'
-  petsc_options_value = 'hypre'
 []
 
 [Outputs]
-  exodus = true
   csv = true
 []
 
 [Postprocessors]
-  [./error]
+  [error]
     type = ElementL2Error
     variable = v
     function = exact
     outputs = 'console csv'
     execute_on = 'timestep_end'
-  [../]
+  []
   [h]
     type = AverageElementSize
     outputs = 'console csv'

@@ -343,6 +343,8 @@ void dataStore(std::ostream & stream, Real & v, void * context);
 template <>
 void dataStore(std::ostream & stream, std::string & v, void * context);
 template <>
+void dataStore(std::ostream & stream, VariableName & v, void * context);
+template <>
 void dataStore(std::ostream & stream, bool & v, void * context);
 // Vectors of bools are special
 // https://en.wikipedia.org/w/index.php?title=Sequence_container_(C%2B%2B)&oldid=767869909#Specialization_for_bool
@@ -368,6 +370,14 @@ template <>
 void dataStore(std::ostream & stream, RealEigenMatrix & v, void * context);
 template <>
 void dataStore(std::ostream & stream, libMesh::Parameters & p, void * context);
+
+template <std::size_t N>
+inline void
+dataStore(std::ostream & stream, std::array<DualReal, N> & dn, void * context)
+{
+  for (std::size_t i = 0; i < N; ++i)
+    dataStore(stream, dn[i], context);
+}
 
 template <std::size_t N>
 inline void
@@ -436,6 +446,20 @@ void
 dataStore(std::ostream & stream, RankFourTensorTempl<T> & rft, void * context)
 {
   dataStore(stream, rft._vals, context);
+}
+
+template <typename T>
+void
+dataStore(std::ostream & stream, SymmetricRankTwoTensorTempl<T> & srtt, void * context)
+{
+  dataStore(stream, srtt._vals, context);
+}
+
+template <typename T>
+void
+dataStore(std::ostream & stream, SymmetricRankFourTensorTempl<T> & srft, void * context)
+{
+  dataStore(stream, srft._vals, context);
 }
 
 template <typename T>
@@ -615,6 +639,8 @@ void dataLoad(std::istream & stream, Real & v, void * /*context*/);
 template <>
 void dataLoad(std::istream & stream, std::string & v, void * /*context*/);
 template <>
+void dataLoad(std::istream & stream, VariableName & v, void * /*context*/);
+template <>
 void dataLoad(std::istream & stream, bool & v, void * /*context*/);
 // Vectors of bools are special
 // https://en.wikipedia.org/w/index.php?title=Sequence_container_(C%2B%2B)&oldid=767869909#Specialization_for_bool
@@ -640,6 +666,14 @@ template <>
 void dataLoad(std::istream & stream, RealEigenMatrix & v, void * context);
 template <>
 void dataLoad(std::istream & stream, libMesh::Parameters & p, void * context);
+
+template <std::size_t N>
+inline void
+dataLoad(std::istream & stream, std::array<DualReal, N> & dn, void * context)
+{
+  for (std::size_t i = 0; i < N; ++i)
+    dataLoad(stream, dn[i], context);
+}
 
 template <std::size_t N>
 inline void
@@ -707,6 +741,20 @@ dataLoad(std::istream & stream, RankThreeTensorTempl<T> & rtt, void * context)
 template <typename T>
 void
 dataLoad(std::istream & stream, RankFourTensorTempl<T> & rft, void * context)
+{
+  dataLoad(stream, rft._vals, context);
+}
+
+template <typename T>
+void
+dataLoad(std::istream & stream, SymmetricRankTwoTensorTempl<T> & rtt, void * context)
+{
+  dataLoad(stream, rtt._vals, context);
+}
+
+template <typename T>
+void
+dataLoad(std::istream & stream, SymmetricRankFourTensorTempl<T> & rft, void * context)
 {
   dataLoad(stream, rft._vals, context);
 }

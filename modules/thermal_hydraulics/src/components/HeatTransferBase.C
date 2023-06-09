@@ -74,6 +74,7 @@ HeatTransferBase::initSecondary()
 
     _P_hf_name = FlowModel::HEAT_FLUX_PERIMETER + suffix;
     _T_wall_name = FlowModel::TEMPERATURE_WALL + suffix;
+    _T_wall_mat_name = FlowModel::TEMPERATURE_WALL + suffix;
     _q_wall_name = FlowModel::HEAT_FLUX_WALL + suffix;
   }
 }
@@ -108,14 +109,15 @@ HeatTransferBase::addMooseObjects()
     execute_on = {EXEC_TIMESTEP_BEGIN, EXEC_INITIAL};
     params.set<ExecFlagEnum>("execute_on") = execute_on;
 
-    _sim.addAuxKernel(class_name, genName(name(), "P_hf_auxkernel"), params);
+    getTHMProblem().addAuxKernel(class_name, genName(name(), "P_hf_auxkernel"), params);
   }
 }
 
 void
 HeatTransferBase::addHeatedPerimeter()
 {
-  _sim.addSimVariable(false, _P_hf_name, _sim.getFlowFEType(), _flow_channel_subdomains);
+  getTHMProblem().addSimVariable(
+      false, _P_hf_name, getTHMProblem().getFlowFEType(), _flow_channel_subdomains);
 
   // create heat flux perimeter variable if not transferred from external app
   if (!_P_hf_transferred)
@@ -132,12 +134,12 @@ HeatTransferBase::addHeatedPerimeter()
       const std::string class_name = "GeneralizedCircumference";
       InputParameters params = _factory.getValidParams(class_name);
       params.set<FunctionName>("area_function") = _A_fn_name;
-      _sim.addFunction(class_name, _P_hf_fn_name, params);
+      getTHMProblem().addFunction(class_name, _P_hf_fn_name, params);
 
       makeFunctionControllableIfConstant(_P_hf_fn_name, "P_hf");
     }
 
-    _sim.addFunctionIC(_P_hf_name, _P_hf_fn_name, _flow_channel_subdomains);
+    getTHMProblem().addFunctionIC(_P_hf_name, _P_hf_fn_name, _flow_channel_subdomains);
   }
 }
 
@@ -155,6 +157,14 @@ HeatTransferBase::getWallTemperatureName() const
   checkSetupStatus(INITIALIZED_SECONDARY);
 
   return _T_wall_name;
+}
+
+const MaterialPropertyName &
+HeatTransferBase::getWallTemperatureMatName() const
+{
+  checkSetupStatus(INITIALIZED_SECONDARY);
+
+  return _T_wall_mat_name;
 }
 
 const MaterialPropertyName &

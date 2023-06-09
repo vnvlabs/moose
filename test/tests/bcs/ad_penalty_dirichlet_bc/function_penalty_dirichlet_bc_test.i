@@ -13,7 +13,7 @@
 [Functions]
   [./forcing_fn]
     type = ParsedFunction
-    value = -4+x*x+y*y
+    expression = -4+x*x+y*y
   [../]
 
   [./solution]
@@ -97,5 +97,4 @@
 [Outputs]
   execute_on = 'timestep_end'
   exodus = true
-  csv = true
 []

@@ -15,8 +15,8 @@
 #include "Problem.h"
 #include "NonlinearSystem.h"
 #include "MooseVariableFE.h"
-#include "DiracKernel.h"
 #include "Assembly.h"
+#include "ThreadedElementLoop.h"
 
 #include "libmesh/threads.h"
 
@@ -25,7 +25,7 @@ ComputeDiracThread::ComputeDiracThread(FEProblemBase & feproblem,
                                        bool is_jacobian)
   : ThreadedElementLoop<DistElemRange>(feproblem),
     _is_jacobian(is_jacobian),
-    _nl(feproblem.getNonlinearSystemBase()),
+    _nl(feproblem.currentNonlinearSystem()),
     _tags(tags),
     _dirac_kernels(_nl.getDiracKernelWarehouse())
 {
@@ -116,7 +116,8 @@ ComputeDiracThread::onElement(const Elem * elem)
     }
 
     // Get a list of coupled variables from the SubProblem
-    const auto & coupling_entries = dirac_kernel->subProblem().assembly(_tid).couplingEntries();
+    const auto & coupling_entries =
+        dirac_kernel->subProblem().assembly(_tid, _nl.number()).couplingEntries();
 
     // Loop over the list of coupled variable pairs
     for (const auto & it : coupling_entries)
@@ -164,4 +165,28 @@ ComputeDiracThread::post()
 void
 ComputeDiracThread::join(const ComputeDiracThread & /*y*/)
 {
+}
+
+void
+ComputeDiracThread::printGeneralExecutionInformation() const
+{
+  if (!_fe_problem.shouldPrintExecution(_tid))
+    return;
+  const auto & console = _fe_problem.console();
+  console << "[DBG] Executing Dirac Kernels on " << _fe_problem.getCurrentExecuteOnFlag().name()
+          << std::endl;
+}
+
+void
+ComputeDiracThread::printBlockExecutionInformation() const
+{
+  if (!_fe_problem.shouldPrintExecution(_tid) || _blocks_exec_printed.count(_subdomain) ||
+      !_dirac_warehouse->hasActiveBlockObjects(_subdomain, _tid))
+    return;
+
+  const auto & dkernels = _dirac_warehouse->getActiveBlockObjects(_subdomain, _tid);
+  const auto & console = _fe_problem.console();
+  console << "[DBG] Ordering of DiracKernels on subdomain " << _subdomain << std::endl;
+  printExecutionOrdering<DiracKernelBase>(dkernels, false);
+  _blocks_exec_printed.insert(_subdomain);
 }

@@ -91,7 +91,8 @@ CHInterfaceBase<T>::CHInterfaceBase(const InputParameters & parameters)
           "mob_name", _coupled_moose_vars[i]->name(), _coupled_moose_vars[j]->name());
 
     // Set coupled variable gradients
-    _coupled_grad_vars[i] = &coupledGradient("args", i);
+    _coupled_grad_vars[i] =
+        isCoupled("args") ? &coupledGradient("args", i) : &coupledGradient("coupled_variables", i);
   }
 }
 
@@ -103,7 +104,8 @@ CHInterfaceBase<T>::validParams()
   params.addClassDescription("Gradient energy Cahn-Hilliard base Kernel");
   params.addRequiredParam<MaterialPropertyName>("kappa_name", "The kappa used with the kernel");
   params.addRequiredParam<MaterialPropertyName>("mob_name", "The mobility used with the kernel");
-  params.addCoupledVar("args", "Vector of arguments of the mobility");
+  params.addCoupledVar("args", "Vector of variable arguments of the mobility");
+  params.deprecateCoupledVar("args", "coupled_variables", "02/27/2024");
   return params;
 }
 

@@ -10,7 +10,7 @@
 [Functions]
   [./bc_fn]
     type=ParsedFunction
-    value=0
+    expression=0
   [../]
 
   [./forcing_fn]
@@ -100,7 +100,6 @@
 
 [Outputs]
   execute_on = 'timestep_end'
-  csv = true
   [./out]
     type = Exodus
     elemental_as_nodal = true

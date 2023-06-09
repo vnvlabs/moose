@@ -49,15 +49,13 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [simple_fluid]
-      type = SimpleFluidProperties
-      bulk_modulus = 2e9
-      viscosity = 1e-3
-      density0 = 1000
-      thermal_expansion = 0
-    []
+[FluidProperties]
+  [simple_fluid]
+    type = SimpleFluidProperties
+    bulk_modulus = 2e9
+    viscosity = 1e-3
+    density0 = 1000
+    thermal_expansion = 0
   []
 []
 
@@ -161,6 +159,7 @@
     type = FunctionValuePostprocessor
     function = mass_bal_fcn
     execute_on = timestep_end
+    indirect_dependencies = 'fluid_mass1 fluid_mass0 bh_report'
   []
 
   [p0]
@@ -174,9 +173,9 @@
 [Functions]
   [mass_bal_fcn]
     type = ParsedFunction
-    value = abs((a-c+d)/2/(a+c))
-    vars = 'a c d'
-    vals = 'fluid_mass1 fluid_mass0 bh_report'
+    expression = abs((a-c+d)/2/(a+c))
+    symbol_names = 'a c d'
+    symbol_values = 'fluid_mass1 fluid_mass0 bh_report'
   []
 []
 

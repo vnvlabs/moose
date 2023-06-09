@@ -14,6 +14,7 @@
 #include "MooseMesh.h"
 #include "MooseTypes.h"
 #include "MultiApp.h"
+#include "MooseAppCoordTransform.h"
 
 #include "libmesh/meshfree_interpolation.h"
 #include "libmesh/numeric_vector.h"
@@ -27,7 +28,7 @@ MultiAppPostprocessorInterpolationTransfer::validParams()
 {
   InputParameters params = MultiAppTransfer::validParams();
   params.addClassDescription("Transfer postprocessor data from sub-application into field data on "
-                             "the master application.");
+                             "the parent application.");
   params.addRequiredParam<AuxVariableName>(
       "variable", "The auxiliary variable to store the transferred values in.");
   params.addRequiredParam<PostprocessorName>("postprocessor", "The Postprocessor to interpolate.");
@@ -45,7 +46,6 @@ MultiAppPostprocessorInterpolationTransfer::validParams()
                         "Radius to use for radial_basis interpolation.  If negative "
                         "then the radius is taken as the max distance between "
                         "points.");
-
   return params;
 }
 
@@ -60,10 +60,11 @@ MultiAppPostprocessorInterpolationTransfer::MultiAppPostprocessorInterpolationTr
     _radius(getParam<Real>("radius")),
     _nodal(false)
 {
-  if (_directions.contains(TO_MULTIAPP))
-    paramError("Can't interpolate to a MultiApp!");
+  if (isParamValid("to_multi_app"))
+    paramError("to_multi_app", "Unused parameter; only from-MultiApp transfers are implemented");
 
-  auto & to_fe_type = _multi_app->problemBase().getStandardVariable(0, _to_var_name).feType();
+  auto & to_fe_type =
+      getFromMultiApp()->problemBase().getStandardVariable(0, _to_var_name).feType();
   if ((to_fe_type.order != CONSTANT || to_fe_type.family != MONOMIAL) &&
       (to_fe_type.order != FIRST || to_fe_type.family != LAGRANGE))
     paramError("variable", "Must be either CONSTANT MONOMIAL or FIRST LAGRANGE");
@@ -74,26 +75,30 @@ MultiAppPostprocessorInterpolationTransfer::MultiAppPostprocessorInterpolationTr
 void
 MultiAppPostprocessorInterpolationTransfer::execute()
 {
-  _console << "Beginning PostprocessorInterpolationTransfer " << name() << std::endl;
+  TIME_SECTION("MultiAppPostprocessorInterpolationTransfer::execute()",
+               5,
+               "Transferring/interpolating postprocessors");
 
   switch (_current_direction)
   {
     case TO_MULTIAPP:
     {
-      mooseError("Can't interpolate to a MultiApp!!");
+      mooseError("Interpolation from a variable to a MultiApp postprocessors has not been "
+                 "implemented. Use MultiAppVariableValueSamplePostprocessorTransfer!");
       break;
     }
     case FROM_MULTIAPP:
     {
-      InverseDistanceInterpolation<LIBMESH_DIM> * idi;
+      std::unique_ptr<InverseDistanceInterpolation<LIBMESH_DIM>> idi;
 
       switch (_interp_type)
       {
         case 0:
-          idi = new InverseDistanceInterpolation<LIBMESH_DIM>(_communicator, _num_points, _power);
+          idi = std::make_unique<InverseDistanceInterpolation<LIBMESH_DIM>>(
+              _communicator, _num_points, _power);
           break;
         case 1:
-          idi = new RadialBasisInterpolation<LIBMESH_DIM>(_communicator, _radius);
+          idi = std::make_unique<RadialBasisInterpolation<LIBMESH_DIM>>(_communicator, _radius);
           break;
         default:
           mooseError("Unknown interpolation type!");
@@ -107,12 +112,22 @@ MultiAppPostprocessorInterpolationTransfer::execute()
       idi->set_field_variables(field_vars);
 
       {
-        for (unsigned int i = 0; i < _multi_app->numGlobalApps(); i++)
+        mooseAssert(_to_transforms.size() == 1, "There should only be one transform here");
+        const auto & to_coord_transform = *_to_transforms[0];
+        for (unsigned int i = 0; i < getFromMultiApp()->numGlobalApps(); i++)
         {
-          if (_multi_app->hasLocalApp(i) && _multi_app->isRootProcessor())
+          if (getFromMultiApp()->hasLocalApp(i) && getFromMultiApp()->isRootProcessor())
           {
-            src_pts.push_back(_multi_app->position(i));
-            src_vals.push_back(_multi_app->appPostprocessorValue(i, _postprocessor));
+            // Evaluation of the _from_transform at the origin yields the transformed position of
+            // the from multi-app
+            if (!getFromMultiApp()->runningInPosition())
+              src_pts.push_back(to_coord_transform.mapBack((*_from_transforms[i])(Point(0))));
+            else
+              // if running in position, the subapp mesh has been transformed so the translation
+              // is no longer applied by the transform
+              src_pts.push_back(to_coord_transform.mapBack(
+                  (*_from_transforms[i])(getFromMultiApp()->position(i))));
+            src_vals.push_back(getFromMultiApp()->appPostprocessorValue(i, _postprocessor));
           }
         }
       }
@@ -120,16 +135,16 @@ MultiAppPostprocessorInterpolationTransfer::execute()
       // We have only set local values - prepare for use by gathering remote gata
       idi->prepare_for_use();
 
-      // Loop over the master nodes and set the value of the variable
+      // Loop over the parent app nodes and set the value of the variable
       {
-        System * to_sys = find_sys(_multi_app->problemBase().es(), _to_var_name);
+        System * to_sys = find_sys(getFromMultiApp()->problemBase().es(), _to_var_name);
 
         unsigned int sys_num = to_sys->number();
         unsigned int var_num = to_sys->variable_number(_to_var_name);
 
         NumericVector<Real> & solution = *to_sys->solution;
 
-        MooseMesh & mesh = _multi_app->problemBase().mesh();
+        MooseMesh & mesh = getFromMultiApp()->problemBase().mesh();
 
         std::vector<std::string> vars;
 
@@ -187,13 +202,9 @@ MultiAppPostprocessorInterpolationTransfer::execute()
         solution.close();
       }
 
-      _multi_app->problemBase().es().update();
-
-      delete idi;
+      getFromMultiApp()->problemBase().es().update();
 
       break;
     }
   }
-
-  _console << "Finished PostprocessorInterpolationTransfer " << name() << std::endl;
 }

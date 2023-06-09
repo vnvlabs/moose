@@ -40,7 +40,7 @@
 [Functions]
   [function]
     type = ParsedFunction
-      value = 'if(t > 100.0, 0.0, t)'
+      expression = 'if(t > 100.0, 0.0, t)'
   []
 []
 
@@ -111,7 +111,7 @@
 [UserObjects]
   [conduction]
     type = GapFluxModelConduction
-    T = temp
+    temperature = temp
     boundary = 100
     gap_conductivity = 10.0
     gap_conductivity_function_variable = dummy

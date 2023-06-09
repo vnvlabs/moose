@@ -73,6 +73,11 @@ MeshExtruderGenerator::generate()
 
   auto dest_mesh = buildMeshBaseObject();
 
+  // check that the existing_subdomains exist in the mesh
+  for (const auto & id : _existing_subdomains)
+    if (!MooseMeshUtils::hasSubdomainID(*source_mesh, id))
+      paramError("existing_subdomains", "The block ID '", id, "' was not found in the mesh");
+
   if (source_mesh->mesh_dimension() == 3)
     mooseError("You cannot extrude a 3D mesh !");
 
@@ -105,6 +110,7 @@ MeshExtruderGenerator::generate()
   if (isParamValid("top_sideset"))
     changeID(*dest_mesh, getParam<std::vector<BoundaryName>>("top_sideset"), old_top);
 
+  dest_mesh->set_isnt_prepared();
   return dynamic_pointer_cast<MeshBase>(dest_mesh);
 }
 

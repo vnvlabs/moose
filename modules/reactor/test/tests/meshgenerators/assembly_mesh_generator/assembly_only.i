@@ -43,10 +43,19 @@
   []
 []
 
+[Executioner]
+  type = Steady
+[]
+
 [Problem]
   solve = false
 []
 
 [Outputs]
-  exodus = true
+  [out]
+    type = Exodus
+    execute_on = timestep_end
+    output_extra_element_ids = true
+    extra_element_ids_to_output = 'region_id'
+  []
 []

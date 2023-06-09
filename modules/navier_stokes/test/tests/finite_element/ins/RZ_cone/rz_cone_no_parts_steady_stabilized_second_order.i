@@ -39,7 +39,6 @@
 []
 
 [Outputs]
-  csv = true
   console = true
   [./out]
     type = Exodus
@@ -131,7 +130,7 @@
 [Functions]
   [./inlet_func]
     type = ParsedFunction
-    value = '-4 * x^2 + 1'
+    expression = '-4 * x^2 + 1'
   [../]
 []
 

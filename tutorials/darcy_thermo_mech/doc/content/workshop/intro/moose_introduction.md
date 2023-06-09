@@ -24,9 +24,18 @@ Multi-physics Object Oriented Simulation Environment
 
 !---
 
-## MOOSE Team
+## MOOSE By The Numbers
 
-!media darcy_thermo_mech/moose_team.png style=width:85%;margin-left:auto;margin-right:auto;display:block;
+- 202 contributors
+- 44,000 commits
+- 5000 unique visitors per month
+- ~6 new Discussion participants per week
+- 1240 citations for the MOOSE papers
+
+  - Most cited paper in Elsevier Software-X
+  - More than 500 publications using MOOSE
+
+- 30M tests per week
 
 !---
 
@@ -36,15 +45,20 @@ Multi-physics Object Oriented Simulation Environment
 
 ## General Capabilities
 
-- continuous and Discontinuous Galerkin FEM
-- finite Volume
-- fully coupled, fully implicit (and explicit)
-- [!ac](AD)
-- unstructured mesh with FEM shapes
-- higher order geometry
-- mesh adaptivity (refinement and coarsening)
-- massively parallel (MPI and threads)
-- user code agnostic of dimension, parallelism, shape functions, etc.
+- Continuous and Discontinuous Galerkin FEM
+- Finite Volume
+- Supports fully coupled or segregated systems, fully implicit and explicit time integration
+- Automatic differentiation (AD)
+- Unstructured mesh with FEM shapes
+- Higher order geometry
+- Mesh adaptivity (refinement and coarsening)
+- Massively parallel (MPI and threads)
+- User code agnostic of dimension, parallelism, shape functions, etc.
+- Operating Systems:
+
+  - Mac OSX
+  - Linux
+  - Windows (WSL)
 
 !---
 
@@ -63,7 +77,7 @@ Multi-physics Object Oriented Simulation Environment
 ## Software Quality
 
 - MOOSE follows an Nuclear Quality Assurance Level 1 (NQA-1) development process
-- all commits undergo review using GitHub Pull Requests and must pass a set of application
+- All commits undergo review using GitHub Pull Requests and must pass a set of application
   regression tests before they are available to our users
 - MOOSE includes a test suite and documentation system to allow for agile development while
   maintaining a NQA-1 process
@@ -90,3 +104,15 @@ Multi-physics Object Oriented Simulation Environment
 !---
 
 !media darcy_thermo_mech/moose_add_del.png style=width:80%;margin-left:auto;margin-right:auto;display:block;background:white;
+
+!---
+
+## License
+
+- LGPL 2.1
+- Does not limit what you can do with your application
+
+  - Can license/sell your application as closed source
+
+- Modifications to the library itself (or the modules) are open source
+- New contributions are automatically LGPL 2.1

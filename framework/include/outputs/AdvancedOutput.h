@@ -202,7 +202,7 @@ protected:
 
   /**
    * Handles logic for determining if a step should be output
-   * @return True if a call if output should be preformed
+   * @return True if a call if output should be performed
    */
   virtual bool shouldOutput(const ExecFlagType & type);
 
@@ -320,7 +320,7 @@ private:
 
   /**
    * Handles logic for determining if a step should be output
-   * @return True if a call if output should be preformed
+   * @return True if a call if output should be performed
    */
   bool wantOutput(const std::string & name, const ExecFlagType & type);
 
@@ -388,7 +388,7 @@ AdvancedOutput::initPostprocessorOrVectorPostprocessorLists(const std::string & 
       .query()
       .condition<AttribSystem>("UserObject")
       .condition<AttribThread>(0)
-      .queryInto(objs);
+      .queryIntoUnsorted(objs);
 
   for (const auto & obj : objs)
   {

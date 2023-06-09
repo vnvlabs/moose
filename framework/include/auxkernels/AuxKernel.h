@@ -29,7 +29,7 @@
 #include "MooseVariableInterface.h"
 #include "ElementIDInterface.h"
 #include "UserObject.h"
-#include "FunctorInterface.h"
+#include "NonADFunctorInterface.h"
 
 // forward declarations
 template <typename ComputeValueType>
@@ -62,12 +62,12 @@ class AuxKernelTempl : public MooseObject,
                        public PostprocessorInterface,
                        public DependencyResolverInterface,
                        public RandomInterface,
-                       protected GeometricSearchInterface,
+                       public GeometricSearchInterface,
                        public Restartable,
                        public MeshChangedInterface,
                        protected VectorPostprocessorInterface,
                        public ElementIDInterface,
-                       protected FunctorInterface
+                       protected NonADFunctorInterface
 {
 public:
   static InputParameters validParams();

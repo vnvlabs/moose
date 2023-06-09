@@ -118,7 +118,7 @@
 [Functions]
   [pic]
     type = ParsedFunction
-    value = 'if(x<1,12e6,if(x<2,16e6,if(x<3,20e6,24e6)))'
+    expression = 'if(x<1,12e6,if(x<2,16e6,if(x<3,20e6,24e6)))'
   []
 []
 
@@ -160,14 +160,12 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [co2]
-      type = CO2FluidProperties
-    []
-    [brine]
-      type = BrineFluidProperties
-    []
+[FluidProperties]
+  [co2]
+    type = CO2FluidProperties
+  []
+  [brine]
+    type = BrineFluidProperties
   []
 []
 

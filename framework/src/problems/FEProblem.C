@@ -29,17 +29,26 @@ FEProblem::validParams()
 }
 
 FEProblem::FEProblem(const InputParameters & parameters)
-  : FEProblemBase(parameters),
-    _use_nonlinear(getParam<bool>("use_nonlinear")),
-    _nl_sys(_use_nonlinear ? (std::make_shared<NonlinearSystem>(*this, "nl0"))
-                           : (std::make_shared<MooseEigenSystem>(*this, "eigen0")))
+  : FEProblemBase(parameters), _use_nonlinear(getParam<bool>("use_nonlinear"))
 {
-  _nl = _nl_sys;
+  for (const auto i : index_range(_nl_sys_names))
+  {
+    const auto & sys_name = _nl_sys_names[i];
+    auto & nl = _nl[i];
+    nl = _use_nonlinear ? (std::make_shared<NonlinearSystem>(*this, sys_name))
+                        : (std::make_shared<MooseEigenSystem>(*this, sys_name));
+    _nl_sys.push_back(std::dynamic_pointer_cast<NonlinearSystem>(nl));
+  }
+
+  // backwards compatibility for AD for objects that depend on initializing derivatives during
+  // construction
+  setCurrentNonlinearSystem(0);
+
   _aux = std::make_shared<AuxiliarySystem>(*this, "aux0");
 
-  newAssemblyArray(*_nl_sys);
+  newAssemblyArray(_nl);
 
-  initNullSpaceVectors(parameters, *_nl_sys);
+  initNullSpaceVectors(parameters, _nl);
 
   _eq.parameters.set<FEProblem *>("_fe_problem") = this;
 
@@ -66,9 +75,6 @@ FEProblem::addLineSearch(const InputParameters & parameters)
   Moose::LineSearchType enum_line_search = Moose::stringToEnum<Moose::LineSearchType>(line_search);
   if (enum_line_search == Moose::LS_CONTACT || enum_line_search == Moose::LS_PROJECT)
   {
-#if PETSC_VERSION_LESS_THAN(3, 6, 0)
-    mooseError("Shell line searches only became available in Petsc in version 3.6.0!");
-#else
     if (enum_line_search == Moose::LS_CONTACT)
     {
       InputParameters ls_params = _factory.getValidParams("PetscContactLineSearch");
@@ -93,7 +99,6 @@ FEProblem::addLineSearch(const InputParameters & parameters)
       _line_search = _factory.create<LineSearch>(
           "PetscProjectSolutionOntoBounds", "project_solution_onto_bounds_line_search", ls_params);
     }
-#endif
   }
   else
     mooseError("Requested line search ", line_search.operator std::string(), " is not supported");

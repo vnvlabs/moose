@@ -59,11 +59,6 @@ Steady::Steady(const InputParameters & parameters)
 void
 Steady::init()
 {
-  if (_app.isRecovering())
-  {
-    _console << "\nCannot recover steady solves!\nExiting...\n" << std::endl;
-    return;
-  }
   
   /**
    * @title Steady Executioner Setup.
@@ -87,7 +82,10 @@ void
 Steady::execute()
 {
   if (_app.isRecovering())
+  {
+    _console << "\nCannot recover steady solves!\nExiting...\n" << std::endl;
     return;
+  }
 
   /**
    * @title Steady Executioner Execution.

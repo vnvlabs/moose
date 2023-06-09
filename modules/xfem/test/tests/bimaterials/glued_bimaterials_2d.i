@@ -73,7 +73,7 @@
 [Functions]
   [./ls_func]
     type = ParsedFunction
-    value = 'y-2.5'
+    expression = 'y-2.5'
   [../]
 []
 
@@ -305,7 +305,6 @@
 [Outputs]
   exodus = true
   execute_on = timestep_end
-  csv = true
   [./console]
     type = Console
     output_linear = true

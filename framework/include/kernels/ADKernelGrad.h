@@ -25,7 +25,8 @@ public:
 
   ADKernelGradTempl(const InputParameters & parameters);
 
-  virtual void computeResidual() override;
+  void computeResidual() override;
+  void computeResidualAndJacobian() override;
 
 protected:
   void computeResidualsForJacobian() override;

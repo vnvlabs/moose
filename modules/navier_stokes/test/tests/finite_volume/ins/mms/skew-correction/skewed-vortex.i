@@ -1,8 +1,7 @@
-mu=1.0
-rho=1.0
+mu = 1.0
+rho = 1.0
 
 [Problem]
-  coord_type = 'XYZ'
   error_on_jacobian_nonzero_reallocation = true
 []
 
@@ -11,6 +10,7 @@ rho=1.0
     type = FileMeshGenerator
     file = skewed.msh
   []
+  coord_type = 'XYZ'
 []
 
 [GlobalParams]
@@ -56,7 +56,7 @@ rho=1.0
     rho = ${rho}
   []
   [mean_zero_pressure]
-    type = FVScalarLagrangeMultiplier
+    type = FVIntegralValueConstraint
     variable = pressure
     lambda = lambda
   []
@@ -134,36 +134,37 @@ rho=1.0
 [Functions]
   [exact_u]
     type = ParsedFunction
-    value = 'x^2*(1-x)^2*(2*y-6*y^2+4*y^3)'
+    expression = 'x^2*(1-x)^2*(2*y-6*y^2+4*y^3)'
   []
   [exact_v]
     type = ParsedFunction
-    value = '-y^2*(1-y)^2*(2*x-6*x^2+4*x^3)'
+    expression = '-y^2*(1-y)^2*(2*x-6*x^2+4*x^3)'
   []
   [exact_p]
     type = ParsedFunction
-    value = 'x*(1-x)-2/12'
+    expression = 'x*(1-x)-2/12'
   []
   [forcing_u]
-    type = ADParsedFunction
-    value = '-4*mu/rho*(-1+2*y)*(y^2-6*x*y^2+6*x^2*y^2-y+6*x*y-6*x^2*y+3*x^2-6*x^3+3*x^4)+1-2*x+4*x^3*y^2*(2*y^2-2*y+1)*(y-1)^2*(-1+2*x)*(x-1)^3'
-    vars = 'mu rho'
-    vals = '${mu} ${rho}'
+    type = ParsedFunction
+    expression = '-4*mu/rho*(-1+2*y)*(y^2-6*x*y^2+6*x^2*y^2-y+6*x*y-6*x^2*y+3*x^2-6*x^3+3*x^4)+1-2*x+4*x^3'
+            '*y^2*(2*y^2-2*y+1)*(y-1)^2*(-1+2*x)*(x-1)^3'
+    symbol_names = 'mu rho'
+    symbol_values = '${mu} ${rho}'
   []
   [forcing_v]
-    type = ADParsedFunction
-    value = '4*mu/rho*(-1+2*x)*(x^2-6*y*x^2+6*x^2*y^2-x+6*x*y-6*x*y^2+3*y^2-6*y^3+3*y^4)+4*y^3*x^2*(2*x^2-2*x+1)*(x-1)^2*(-1+2*y)*(y-1)^3'
-    vars = 'mu rho'
-    vals = '${mu} ${rho}'
+    type = ParsedFunction
+    expression = '4*mu/rho*(-1+2*x)*(x^2-6*y*x^2+6*x^2*y^2-x+6*x*y-6*x*y^2+3*y^2-6*y^3+3*y^4)+4*y^3*x^2*(2'
+            '*x^2-2*x+1)*(x-1)^2*(-1+2*y)*(y-1)^3'
+    symbol_names = 'mu rho'
+    symbol_values = '${mu} ${rho}'
   []
 []
 
 [Executioner]
   type = Steady
   solve_type = 'NEWTON'
-  petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_pc_type -sub_pc_factor_shift_type'
-  petsc_options_value = 'bjacobi      30                 lu           NONZERO'
-  line_search = 'none'
+  petsc_options_iname = '-pc_type -pc_factor_shift_type'
+  petsc_options_value = 'lu NONZERO'
   nl_rel_tol = 1e-8
 []
 
@@ -182,23 +183,23 @@ rho=1.0
     execute_on = 'timestep_end'
   []
   [L2u]
-    type = ElementL2Error
-    variable = vel_x
-    function = exact_u
+    type = ElementL2FunctorError
+    approximate = vel_x
+    exact = exact_u
     outputs = 'console csv'
     execute_on = 'timestep_end'
   []
   [L2v]
-    type = ElementL2Error
-    variable = vel_y
-    function = exact_v
+    type = ElementL2FunctorError
+    approximate = vel_y
+    exact = exact_v
     outputs = 'console csv'
     execute_on = 'timestep_end'
   []
   [L2p]
-    variable = pressure
-    function = exact_p
-    type = ElementL2Error
+    approximate = pressure
+    exact = exact_p
+    type = ElementL2FunctorError
     outputs = 'console csv'
     execute_on = 'timestep_end'
   []

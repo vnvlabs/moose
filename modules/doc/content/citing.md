@@ -8,19 +8,25 @@ list of publications that have cited MOOSE, please refer to the [publications.md
 For all publications that use MOOSE or a MOOSE-based application please cite the following.
 
 ```tex
-@article{permann2020moose,
-   title = {{MOOSE}: Enabling massively parallel multiphysics simulation},
-  author = {Cody J. Permann and Derek R. Gaston and David Andr{\v{s}} and Robert W. Carlsen and Fande
-            Kong and Alexander D. Lindsay and Jason M. Miller and John W. Peterson and Andrew
-            E. Slaughter and Roy H. Stogner and Richard C. Martineau},
-    year = {2020},
+@article{lindsay2022moose,
+   title = {2.0 - {MOOSE}: Enabling massively parallel multiphysics simulation},
+   author = {Alexander D. Lindsay and Derek R. Gaston and Cody J. Permann and Jason M. Miller and
+             David Andr{\v{s}} and Andrew E. Slaughter and Fande Kong and Joshua Hansel and
+             Robert W. Carlsen and Casey Icenhour and Logan Harbour and Guillaume L. Giudicelli
+             and Roy H. Stogner and Peter German and Jacob Badger and Sudipta Biswas and
+             Leora Chapuis and Christopher Green and Jason Hales and Tianchen Hu and Wen Jiang
+             and Yeon Sang Jung and Christopher Matthews and Yinbin Miao and April Novak and
+             John W. Peterson and Zachary M. Prince and Andrea Rovinelli and Sebastian Schunert
+             and Daniel Schwen and Benjamin W. Spencer and Swetha Veeraraghavan and Antonio Recuero
+             and Dewen Yushu and Yaqi Wang and Andy Wilkins and Christopher Wong},
+    year = {2022},
  journal = {{SoftwareX}},
-  volume = {11},
-   pages = {100430},
+  volume = {20},
+   pages = {101202},
     issn = {2352-7110},
-     doi = {https://doi.org/10.1016/j.softx.2020.100430},
-     url = {http://www.sciencedirect.com/science/article/pii/S2352711019302973},
-keywords = {Framework, Finite-element, Parallel, Multiphysics, Multiscale}
+     doi = {https://doi.org/10.1016/j.softx.2022.101202},
+     url = {https://www.sciencedirect.com/science/article/pii/S2352711022001200},
+keywords = {Multiphysics, Object-oriented, Finite-element, Framework},
 }
 ```
 
@@ -285,18 +291,82 @@ journal = {Computational Mechanics},
 
 ### Reactor
 
-The following technical report documents functionalities and demonstration of the MOOSE Reactor module.
+The following paper documents functionalities and demonstration of the MOOSE Reactor module.
 
 ```
-@TechReport{shemon2021moose,
-  author      = {Shemon, E. and Jung, Y. S. and Kumar, S. and Miao, Y. and Mo, K. and Oaks, A. and Richards, S.},
-  institution = {Argonne National Laboratory, ANL/NSE-21/43},
-  title       = {MOOSE Framework Meshing Enhancements to Support Reactor Analysis},
-  year        = {2021},
-  month       = sep,
-  type        = {techreport},
-  doi         = {10.2172/1821454},
-  place       = {United States},
-  url         = {https://www.osti.gov/biblio/1821454},
+@article{shemon2023reactor,
+ author = {Emily Shemon and Yinbin Miao and Shikhar Kumar and Kun Mo and Yeon Sang Jung and Aaron Oaks and Scott Richards and Guillaume Giudicelli and Logan Harbour and Roy Stogner},
+  title = {MOOSE Reactor Module: An Open-Source Capability for Meshing Nuclear Reactor Geometries},
+journal = {Nuclear Science and Engineering},
+ volume = {0},
+ number = {0},
+  pages = {1-25},
+  year  = {2023},
+    doi = {10.1080/00295639.2022.2149231},
+    URL = {https://doi.org/10.1080/00295639.2022.2149231},
+ eprint = {https://doi.org/10.1080/00295639.2022.2149231}
+}
+```
+
+### Fluid-structure interaction
+
+This paper documents the development of the acoustic FSI capabilities and its verification and experimental validation.
+
+```
+@article{dhulipala2022acousticfsi,
+  title = {Development, verification, and validation of comprehensive acoustic fluid-structure interaction capabilities in an open-source computational platform},
+ author = {Dhulipala, Somayajulu L. N. and Bolisetti, Chandrakanth and Munday, Lynn B. and Hoffman, William M. and Yu, Ching-Ching and Mir, Faizan U. H. and Kong, Fande and Lindsay, Alexander D. and Whittaker, Andrew S.},
+journal = {Earthquake Engineering and Structural Dynamics},
+   year = {2022}
+  month = {May},
+  pages = {1--33},
+ doi    = {10.1002/eqe.3659},
+ url    = {https://doi.org/10.1002/eqe.3659}
+}
+```
+
+### Electromagnetics Module
+
+The following PhD dissertation documents the initial development, function, verification, and validation
+of the electromagnetics module.
+
+```
+@phdthesis{icenhour2023electromagnetics,
+  author = {Icenhour, Casey T.},
+  title = {Development and Validation of Open Source Software for Electromagnetics Simulation and Multiphysics Coupling},
+  school = {North Carolina State University},
+  year = {2023},
+  url = {https://www.lib.ncsu.edu/resolver/1840.20/40985}
+}
+```
+
+### Stochastic Tools Module
+
+The following paper documents functionalities and demonstration of the MOOSE stochastic tools module.
+
+```
+@article{slaughter2023moose,
+  title={MOOSE Stochastic Tools: A module for performing parallel, memory-efficient in situ stochastic simulations},
+  author={Slaughter, Andrew E and Prince, Zachary M and German, Peter and Halvic, Ian and Jiang, Wen and Spencer, Benjamin W and Dhulipala, Somayajulu LN and Gaston, Derek R},
+  journal={SoftwareX},
+  volume={22},
+  pages={101345},
+  year={2023},
+  publisher={Elsevier}
+}
+```
+
+### Phase Field Module
+
+```
+@article{schwen2023phasefield,
+  author = {D. Schwen and L.K. Aagesen and J.W. Peterson and M.R. Tonks}
+  title = {Rapid multiphase-field model development using a modular free energy based approach with automatic differentiation in MOOSE/MARMOT},
+  journal = {Computational Materials Science},
+  volume = {132},
+  pages = {36-45},
+  year = {2017},
+  doi = {https://doi.org/10.1016/j.commatsci.2017.02.017},
+  url = {https://www.sciencedirect.com/science/article/pii/S0927025617300885},
 }
 ```

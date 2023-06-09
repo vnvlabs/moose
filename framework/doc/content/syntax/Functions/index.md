@@ -10,6 +10,11 @@ time: $f(x,y,z,t)$. These objects can serve a wide variety of purposes, includin
 - defining residual contributions (sources, boundary conditions, etc.), and
 - defining post-processing quantities.
 
+!alert note title=Dependency on Solution Values
+Note that there are exceptions to the rule that `Function`s only depend on
+space and time; for example, [MooseParsedFunction.md] may depend on post-processor
+values (which may depend on the solution) and scalar variable values.
+
 Moose `Function`s should override the following member functions
 
 - `Real value(Real, Point)` - returning the value of the function at a point in space and time
@@ -31,6 +36,20 @@ function do not implement  an AD overload of the `value()` function, the
 Check out `PiecewiseBilinear` to see how to update a function to support AD by
 using a templated `valueInternal()` function with virtual `value()` forwarders.
 
+
+### Functions as Functors
+
+Functions are [Functors](syntax/Functors/index.md). Functors are an abstraction, a base class, for
+objects that can compute values at a location in space and time.
+
+As `Functors`, they may be specified to objects such as the
+[FunctorElementalAux.md] in their [!param](/AuxKernels/FunctorElementalAux/functor) parameter. This vastly expands the number
+of objects that can use `Functions` to compute spatial quantities.
+
+!alert note
+When making a new object using `Functions` to contribute back to MOOSE,
+we ask that you consider using [Functors](syntax/Functors/index.md) instead
+to naturally enable its use with variables and functor material properties.
 
 !syntax list /Functions objects=True actions=False subsystems=False
 

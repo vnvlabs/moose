@@ -22,6 +22,7 @@ class InternalSideUserObject;
 class ElementUserObject;
 class ShapeElementUserObject;
 class InterfaceUserObject;
+class DomainUserObject;
 
 // libMesh forward declarations
 namespace libMesh
@@ -59,6 +60,16 @@ public:
 protected:
   const NumericVector<Number> & _soln;
 
+  /// Print general information about the loop, like the ordering of class of objects
+  void printGeneralExecutionInformation() const override;
+
+  /// Print information about the loop, mostly order of execution of particular objects
+  void printBlockExecutionInformation() const override;
+
+  /// Format output of vector of UOs
+  template <typename T>
+  void printVectorOrdering(std::vector<T *> uos, const std::string & name) const;
+
 private:
   template <typename T>
   void querySubdomain(Interfaces iface, std::vector<T> & results)
@@ -78,6 +89,10 @@ private:
   std::vector<InterfaceUserObject *> _interface_user_objects;
   std::vector<ElementUserObject *> _element_objs;
   std::vector<ShapeElementUserObject *> _shape_element_objs;
+  std::vector<DomainUserObject *> _domain_objs;
+  std::vector<DomainUserObject *> _all_domain_objs;
+
+  AuxiliarySystem & _aux_sys;
 };
 
 // determine when we need to run user objects based on whether any initial conditions or aux
@@ -113,8 +128,8 @@ groupUserObjects(TheWarehouse & w,
   // controlling the force_preic, force_preaux and force_postaux input parameters.
   //
 
-  std::map<T *, std::set<unsigned int>> pre_aux_dependencies;
-  std::map<T *, std::set<unsigned int>> post_aux_dependencies;
+  std::map<T *, std::set<int>> pre_aux_dependencies;
+  std::map<T *, std::set<int>> post_aux_dependencies;
   // This map is used to indicate, after all dependencies have
   // been looked through, whether the UO has been flagged to
   // execute on EXEC_INITIAL, either through a dependency or

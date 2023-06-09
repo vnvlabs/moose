@@ -41,7 +41,7 @@ SimpleTurbine1Phase::addVariables()
 {
   JunctionParallelChannels1Phase::addVariables();
 
-  _sim.addSimVariable(false, _W_dot_var_name, FEType(FIRST, SCALAR));
+  getTHMProblem().addSimVariable(false, _W_dot_var_name, FEType(FIRST, SCALAR));
 }
 
 void
@@ -55,6 +55,7 @@ SimpleTurbine1Phase::buildVolumeJunctionUserObject()
     InputParameters params = _factory.getValidParams(class_name);
     params.set<std::vector<BoundaryName>>("boundary") = _boundary_names;
     params.set<std::vector<Real>>("normals") = _normals;
+    params.set<std::vector<processor_id_type>>("processor_ids") = _proc_ids;
     params.set<std::vector<UserObjectName>>("numerical_flux_names") = _numerical_flux_names;
     params.set<Real>("volume") = _volume;
     params.set<std::string>("component_name") = name();
@@ -74,7 +75,7 @@ SimpleTurbine1Phase::buildVolumeJunctionUserObject()
     params.set<Real>("W_dot") = _power;
     params.set<UserObjectName>("fp") = _fp_name;
     params.set<ExecFlagEnum>("execute_on") = execute_on;
-    _sim.addUserObject(class_name, _junction_uo_name, params);
+    getTHMProblem().addUserObject(class_name, _junction_uo_name, params);
     connectObject(params, _junction_uo_name, "power", "W_dot");
     connectObject(params, _junction_uo_name, "on");
   }
@@ -92,7 +93,7 @@ SimpleTurbine1Phase::addMooseObjects()
     params.set<AuxVariableName>("variable") = _W_dot_var_name;
     params.set<Real>("value") = _power;
     params.set<bool>("on") = _on;
-    _sim.addAuxScalarKernel(class_name, nm, params);
+    getTHMProblem().addAuxScalarKernel(class_name, nm, params);
     connectObject(params, nm, "power", "value");
     connectObject(params, nm, "on");
   }

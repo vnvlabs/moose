@@ -8,6 +8,7 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "INSFVEnergyTimeDerivative.h"
+#include "INSFVEnergyVariable.h"
 
 #include "NS.h"
 
@@ -16,22 +17,27 @@ registerMooseObject("NavierStokesApp", INSFVEnergyTimeDerivative);
 InputParameters
 INSFVEnergyTimeDerivative::validParams()
 {
-  InputParameters params = FVTimeKernel::validParams();
+  InputParameters params = FVFunctorTimeKernel::validParams();
   params.addClassDescription(
       "Adds the time derivative term to the incompressible Navier-Stokes energy equation.");
-  params.addRequiredParam<Real>(NS::density, "The value for the density");
-  params.declareControllable(NS::density);
-  params.addParam<MooseFunctorName>(NS::cp, NS::cp, "The name of the specific heat capacity");
+  params.addRequiredParam<MooseFunctorName>(NS::density, "Density");
+  params.addRequiredParam<MooseFunctorName>(NS::cp, "Specific heat capacity");
   return params;
 }
 
 INSFVEnergyTimeDerivative::INSFVEnergyTimeDerivative(const InputParameters & params)
-  : FVTimeKernel(params), _rho(getParam<Real>(NS::density)), _cp(getFunctor<ADReal>(NS::cp))
+  : FVFunctorTimeKernel(params),
+    _rho(getFunctor<ADReal>(getParam<MooseFunctorName>(NS::density))),
+    _cp(getFunctor<ADReal>(getParam<MooseFunctorName>(NS::cp)))
 {
+  if (!dynamic_cast<INSFVEnergyVariable *>(&_var))
+    paramError("variable", "The supplied variable should be of INSFVEnergyVariable type.");
 }
 
 ADReal
 INSFVEnergyTimeDerivative::computeQpResidual()
 {
-  return _rho * _cp(makeElemArg(_current_elem)) * FVTimeKernel::computeQpResidual();
+  const auto & elem_arg = makeElemArg(_current_elem);
+  return _rho(elem_arg, determineState()) * _cp(elem_arg, determineState()) *
+         _var.dot(elem_arg, determineState());
 }

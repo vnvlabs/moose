@@ -73,7 +73,7 @@
 [Functions]
  [./topfunc]
    type = ParsedFunction
-   value = 't'
+   expression = 't'
  [../]
 []
 
@@ -206,5 +206,4 @@
 
 [Outputs]
   exodus = true
-  csv = true
 []

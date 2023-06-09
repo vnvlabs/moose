@@ -15,17 +15,28 @@
 #include "MooseVariableFE.h"
 #include "InputParameters.h"
 #include "MooseObject.h"
+#include "SystemBase.h"
+#include "AuxiliarySystem.h"
+
+#include "AuxKernel.h"
+#include "ElementUserObject.h"
+#include "NodalUserObject.h"
 
 Coupleable::Coupleable(const MooseObject * moose_object, bool nodal, bool is_fv)
   : _c_parameters(moose_object->parameters()),
     _c_name(_c_parameters.get<std::string>("_object_name")),
     _c_type(_c_parameters.get<std::string>("_type")),
     _c_fe_problem(*_c_parameters.getCheckedPointerParam<FEProblemBase *>("_fe_problem_base")),
+    _c_sys(_c_parameters.isParamValid("_sys") ? _c_parameters.get<SystemBase *>("_sys") : nullptr),
     _new_to_deprecated_coupled_vars(_c_parameters.getNewToDeprecatedVarMap()),
     _c_nodal(nodal),
     _c_is_implicit(_c_parameters.have_parameter<bool>("implicit")
                        ? _c_parameters.get<bool>("implicit")
                        : true),
+    _c_allow_element_to_nodal_coupling(
+        _c_parameters.have_parameter<bool>("_allow_nodal_to_elemental_coupling")
+            ? _c_parameters.get<bool>("_allow_nodal_to_elemental_coupling")
+            : false),
     _c_tid(_c_parameters.get<THREAD_ID>("_tid")),
     _zero(_c_fe_problem._zero[_c_tid]),
     _phi_zero(_c_fe_problem._phi_zero[_c_tid]),
@@ -43,9 +54,11 @@ Coupleable::Coupleable(const MooseObject * moose_object, bool nodal, bool is_fv)
                              : false),
     _coupleable_max_qps(Moose::constMaxQpsPerElem),
     _is_fv(is_fv),
-    _obj(moose_object)
+    _obj(moose_object),
+    _writable_coupled_variables(libMesh::n_threads())
 {
   SubProblem & problem = *_c_parameters.getCheckedPointerParam<SubProblem *>("_subproblem");
+  _obj->getMooseApp().registerInterfaceObject(*this);
 
   unsigned int optional_var_index_counter = 0;
 
@@ -75,7 +88,13 @@ Coupleable::Coupleable(const MooseObject * moose_object, bool nodal, bool is_fv)
           else if (auto * tmp_var = dynamic_cast<ArrayMooseVariable *>(moose_var))
             _coupled_array_moose_vars.push_back(tmp_var);
           else if (auto * tmp_var = dynamic_cast<MooseVariableFV<Real> *>(moose_var))
+          {
+            // We are using a finite volume variable through add*CoupledVar as opposed to getFunctor
+            // so we can be reasonably confident that the variable values will be obtained using
+            // traditional pre-evaluation and quadrature point indexing
+            tmp_var->requireQpComputations();
             _coupled_standard_fv_moose_vars.push_back(tmp_var);
+          }
           else
             _obj->paramError(name, "provided c++ type for variable parameter is not supported");
         }
@@ -101,8 +120,10 @@ Coupleable::Coupleable(const MooseObject * moose_object, bool nodal, bool is_fv)
 }
 
 bool
-Coupleable::isCoupled(const std::string & var_name, unsigned int i) const
+Coupleable::isCoupled(const std::string & var_name_in, unsigned int i) const
 {
+  const auto var_name = _c_parameters.checkForRename(var_name_in);
+
   auto it = _coupled_vars.find(var_name);
   if (it != _coupled_vars.end())
     return (i < it->second.size());
@@ -113,7 +134,7 @@ Coupleable::isCoupled(const std::string & var_name, unsigned int i) const
       mooseError(_c_name,
                  ": The coupled variable \"",
                  var_name,
-                 "\" was never added to this objects's "
+                 "\" was never added to this object's "
                  "InputParameters, please double-check your "
                  "spelling");
 
@@ -121,9 +142,17 @@ Coupleable::isCoupled(const std::string & var_name, unsigned int i) const
   }
 }
 
-unsigned int
-Coupleable::coupledComponents(const std::string & var_name) const
+bool
+Coupleable::isCoupledConstant(const std::string & var_name) const
 {
+  return _c_parameters.hasDefaultCoupledValue(var_name);
+}
+
+unsigned int
+Coupleable::coupledComponents(const std::string & var_name_in) const
+{
+  const auto var_name = _c_parameters.checkForRename(var_name_in);
+
   if (isCoupled(var_name))
   {
     mooseAssert(_coupled_vars.find(var_name) != _coupled_vars.end(),
@@ -171,8 +200,11 @@ Coupleable::checkFuncType(const std::string var_name, VarType t, FuncAge age) co
 }
 
 bool
-Coupleable::checkVar(const std::string & var_name, unsigned int comp, unsigned int comp_bound) const
+Coupleable::checkVar(const std::string & var_name_in,
+                     unsigned int comp,
+                     unsigned int comp_bound) const
 {
+  const auto var_name = _c_parameters.checkForRename(var_name_in);
   auto it = _c_coupled_scalar_vars.find(var_name);
   if (it != _c_coupled_scalar_vars.end())
   {
@@ -193,7 +225,7 @@ Coupleable::checkVar(const std::string & var_name, unsigned int comp, unsigned i
 
   auto vars_vector_it = _coupled_vars.find(var_name);
   if (vars_vector_it == _coupled_vars.end())
-    mooseError("Trying to get a coupled var ", var_name, " that doesn't exist");
+    mooseError(_c_name, ": Trying to get a coupled var ", var_name, " that doesn't exist");
 
   const auto & vars_vector = vars_vector_it->second;
 
@@ -220,7 +252,7 @@ Coupleable::checkVar(const std::string & var_name, unsigned int comp, unsigned i
                  ". This is not currently supported");
   }
 
-  if (!(vars_vector[comp])->isNodal() && _c_nodal)
+  if (!(vars_vector[comp])->isNodal() && _c_nodal && !_c_allow_element_to_nodal_coupling)
     mooseError(_c_name, ": cannot couple elemental variables into nodal objects");
 
   return true;
@@ -232,6 +264,12 @@ Coupleable::getFEVar(const std::string & var_name, unsigned int comp) const
   mooseDeprecated("Coupleable::getFEVar is deprecated. Please use Coupleable::getFieldVar instead. "
                   "Note that this method could potentially return a finite volume variable");
   return getFieldVar(var_name, comp);
+}
+
+MooseVariableFieldBase *
+Coupleable::getFieldVar(const std::string & var_name, unsigned int comp)
+{
+  return getVarHelper<MooseVariableFieldBase>(var_name, comp);
 }
 
 const MooseVariableFieldBase *
@@ -253,7 +291,7 @@ Coupleable::getVectorVar(const std::string & var_name, unsigned int comp)
       const_cast<VectorMooseVariable *>(getVarHelper<VectorMooseVariable>(var_name, comp));
 
   if (_c_nodal && var && var->feType().family != LAGRANGE_VEC)
-    mooseError("Only LAGRANGE_VEC vector variables are defined at nodes");
+    mooseError(_c_name, ": Only LAGRANGE_VEC vector variables are defined at nodes");
 
   return var;
 }
@@ -276,7 +314,7 @@ Coupleable::getVectorVar(const std::string & var_name, unsigned int comp) const
   const auto * const var = getVarHelper<VectorMooseVariable>(var_name, comp);
 
   if (_c_nodal && var && var->feType().family != LAGRANGE_VEC)
-    mooseError("Only LAGRANGE_VEC vector variables are defined at nodes");
+    mooseError(_c_name, ": Only LAGRANGE_VEC vector variables are defined at nodes");
 
   return var;
 }
@@ -316,7 +354,7 @@ Coupleable::getDefaultVectorValue(const std::string & var_name) const
     auto value = std::make_unique<VectorVariableValue>(_coupleable_max_qps, 0);
     bool already_warned = false;
     for (unsigned int qp = 0; qp < _coupleable_max_qps; ++qp)
-      for (unsigned int i = 0; i < LIBMESH_DIM; ++i)
+      for (const auto i : make_range(Moose::dim))
       {
         try
         {
@@ -401,15 +439,17 @@ Coupleable::coupled(const std::string & var_name, unsigned int comp) const
   }
   checkFuncType(var_name, VarType::Ignore, FuncAge::Curr);
 
-  switch (var->kind())
-  {
-    case Moose::VAR_NONLINEAR:
-      return var->number();
-    case Moose::VAR_AUXILIARY:
-      return std::numeric_limits<unsigned int>::max() - var->number();
-    default:
-      mooseError(_c_name, ": Unknown variable kind. Corrupted binary?");
-  }
+  if (var->kind() == Moose::VAR_NONLINEAR &&
+      // are we not an object that feeds into the nonlinear system?
+      (!_c_sys || _c_sys->varKind() != Moose::VAR_NONLINEAR ||
+       // are we an object that impacts the nonlinear system and this variable is within our
+       // nonlinear system?
+       var->sys().number() == _c_sys->number()))
+    return var->number();
+  else
+    // Avoid registering coupling to variables outside of our system (e.g. avoid potentially
+    // creating bad Jacobians)
+    return std::numeric_limits<unsigned int>::max() - var->number();
 }
 
 template <>
@@ -450,30 +490,16 @@ Coupleable::coupledValue(const std::string & var_name, unsigned int comp) const
   }
 }
 
-const VariableValue &
-Coupleable::coupledValueLower(const std::string & var_name, unsigned int comp) const
+template <typename T>
+const typename OutputTools<T>::VariableValue &
+Coupleable::vectorTagValueHelper(const std::string & var_names,
+                                 const TagID tag,
+                                 const unsigned int index) const
 {
-  const auto * var = getVar(var_name, comp);
+  const auto * const var = getVarHelper<MooseVariableField<T>>(var_names, index);
   if (!var)
-    return *getDefaultValue(var_name, comp);
-  checkFuncType(var_name, VarType::Ignore, FuncAge::Curr);
-
-  if (_coupleable_neighbor)
-    mooseError("coupledValueLower cannot be called in a coupleable neighbor object");
-
-  if (_c_nodal)
-    return (_c_is_implicit) ? var->dofValues() : var->dofValuesOld();
-  else
-    return (_c_is_implicit) ? var->slnLower() : var->slnLowerOld();
-}
-
-const VariableValue &
-Coupleable::coupledVectorTagValue(const std::string & var_name, TagID tag, unsigned int comp) const
-{
-  const auto * const var = getVarHelper<MooseVariableField<Real>>(var_name, comp);
-  if (!var)
-    mooseError(var_name, ": invalid variable name for coupledVectorTagValue");
-  checkFuncType(var_name, VarType::Ignore, FuncAge::Curr);
+    mooseError(var_names, ": invalid variable name for coupledVectorTagValue");
+  checkFuncType(var_names, VarType::Ignore, FuncAge::Curr);
 
   if (!_c_fe_problem.vectorTagExists(tag))
     mooseError("Attempting to couple to vector tag with ID ",
@@ -490,31 +516,119 @@ Coupleable::coupledVectorTagValue(const std::string & var_name, TagID tag, unsig
     return var->vectorTagValue(tag);
 }
 
-const VariableValue &
-Coupleable::coupledVectorTagValue(const std::string & var_name,
-                                  const std::string & tag_name,
-                                  unsigned int comp) const
+template <typename T>
+void
+Coupleable::requestStates(const std::string & var_name,
+                          const TagName & tag_name,
+                          const unsigned int comp)
 {
-  if (!_c_parameters.isParamValid(tag_name))
-    mooseError("Tag name parameter '", tag_name, "' is invalid");
+  auto var =
+      const_cast<MooseVariableField<T> *>(getVarHelper<MooseVariableField<T>>(var_name, comp));
+  if (!var)
+    mooseError(var_name, ": invalid variable name for tag coupling");
 
-  TagName tagname = _c_parameters.get<TagName>(tag_name);
-  if (!_c_fe_problem.vectorTagExists(tagname))
-    mooseError("Tagged vector with tag name '", tagname, "' does not exist");
-
-  TagID tag = _c_fe_problem.getVectorTagID(tagname);
-  return coupledVectorTagValue(var_name, tag, comp);
+  auto & var_sys = var->sys();
+  if (tag_name == Moose::OLD_SOLUTION_TAG)
+    var_sys.needSolutionState(1);
+  else if (tag_name == Moose::OLDER_SOLUTION_TAG)
+    var_sys.needSolutionState(2);
 }
 
-const VariableGradient &
-Coupleable::coupledVectorTagGradient(const std::string & var_name,
-                                     TagID tag,
-                                     unsigned int comp) const
+template <typename T>
+const typename OutputTools<T>::VariableValue &
+Coupleable::vectorTagValueHelper(const std::string & var_names,
+                                 const std::string & tag_param_name,
+                                 const unsigned int index) const
+{
+  if (!_c_parameters.isParamValid(tag_param_name))
+    mooseError("Tag name parameter '", tag_param_name, "' is invalid");
+
+  const TagName tag_name = MooseUtils::toUpper(_c_parameters.get<TagName>(tag_param_name));
+
+  const bool older_state_tag = _older_state_tags.count(tag_name);
+  if (older_state_tag)
+    // We may need to add solution states and create vector tags
+    const_cast<Coupleable *>(this)->requestStates<T>(var_names, tag_name, index);
+
+  if (!_c_fe_problem.vectorTagExists(tag_name))
+    mooseError("Tagged vector with tag name '", tag_name, "' does not exist");
+
+  TagID tag = _c_fe_problem.getVectorTagID(tag_name);
+  return vectorTagValueHelper<T>(var_names, tag, index);
+}
+
+template <>
+const GenericVariableValue<false> &
+Coupleable::coupledGenericDofValue<false>(const std::string & var_name, unsigned int comp) const
+{
+  return coupledDofValues(var_name, comp);
+}
+
+template <>
+const GenericVariableValue<true> &
+Coupleable::coupledGenericDofValue<true>(const std::string & var_name, unsigned int comp) const
+{
+  return adCoupledDofValues(var_name, comp);
+}
+
+const VariableValue &
+Coupleable::coupledValueLower(const std::string & var_name, const unsigned int comp) const
 {
   const auto * var = getVar(var_name, comp);
   if (!var)
-    mooseError(var_name, ": invalid variable name for coupledVectorTagGradient");
+    return *getDefaultValue(var_name, comp);
   checkFuncType(var_name, VarType::Ignore, FuncAge::Curr);
+
+  if (_coupleable_neighbor)
+    mooseError(_c_name, ":coupledValueLower cannot be called in a coupleable neighbor object");
+
+  if (_c_nodal)
+    return (_c_is_implicit) ? var->dofValues() : var->dofValuesOld();
+  else
+    return (_c_is_implicit) ? var->slnLower() : var->slnLowerOld();
+}
+
+const VariableValue &
+Coupleable::coupledVectorTagValue(const std::string & var_names,
+                                  TagID tag,
+                                  unsigned int index) const
+{
+  return vectorTagValueHelper<Real>(var_names, tag, index);
+}
+
+const VariableValue &
+Coupleable::coupledVectorTagValue(const std::string & var_names,
+                                  const std::string & tag_name,
+                                  unsigned int index) const
+{
+  return vectorTagValueHelper<Real>(var_names, tag_name, index);
+}
+
+const ArrayVariableValue &
+Coupleable::coupledVectorTagArrayValue(const std::string & var_names,
+                                       TagID tag,
+                                       unsigned int index) const
+{
+  return vectorTagValueHelper<RealEigenVector>(var_names, tag, index);
+}
+
+const ArrayVariableValue &
+Coupleable::coupledVectorTagArrayValue(const std::string & var_names,
+                                       const std::string & tag_name,
+                                       unsigned int index) const
+{
+  return vectorTagValueHelper<RealEigenVector>(var_names, tag_name, index);
+}
+
+const VariableGradient &
+Coupleable::coupledVectorTagGradient(const std::string & var_names,
+                                     TagID tag,
+                                     unsigned int index) const
+{
+  const auto * var = getVar(var_names, index);
+  if (!var)
+    mooseError(var_names, ": invalid variable name for coupledVectorTagGradient");
+  checkFuncType(var_names, VarType::Ignore, FuncAge::Curr);
 
   if (!_c_fe_problem.vectorTagExists(tag))
     mooseError("Attempting to couple to vector tag with ID ",
@@ -529,9 +643,9 @@ Coupleable::coupledVectorTagGradient(const std::string & var_name,
 }
 
 const VariableGradient &
-Coupleable::coupledVectorTagGradient(const std::string & var_name,
+Coupleable::coupledVectorTagGradient(const std::string & var_names,
                                      const std::string & tag_name,
-                                     unsigned int comp) const
+                                     unsigned int index) const
 {
   if (!_c_parameters.isParamValid(tag_name))
     mooseError("Tag name parameter '", tag_name, "' is invalid");
@@ -541,15 +655,54 @@ Coupleable::coupledVectorTagGradient(const std::string & var_name,
     mooseError("Tagged vector with tag name '", tagname, "' does not exist");
 
   TagID tag = _c_fe_problem.getVectorTagID(tagname);
-  return coupledVectorTagGradient(var_name, tag, comp);
+  return coupledVectorTagGradient(var_names, tag, index);
 }
 
-const VariableValue &
-Coupleable::coupledVectorTagDofValue(const std::string & var_name,
-                                     TagID tag,
-                                     unsigned int comp) const
+const ArrayVariableGradient &
+Coupleable::coupledVectorTagArrayGradient(const std::string & var_names,
+                                          TagID tag,
+                                          unsigned int index) const
 {
-  const auto * var = getVar(var_name, comp);
+  const auto * var = getArrayVar(var_names, index);
+  if (!var)
+    mooseError(var_names, ": invalid variable name for coupledVectorTagArrayGradient");
+  checkFuncType(var_names, VarType::Ignore, FuncAge::Curr);
+
+  if (!_c_fe_problem.vectorTagExists(tag))
+    mooseError("Attempting to couple to vector tag with ID ",
+               tag,
+               "in ",
+               _c_name,
+               ", but a vector tag with that ID does not exist");
+
+  const_cast<Coupleable *>(this)->addFEVariableCoupleableVectorTag(tag);
+
+  return var->vectorTagGradient(tag);
+}
+
+const ArrayVariableGradient &
+Coupleable::coupledVectorTagArrayGradient(const std::string & var_names,
+                                          const std::string & tag_name,
+                                          unsigned int index) const
+{
+  if (!_c_parameters.isParamValid(tag_name))
+    mooseError("Tag name parameter '", tag_name, "' is invalid");
+
+  TagName tagname = _c_parameters.get<TagName>(tag_name);
+  if (!_c_fe_problem.vectorTagExists(tagname))
+    mooseError("Tagged vector with tag name '", tagname, "' does not exist");
+
+  TagID tag = _c_fe_problem.getVectorTagID(tagname);
+  return coupledVectorTagArrayGradient(var_names, tag, index);
+}
+
+template <typename T>
+const typename OutputTools<T>::VariableValue &
+Coupleable::vectorTagDofValueHelper(const std::string & var_name,
+                                    const TagID tag,
+                                    const unsigned int comp) const
+{
+  const auto * var = getVarHelper<MooseVariableField<T>>(var_name, comp);
   if (!var)
     mooseError(var_name, ": invalid variable name for coupledVectorTagDofValue");
   checkFuncType(var_name, VarType::Ignore, FuncAge::Curr);
@@ -559,29 +712,63 @@ Coupleable::coupledVectorTagDofValue(const std::string & var_name,
   return var->vectorTagDofValue(tag);
 }
 
+template <typename T>
+const typename OutputTools<T>::VariableValue &
+Coupleable::vectorTagDofValueHelper(const std::string & var_name,
+                                    const std::string & tag_param_name,
+                                    const unsigned int comp) const
+{
+  if (!_c_parameters.isParamValid(tag_param_name))
+    mooseError("Tag name parameter '", tag_param_name, "' is invalid");
+
+  const TagName tag_name = MooseUtils::toUpper(_c_parameters.get<TagName>(tag_param_name));
+
+  const bool older_state_tag = _older_state_tags.count(tag_name);
+  if (older_state_tag)
+    // We may need to add solution states and create vector tags
+    const_cast<Coupleable *>(this)->requestStates<T>(var_name, tag_name, comp);
+
+  if (!_c_fe_problem.vectorTagExists(tag_name))
+    mooseError("Tagged vector with tag name '", tag_name, "' does not exist");
+
+  TagID tag = _c_fe_problem.getVectorTagID(tag_name);
+
+  return vectorTagDofValueHelper<T>(var_name, tag, comp);
+}
+
+const VariableValue &
+Coupleable::coupledVectorTagDofValue(const std::string & var_name,
+                                     TagID tag,
+                                     unsigned int comp) const
+{
+  return vectorTagDofValueHelper<Real>(var_name, tag, comp);
+}
+
 const VariableValue &
 Coupleable::coupledVectorTagDofValue(const std::string & var_name,
                                      const std::string & tag_name,
                                      unsigned int comp) const
 {
-  if (!_c_parameters.isParamValid(tag_name))
-    mooseError("Tag name parameter '", tag_name, "' is invalid");
+  return vectorTagDofValueHelper<Real>(var_name, tag_name, comp);
+}
 
-  TagName tagname = _c_parameters.get<TagName>(tag_name);
-  if (!_c_fe_problem.vectorTagExists(tagname))
-    mooseError("Tagged vector with tag name '", tagname, "' does not exist");
-
-  TagID tag = _c_fe_problem.getVectorTagID(tagname);
-  return coupledVectorTagDofValue(var_name, tag, comp);
+const ArrayVariableValue &
+Coupleable::coupledVectorTagArrayDofValue(const std::string & var_name,
+                                          const std::string & tag_name,
+                                          unsigned int comp) const
+{
+  return vectorTagDofValueHelper<RealEigenVector>(var_name, tag_name, comp);
 }
 
 const VariableValue &
-Coupleable::coupledMatrixTagValue(const std::string & var_name, TagID tag, unsigned int comp) const
+Coupleable::coupledMatrixTagValue(const std::string & var_names,
+                                  TagID tag,
+                                  unsigned int index) const
 {
-  const auto * var = getVar(var_name, comp);
+  const auto * var = getVar(var_names, index);
   if (!var)
-    mooseError(var_name, ": invalid variable name for coupledMatrixTagValue");
-  checkFuncType(var_name, VarType::Ignore, FuncAge::Curr);
+    mooseError(var_names, ": invalid variable name for coupledMatrixTagValue");
+  checkFuncType(var_names, VarType::Ignore, FuncAge::Curr);
 
   const_cast<Coupleable *>(this)->addFEVariableCoupleableMatrixTag(tag);
 
@@ -591,9 +778,9 @@ Coupleable::coupledMatrixTagValue(const std::string & var_name, TagID tag, unsig
 }
 
 const VariableValue &
-Coupleable::coupledMatrixTagValue(const std::string & var_name,
+Coupleable::coupledMatrixTagValue(const std::string & var_names,
                                   const std::string & tag_name,
-                                  unsigned int comp) const
+                                  unsigned int index) const
 {
   if (!_c_parameters.isParamValid(tag_name))
     mooseError("Tag name parameter '", tag_name, "' is invalid");
@@ -603,7 +790,7 @@ Coupleable::coupledMatrixTagValue(const std::string & var_name,
     mooseError("Matrix tag name '", tagname, "' does not exist");
 
   TagID tag = _c_fe_problem.getMatrixTagID(tagname);
-  return coupledMatrixTagValue(var_name, tag, comp);
+  return coupledMatrixTagValue(var_names, tag, index);
 }
 
 const VectorVariableValue &
@@ -660,10 +847,113 @@ Coupleable::coupledArrayValues(const std::string & var_name) const
   return coupledVectorHelper<const ArrayVariableValue *>(var_name, func);
 }
 
+MooseVariable &
+Coupleable::writableVariable(const std::string & var_name, unsigned int comp)
+{
+  auto * var = dynamic_cast<MooseVariable *>(getVar(var_name, comp));
+
+  const auto * aux = dynamic_cast<const AuxKernel *>(this);
+  const auto * euo = dynamic_cast<const ElementUserObject *>(this);
+  const auto * nuo = dynamic_cast<const NodalUserObject *>(this);
+
+  if (!aux && !euo && !nuo)
+    mooseError("writableVariable() can only be called from AuxKernels, ElementUserObjects, or "
+               "NodalUserObjects. '",
+               _obj->name(),
+               "' is neither of those.");
+
+  if (aux && !aux->isNodal() && var->isNodal())
+    mooseError("The elemental AuxKernel '",
+               _obj->name(),
+               "' cannot obtain a writable reference to the nodal variable '",
+               var->name(),
+               "'.");
+  if (euo && var->isNodal())
+    mooseError("The ElementUserObject '",
+               _obj->name(),
+               "' cannot obtain a writable reference to the nodal variable '",
+               var->name(),
+               "'.");
+
+  // make sure only one object can access a variable
+  checkWritableVar(var);
+
+  return *var;
+}
+
 VariableValue &
 Coupleable::writableCoupledValue(const std::string & var_name, unsigned int comp)
 {
+  mooseDeprecated("Coupleable::writableCoupledValue is deprecated, please use "
+                  "Coupleable::writableVariable instead. ");
+
+  // check if the variable exists
+  auto * const var = getVar(var_name, comp);
+  if (!var)
+    mooseError(
+        "Unable to create a writable reference for '", var_name, "', is it a constant expression?");
+
+  // is the requested variable an AuxiliaryVariable?
+  if (!_c_fe_problem.getAuxiliarySystem().hasVariable(var->name()))
+    mooseError(
+        "'", var->name(), "' must be an auxiliary variable in Coupleable::writableCoupledValue");
+
+  // check that the variable type (elemental/nodal) is compatible with the object type
+  const auto * aux = dynamic_cast<const AuxKernel *>(this);
+
+  if (!aux)
+    mooseError("writableCoupledValue() can only be called from AuxKernels, but '",
+               _obj->name(),
+               "' is not an AuxKernel.");
+
+  if (!aux->isNodal() && var->isNodal())
+    mooseError("The elemental AuxKernel '",
+               _obj->name(),
+               "' cannot obtain a writable reference to the nodal variable '",
+               var->name(),
+               "'.");
+
+  // make sure only one object can access a variable
+  checkWritableVar(var);
+
   return const_cast<VariableValue &>(coupledValue(var_name, comp));
+}
+
+void
+Coupleable::checkWritableVar(MooseVariable * var)
+{
+  // check block restrictions for compatibility
+  const auto * br = dynamic_cast<const BlockRestrictable *>(this);
+  if (!var->hasBlocks(br->blockIDs()))
+    mooseError("The variable '",
+               var->name(),
+               "' must be defined on all blocks '",
+               _obj->name(),
+               "' is defined on");
+
+  // make sure only one object can access a variable
+  for (const auto & ci : _obj->getMooseApp().getInterfaceObjects<Coupleable>())
+    if (ci != this && ci->_writable_coupled_variables[_c_tid].count(var))
+    {
+      // if both this and ci are block restrictable then we check if the block restrictions
+      // are not overlapping. If they don't we permit the call.
+      const auto * br_other = dynamic_cast<const BlockRestrictable *>(ci);
+      if (br && br_other && br->blockRestricted() && br_other->blockRestricted() &&
+          !MooseUtils::setsIntersect(br->blockIDs(), br_other->blockIDs()))
+        continue;
+
+      mooseError("'",
+                 ci->_obj->name(),
+                 "' already obtained a writable reference to '",
+                 var->name(),
+                 "'. Only one object can obtain such a reference per variable and subdomain in a "
+                 "simulation.");
+    }
+
+  // var is unique across threads, so we could forego having a separate set per thread, but we
+  // need quick access to the list of all variables that need to be inserted into the solution
+  // vector by a given thread.
+  _writable_coupled_variables[_c_tid].insert(var);
 }
 
 const VariableValue &
@@ -1647,6 +1937,23 @@ Coupleable::coupledArrayDofValues(const std::string & var_name, unsigned int com
   return (_c_is_implicit) ? var->dofValuesNeighbor() : var->dofValuesOldNeighbor();
 }
 
+const ADVariableValue &
+Coupleable::adCoupledDofValues(const std::string & var_name, unsigned int comp) const
+{
+  const auto * var = getVarHelper<MooseVariableField<Real>>(var_name, comp);
+
+  if (!var)
+    return *getADDefaultValue(var_name);
+  checkFuncType(var_name, VarType::Ignore, FuncAge::Curr);
+
+  if (!_c_is_implicit)
+    mooseError("Not implemented");
+
+  if (!_coupleable_neighbor)
+    return var->adDofValues();
+  return var->adDofValuesNeighbor();
+}
+
 void
 Coupleable::validateExecutionerType(const std::string & name, const std::string & fn_name) const
 {
@@ -2000,10 +2307,27 @@ Coupleable::coupledIndices(const std::string & var_name) const
   return coupledVectorHelper<unsigned int>(var_name, func);
 }
 
+VariableName
+Coupleable::coupledName(const std::string & var_name, unsigned int comp) const
+{
+  if (getFieldVar(var_name, comp))
+    return getFieldVar(var_name, comp)->name();
+  // Detect if we are in the case where a constant was passed in lieu of a variable
+  else if (isCoupledConstant(var_name))
+    mooseError(_c_name,
+               ": a variable name was queried but a constant was passed for parameter '",
+               var_name,
+               "Either pass a true variable or contact a developer to shield the call to "
+               "'coupledName' with 'isCoupledConstant'");
+  else
+    mooseError(
+        _c_name, ": Variable '", var_name, "' does not exist, yet its coupled name is requested");
+}
+
 std::vector<VariableName>
 Coupleable::coupledNames(const std::string & var_name) const
 {
-  auto func = [this, &var_name](unsigned int comp) { return getVar(var_name, comp)->name(); };
+  auto func = [this, &var_name](unsigned int comp) { return coupledName(var_name, comp); };
   return coupledVectorHelper<VariableName>(var_name, func);
 }
 
@@ -2012,6 +2336,13 @@ Coupleable::coupledValues(const std::string & var_name) const
 {
   auto func = [this, &var_name](unsigned int comp) { return &coupledValue(var_name, comp); };
   return coupledVectorHelper<const VariableValue *>(var_name, func);
+}
+
+std::vector<const VectorVariableValue *>
+Coupleable::coupledVectorValues(const std::string & var_name) const
+{
+  auto func = [this, &var_name](unsigned int comp) { return &coupledVectorValue(var_name, comp); };
+  return coupledVectorHelper<const VectorVariableValue *>(var_name, func);
 }
 
 template <>
@@ -2044,15 +2375,16 @@ Coupleable::adCoupledVectorValues(const std::string & var_name) const
 }
 
 std::vector<const VariableValue *>
-Coupleable::coupledVectorTagValues(const std::string & var_name, TagID tag) const
+Coupleable::coupledVectorTagValues(const std::string & var_names, TagID tag) const
 {
-  auto func = [this, &var_name, &tag](unsigned int comp)
-  { return &coupledVectorTagValue(var_name, tag, comp); };
-  return coupledVectorHelper<const VariableValue *>(var_name, func);
+  auto func = [this, &var_names, &tag](unsigned int comp)
+  { return &coupledVectorTagValue(var_names, tag, comp); };
+  return coupledVectorHelper<const VariableValue *>(var_names, func);
 }
 
 std::vector<const VariableValue *>
-Coupleable::coupledVectorTagValues(const std::string & var_name, const std::string & tag_name) const
+Coupleable::coupledVectorTagValues(const std::string & var_names,
+                                   const std::string & tag_name) const
 {
   if (!_c_parameters.isParamValid(tag_name))
     mooseError("Tag name parameter '", tag_name, "' is invalid");
@@ -2062,19 +2394,42 @@ Coupleable::coupledVectorTagValues(const std::string & var_name, const std::stri
     mooseError("Tagged vector with tag name '", tagname, "' does not exist");
 
   TagID tag = _c_fe_problem.getVectorTagID(tagname);
-  return coupledVectorTagValues(var_name, tag);
+  return coupledVectorTagValues(var_names, tag);
 }
 
-std::vector<const VariableGradient *>
-Coupleable::coupledVectorTagGradients(const std::string & var_name, TagID tag) const
+std::vector<const ArrayVariableValue *>
+Coupleable::coupledVectorTagArrayValues(const std::string & var_names, TagID tag) const
 {
-  auto func = [this, &var_name, &tag](unsigned int comp)
-  { return &coupledVectorTagGradient(var_name, tag, comp); };
-  return coupledVectorHelper<const VariableGradient *>(var_name, func);
+  auto func = [this, &var_names, &tag](unsigned int index)
+  { return &coupledVectorTagArrayValue(var_names, tag, index); };
+  return coupledVectorHelper<const ArrayVariableValue *>(var_names, func);
+}
+
+std::vector<const ArrayVariableValue *>
+Coupleable::coupledVectorTagArrayValues(const std::string & var_names,
+                                        const std::string & tag_name) const
+{
+  if (!_c_parameters.isParamValid(tag_name))
+    mooseError("Tag name parameter '", tag_name, "' is invalid");
+
+  TagName tagname = _c_parameters.get<TagName>(tag_name);
+  if (!_c_fe_problem.vectorTagExists(tagname))
+    mooseError("Tagged vector with tag name '", tagname, "' does not exist");
+
+  TagID tag = _c_fe_problem.getVectorTagID(tagname);
+  return coupledVectorTagArrayValues(var_names, tag);
 }
 
 std::vector<const VariableGradient *>
-Coupleable::coupledVectorTagGradients(const std::string & var_name,
+Coupleable::coupledVectorTagGradients(const std::string & var_names, TagID tag) const
+{
+  auto func = [this, &var_names, &tag](unsigned int index)
+  { return &coupledVectorTagGradient(var_names, tag, index); };
+  return coupledVectorHelper<const VariableGradient *>(var_names, func);
+}
+
+std::vector<const VariableGradient *>
+Coupleable::coupledVectorTagGradients(const std::string & var_names,
                                       const std::string & tag_name) const
 {
   if (!_c_parameters.isParamValid(tag_name))
@@ -2085,19 +2440,42 @@ Coupleable::coupledVectorTagGradients(const std::string & var_name,
     mooseError("Tagged vector with tag name '", tagname, "' does not exist");
 
   TagID tag = _c_fe_problem.getVectorTagID(tagname);
-  return coupledVectorTagGradients(var_name, tag);
+  return coupledVectorTagGradients(var_names, tag);
 }
 
-std::vector<const VariableValue *>
-Coupleable::coupledVectorTagDofValues(const std::string & var_name, TagID tag) const
+std::vector<const ArrayVariableGradient *>
+Coupleable::coupledVectorTagArrayGradients(const std::string & var_names, TagID tag) const
 {
-  auto func = [this, &var_name, &tag](unsigned int comp)
-  { return &coupledVectorTagDofValue(var_name, tag, comp); };
-  return coupledVectorHelper<const VariableValue *>(var_name, func);
+  auto func = [this, &var_names, &tag](unsigned int index)
+  { return &coupledVectorTagArrayGradient(var_names, tag, index); };
+  return coupledVectorHelper<const ArrayVariableGradient *>(var_names, func);
+}
+
+std::vector<const ArrayVariableGradient *>
+Coupleable::coupledVectorTagArrayGradients(const std::string & var_names,
+                                           const std::string & tag_name) const
+{
+  if (!_c_parameters.isParamValid(tag_name))
+    mooseError("Tag name parameter '", tag_name, "' is invalid");
+
+  TagName tagname = _c_parameters.get<TagName>(tag_name);
+  if (!_c_fe_problem.vectorTagExists(tagname))
+    mooseError("Tagged vector with tag name '", tagname, "' does not exist");
+
+  TagID tag = _c_fe_problem.getVectorTagID(tagname);
+  return coupledVectorTagArrayGradients(var_names, tag);
 }
 
 std::vector<const VariableValue *>
-Coupleable::coupledVectorTagDofValues(const std::string & var_name,
+Coupleable::coupledVectorTagDofValues(const std::string & var_names, TagID tag) const
+{
+  auto func = [this, &var_names, &tag](unsigned int comp)
+  { return &coupledVectorTagDofValue(var_names, tag, comp); };
+  return coupledVectorHelper<const VariableValue *>(var_names, func);
+}
+
+std::vector<const VariableValue *>
+Coupleable::coupledVectorTagDofValues(const std::string & var_names,
                                       const std::string & tag_name) const
 {
   if (!_c_parameters.isParamValid(tag_name))
@@ -2108,19 +2486,20 @@ Coupleable::coupledVectorTagDofValues(const std::string & var_name,
     mooseError("Tagged vector with tag name '", tagname, "' does not exist");
 
   TagID tag = _c_fe_problem.getVectorTagID(tagname);
-  return coupledVectorTagDofValues(var_name, tag);
+  return coupledVectorTagDofValues(var_names, tag);
 }
 
 std::vector<const VariableValue *>
-Coupleable::coupledMatrixTagValues(const std::string & var_name, TagID tag) const
+Coupleable::coupledMatrixTagValues(const std::string & var_names, TagID tag) const
 {
-  auto func = [this, &var_name, &tag](unsigned int comp)
-  { return &coupledMatrixTagValue(var_name, tag, comp); };
-  return coupledVectorHelper<const VariableValue *>(var_name, func);
+  auto func = [this, &var_names, &tag](unsigned int comp)
+  { return &coupledMatrixTagValue(var_names, tag, comp); };
+  return coupledVectorHelper<const VariableValue *>(var_names, func);
 }
 
 std::vector<const VariableValue *>
-Coupleable::coupledMatrixTagValues(const std::string & var_name, const std::string & tag_name) const
+Coupleable::coupledMatrixTagValues(const std::string & var_names,
+                                   const std::string & tag_name) const
 {
   if (!_c_parameters.isParamValid(tag_name))
     mooseError("Tag name parameter '", tag_name, "' is invalid");
@@ -2130,7 +2509,7 @@ Coupleable::coupledMatrixTagValues(const std::string & var_name, const std::stri
     mooseError("Matrix tag name '", tagname, "' does not exist");
 
   TagID tag = _c_fe_problem.getMatrixTagID(tagname);
-  return coupledMatrixTagValues(var_name, tag);
+  return coupledMatrixTagValues(var_names, tag);
 }
 
 std::vector<const VariableValue *>
@@ -2145,6 +2524,21 @@ Coupleable::coupledGradients(const std::string & var_name) const
 {
   auto func = [this, &var_name](unsigned int comp) { return &coupledGradient(var_name, comp); };
   return coupledVectorHelper<const VariableGradient *>(var_name, func);
+}
+
+template <>
+std::vector<const GenericVariableGradient<false> *>
+Coupleable::coupledGenericGradients<false>(const std::string & var_name) const
+{
+  return coupledGradients(var_name);
+}
+
+template <>
+std::vector<const GenericVariableGradient<true> *>
+Coupleable::coupledGenericGradients<true>(const std::string & var_name) const
+{
+  auto func = [this, &var_name](unsigned int comp) { return &adCoupledGradient(var_name, comp); };
+  return coupledVectorHelper<const GenericVariableGradient<true> *>(var_name, func);
 }
 
 std::vector<const ADVariableGradient *>

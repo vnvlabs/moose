@@ -47,11 +47,6 @@ PINSFVMomentumFrictionCorrection::PINSFVMomentumFrictionCorrection(const InputPa
 {
   if (!_use_Darcy_friction_model && !_use_Forchheimer_friction_model)
     mooseError("At least one friction model needs to be specified.");
-#ifndef MOOSE_GLOBAL_AD_INDEXING
-  mooseError("PINSFV is not supported by local AD indexing. In order to use PINSFV, please run "
-             "the configure script in the root MOOSE directory with the configure option "
-             "'--with-ad-indexing-type=global'");
-#endif
 }
 
 void
@@ -64,48 +59,71 @@ PINSFVMomentumFrictionCorrection::gatherRCData(const FaceInfo & fi)
   _normal = fi.normal();
   _face_type = fi.faceType(_var.name());
 
-#ifdef MOOSE_GLOBAL_AD_INDEXING
   using namespace Moose::FV;
 
-  const auto elem_face = elemFromFace();
-  const auto neighbor_face = neighborFromFace();
+  const auto elem_face = elemArg();
+  const auto neighbor_face = neighborArg();
+  const auto state = determineState();
+
+  Point _face_centroid = _face_info->faceCentroid();
+  Point _elem_centroid = _face_info->elemCentroid();
 
   ADReal friction_term_elem = 0;
   ADReal friction_term_neighbor = 0;
 
-  if (_use_Darcy_friction_model)
-  {
-    friction_term_elem += (*_cL)(elem_face)(_index)*_rho(elem_face) / _eps(elem_face);
-    friction_term_neighbor +=
-        (*_cL)(neighbor_face)(_index)*_rho(neighbor_face) / _eps(neighbor_face);
-  }
-  if (_use_Forchheimer_friction_model)
-  {
-    friction_term_elem += (*_cQ)(elem_face)(_index)*_rho(elem_face) / _eps(elem_face);
-    friction_term_neighbor +=
-        (*_cQ)(neighbor_face)(_index)*_rho(neighbor_face) / _eps(neighbor_face);
-  }
-
-  Point _face_centroid = _face_info->faceCentroid();
-  Point _elem_centroid = _face_info->elemCentroid();
-  Point _neighbor_centroid = _face_info->neighborCentroid();
-
-  Real geometric_factor = _consistent_scaling * (_neighbor_centroid - _face_centroid).norm() *
-                          (_elem_centroid - _face_centroid).norm();
-
-  // Compute the diffusion driven by the velocity gradient
-  // Interpolate viscosity divided by porosity on the face
   ADReal diff_face;
-  interpolate(Moose::FV::InterpMethod::Average,
-              diff_face,
-              friction_term_elem * geometric_factor,
-              friction_term_neighbor * geometric_factor,
-              *_face_info,
-              true);
+
+  // If we are on an internal face for the variable, we interpolate the friction terms
+  // to the face using the cell values
+  if (_var.isInternalFace(*_face_info))
+  {
+    if (_use_Darcy_friction_model)
+    {
+      friction_term_elem +=
+          (*_cL)(elem_face, state)(_index)*_rho(elem_face, state) / _eps(elem_face, state);
+      friction_term_neighbor += (*_cL)(neighbor_face, state)(_index)*_rho(neighbor_face, state) /
+                                _eps(neighbor_face, state);
+    }
+    if (_use_Forchheimer_friction_model)
+    {
+      friction_term_elem +=
+          (*_cQ)(elem_face, state)(_index)*_rho(elem_face, state) / _eps(elem_face, state);
+      friction_term_neighbor += (*_cQ)(neighbor_face, state)(_index)*_rho(neighbor_face, state) /
+                                _eps(neighbor_face, state);
+    }
+
+    Point _neighbor_centroid = _face_info->neighborCentroid();
+
+    Real geometric_factor = _consistent_scaling * (_neighbor_centroid - _face_centroid).norm() *
+                            (_elem_centroid - _face_centroid).norm();
+
+    // Compute the diffusion driven by the velocity gradient
+    // Interpolate viscosity divided by porosity on the face
+    interpolate(Moose::FV::InterpMethod::Average,
+                diff_face,
+                friction_term_elem * geometric_factor,
+                friction_term_neighbor * geometric_factor,
+                *_face_info,
+                true);
+  }
+  // If not, we use the extrapolated values of the functors on the face
+  else
+  {
+    const auto face =
+        makeFace(*_face_info, Moose::FV::limiterType(Moose::FV::InterpMethod::Average), true);
+    if (_use_Darcy_friction_model)
+      friction_term_elem += (*_cL)(face, state)(_index)*_rho(face, state) / _eps(face, state);
+    if (_use_Forchheimer_friction_model)
+      friction_term_elem += (*_cQ)(face, state)(_index)*_rho(face, state) / _eps(face, state);
+
+    Real geometric_factor =
+        _consistent_scaling * std::pow((_elem_centroid - _face_centroid).norm(), 2);
+
+    diff_face = friction_term_elem * geometric_factor;
+  }
 
   // Compute face superficial velocity gradient
-  auto dudn =
-      _var.gradient(Moose::FV::makeCDFace(*_face_info, faceArgSubdomains())) * _face_info->normal();
+  auto dudn = _var.gradient(makeCDFace(*_face_info), state) * _face_info->normal();
 
   if (_face_type == FaceInfo::VarFaceNeighbors::ELEM ||
       _face_type == FaceInfo::VarFaceNeighbors::BOTH)
@@ -128,6 +146,5 @@ PINSFVMomentumFrictionCorrection::gatherRCData(const FaceInfo & fi)
 
   const auto strong_resid = -diff_face * dudn;
 
-  processResidual(strong_resid * (fi.faceArea() * fi.faceCoord()));
-#endif
+  addResidualAndJacobian(strong_resid * (fi.faceArea() * fi.faceCoord()));
 }

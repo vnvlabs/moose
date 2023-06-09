@@ -23,7 +23,7 @@
 [Functions]
   [pwr_func]
     type = ParsedFunction
-    value = '1e3*x*(1-x)+5e2' # increase this function to drive transient
+    expression = '1e3*x*(1-x)+5e2' # increase this function to drive transient
   []
 []
 
@@ -120,25 +120,22 @@
 
 [Transfers]
   [p_to_sub]
-    type = MultiAppMeshFunctionTransfer
-    direction = to_multiapp
+    type = MultiAppShapeEvaluationTransfer
     source_variable = power_density
     variable = power_density
-    multi_app = sub
+    to_multi_app = sub
     execute_on = 'timestep_end'
   []
   [t_from_sub]
-    type = MultiAppMeshFunctionTransfer
-    direction = from_multiapp
+    type = MultiAppShapeEvaluationTransfer
     source_variable = temp
     variable = Tf
-    multi_app = sub
+    from_multi_app = sub
     execute_on = 'timestep_end'
   []
 []
 
 [Outputs]
   exodus = true
-  csv = true
   perf_graph = true
 []

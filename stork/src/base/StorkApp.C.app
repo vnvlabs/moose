@@ -8,10 +8,7 @@ InputParameters
 StorkApp::validParams()
 {
   InputParameters params = MooseApp::validParams();
-
-  // Do not use legacy material output, i.e., output properties on INITIAL as well as TIMESTEP_END
   params.set<bool>("use_legacy_material_output") = false;
-
   return params;
 }
 
@@ -22,10 +19,10 @@ StorkApp::StorkApp(InputParameters parameters) : MooseApp(parameters)
 
 StorkApp::~StorkApp() {}
 
-void
-StorkApp::registerAll(Factory & f, ActionFactory & af, Syntax & syntax)
+void 
+StorkApp::registerAll(Factory & f, ActionFactory & af, Syntax & s)
 {
-  ModulesApp::registerAll(f, af, syntax);
+  ModulesApp::registerAllObjects<StorkApp>(f, af, s);
   Registry::registerObjectsTo(f, {"StorkApp"});
   Registry::registerActionsTo(af, {"StorkApp"});
 

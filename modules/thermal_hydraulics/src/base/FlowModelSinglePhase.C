@@ -37,12 +37,24 @@ InputParameters
 FlowModelSinglePhase::validParams()
 {
   InputParameters params = FlowModel::validParams();
+  params.addRequiredParam<UserObjectName>("numerical_flux", "Numerical flux user object name");
+  params.addRequiredParam<MooseEnum>("rdg_slope_reconstruction",
+                                     "Slope reconstruction type for rDG");
+  params.addRequiredParam<std::vector<Real>>(
+      "scaling_factor_1phase",
+      "Scaling factors for each single phase variable (rhoA, rhouA, rhoEA)");
   return params;
 }
 
 registerMooseObject("ThermalHydraulicsApp", FlowModelSinglePhase);
 
-FlowModelSinglePhase::FlowModelSinglePhase(const InputParameters & params) : FlowModel(params) {}
+FlowModelSinglePhase::FlowModelSinglePhase(const InputParameters & params)
+  : FlowModel(params),
+    _rdg_slope_reconstruction(params.get<MooseEnum>("rdg_slope_reconstruction")),
+    _numerical_flux_name(params.get<UserObjectName>("numerical_flux")),
+    _scaling_factors(getParam<std::vector<Real>>("scaling_factor_1phase"))
+{
+}
 
 void
 FlowModelSinglePhase::init()
@@ -55,12 +67,11 @@ FlowModelSinglePhase::addVariables()
   FlowModel::addCommonVariables();
 
   const std::vector<SubdomainName> & subdomains = _flow_channel.getSubdomainNames();
-  std::vector<Real> scaling_factor = _sim.getParam<std::vector<Real>>("scaling_factor_1phase");
 
   // Nonlinear variables
-  _sim.addSimVariable(true, RHOA, _fe_type, subdomains, scaling_factor[0]);
-  _sim.addSimVariable(true, RHOUA, _fe_type, subdomains, scaling_factor[1]);
-  _sim.addSimVariable(true, RHOEA, _fe_type, subdomains, scaling_factor[2]);
+  _sim.addSimVariable(true, RHOA, _fe_type, subdomains, _scaling_factors[0]);
+  _sim.addSimVariable(true, RHOUA, _fe_type, subdomains, _scaling_factors[1]);
+  _sim.addSimVariable(true, RHOEA, _fe_type, subdomains, _scaling_factors[2]);
 
   _solution_vars = {RHOA, RHOUA, RHOEA};
   _derivative_vars = _solution_vars;
@@ -102,7 +113,7 @@ FlowModelSinglePhase::addInitialConditions()
     if (_output_vector_velocity)
     {
       std::vector<VariableName> var_name = {VELOCITY_X, VELOCITY_Y, VELOCITY_Z};
-      for (unsigned int i = 0; i < LIBMESH_DIM; i++)
+      for (const auto i : make_range(Moose::dim))
       {
         std::string class_name = "VectorVelocityIC";
         InputParameters params = _factory.getValidParams(class_name);
@@ -219,19 +230,7 @@ FlowModelSinglePhase::addMooseObjects()
 {
   FlowModel::addCommonMooseObjects();
 
-  ExecFlagEnum execute_on(MooseUtils::getDefaultExecFlagEnum());
-  execute_on = {EXEC_INITIAL, EXEC_LINEAR, EXEC_NONLINEAR};
-
-  // numerical flux user object
-  {
-    const std::string class_name = "ADNumericalFlux3EqnHLLC";
-    InputParameters params = _factory.getValidParams(class_name);
-    params.set<UserObjectName>("fluid_properties") = _fp_name;
-    params.set<MooseEnum>("emit_on_nan") = "none";
-    params.set<ExecFlagEnum>("execute_on") = execute_on;
-    _sim.addUserObject(class_name, _numerical_flux_name, params);
-  }
-
+  addNumericalFluxUserObject();
   addRDGMooseObjects();
 
   {
@@ -352,7 +351,7 @@ FlowModelSinglePhase::addMooseObjects()
       execute_on = {EXEC_INITIAL, EXEC_TIMESTEP_END};
 
       std::vector<AuxVariableName> var_names = {VELOCITY_X, VELOCITY_Y, VELOCITY_Z};
-      for (unsigned int i = 0; i < LIBMESH_DIM; i++)
+      for (const auto i : make_range(Moose::dim))
       {
         std::string class_name = "ADVectorVelocityComponentAux";
         InputParameters params = _factory.getValidParams(class_name);
@@ -453,6 +452,17 @@ FlowModelSinglePhase::addMooseObjects()
 }
 
 void
+FlowModelSinglePhase::addNumericalFluxUserObject()
+{
+  const std::string class_name = "ADNumericalFlux3EqnHLLC";
+  InputParameters params = _factory.getValidParams(class_name);
+  params.set<UserObjectName>("fluid_properties") = _fp_name;
+  params.set<MooseEnum>("emit_on_nan") = "none";
+  params.set<ExecFlagEnum>("execute_on") = {EXEC_INITIAL, EXEC_LINEAR, EXEC_NONLINEAR};
+  _sim.addUserObject(class_name, _numerical_flux_name, params);
+}
+
+void
 FlowModelSinglePhase::addRDGMooseObjects()
 {
   // slope reconstruction material
@@ -472,27 +482,30 @@ FlowModelSinglePhase::addRDGMooseObjects()
     _sim.addMaterial(class_name, genName(_comp_name, "rdg_3egn_mat"), params);
   }
 
-  // advection
-  {
-    // mass
-    const std::string class_name = "ADNumericalFlux3EqnDGKernel";
-    InputParameters params = _factory.getValidParams(class_name);
-    params.set<NonlinearVariableName>("variable") = RHOA;
-    params.set<std::vector<SubdomainName>>("block") = _flow_channel.getSubdomainNames();
-    params.set<std::vector<VariableName>>("A_linear") = {AREA_LINEAR};
-    params.set<std::vector<VariableName>>("rhoA") = {RHOA};
-    params.set<std::vector<VariableName>>("rhouA") = {RHOUA};
-    params.set<std::vector<VariableName>>("rhoEA") = {RHOEA};
-    params.set<UserObjectName>("numerical_flux") = _numerical_flux_name;
-    params.set<bool>("implicit") = _sim.getImplicitTimeIntegrationFlag();
-    _sim.addDGKernel(class_name, genName(_comp_name, "mass_advection"), params);
+  addRDGAdvectionDGKernels();
+}
 
-    // momentum
-    params.set<NonlinearVariableName>("variable") = RHOUA;
-    _sim.addDGKernel(class_name, genName(_comp_name, "momentum_advection"), params);
+void
+FlowModelSinglePhase::addRDGAdvectionDGKernels()
+{
+  // mass
+  const std::string class_name = "ADNumericalFlux3EqnDGKernel";
+  InputParameters params = _factory.getValidParams(class_name);
+  params.set<NonlinearVariableName>("variable") = RHOA;
+  params.set<std::vector<SubdomainName>>("block") = _flow_channel.getSubdomainNames();
+  params.set<std::vector<VariableName>>("A_linear") = {AREA_LINEAR};
+  params.set<std::vector<VariableName>>("rhoA") = {RHOA};
+  params.set<std::vector<VariableName>>("rhouA") = {RHOUA};
+  params.set<std::vector<VariableName>>("rhoEA") = {RHOEA};
+  params.set<UserObjectName>("numerical_flux") = _numerical_flux_name;
+  params.set<bool>("implicit") = _sim.getImplicitTimeIntegrationFlag();
+  _sim.addDGKernel(class_name, genName(_comp_name, "mass_advection"), params);
 
-    // energy
-    params.set<NonlinearVariableName>("variable") = RHOEA;
-    _sim.addDGKernel(class_name, genName(_comp_name, "energy_advection"), params);
-  }
+  // momentum
+  params.set<NonlinearVariableName>("variable") = RHOUA;
+  _sim.addDGKernel(class_name, genName(_comp_name, "momentum_advection"), params);
+
+  // energy
+  params.set<NonlinearVariableName>("variable") = RHOEA;
+  _sim.addDGKernel(class_name, genName(_comp_name, "energy_advection"), params);
 }

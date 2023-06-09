@@ -72,7 +72,9 @@ template <typename RangeType>
 class ThreadedFaceLoop
 {
 public:
-  ThreadedFaceLoop(FEProblemBase & fe_problem, const std::set<TagID> & tags);
+  ThreadedFaceLoop(FEProblemBase & fe_problem,
+                   const unsigned int nl_system_num,
+                   const std::set<TagID> & tags);
 
   ThreadedFaceLoop(ThreadedFaceLoop & x, Threads::split split);
 
@@ -80,7 +82,7 @@ public:
 
   virtual void operator()(const RangeType & range, bool bypass_threading = false);
 
-  void join(const ThreadedFaceLoop & /*y*/) {}
+  void join(const ThreadedFaceLoop & y);
 
   virtual void onFace(const FaceInfo & fi) = 0;
   /// This is called once for each face after all face and boundary callbacks have been
@@ -110,10 +112,27 @@ public:
   virtual void caughtMooseException(MooseException &) {}
 
 protected:
+  /// Print list of object types executed and in which order
+  virtual void printGeneralExecutionInformation() const {}
+
+  /// Print ordering of objects executed on each block
+  virtual void printBlockExecutionInformation() const {}
+
+  /// Print ordering of objects exected on each boundary
+  virtual void printBoundaryExecutionInformation(const BoundaryID /* bnd_id */) const {}
+
+  /// Reset lists of blocks and boundaries for which execution printing has been done
+  void resetExecutionPrinting()
+  {
+    _blocks_exec_printed.clear();
+    _boundaries_exec_printed.clear();
+  }
+
   FEProblemBase & _fe_problem;
   MooseMesh & _mesh;
   const std::set<TagID> & _tags;
   THREAD_ID _tid;
+  const unsigned int _nl_system_num;
 
   /// The subdomain for the current element
   SubdomainID _subdomain;
@@ -126,24 +145,68 @@ protected:
 
   /// The subdomain for the last neighbor
   SubdomainID _old_neighbor_subdomain;
+
+  /// Set to keep track of blocks for which we have printed the execution pattern
+  mutable std::set<std::pair<const SubdomainID, const SubdomainID>> _blocks_exec_printed;
+
+  /// Set to keep track of boundaries for which we have printed the execution pattern
+  mutable std::set<BoundaryID> _boundaries_exec_printed;
+
+  /// Holds caught runtime error messages
+  std::string _error_message;
+
+private:
+  /// Whether this is the zeroth threaded copy of this body
+  const bool _zeroth_copy;
+
+  /// The value of \p Moose::_throw_on_error at the time of construction. This data member only has
+  /// meaning and will only be read if this is the thread 0 copy of the class
+  const bool _incoming_throw_on_error;
 };
 
 template <typename RangeType>
 ThreadedFaceLoop<RangeType>::ThreadedFaceLoop(FEProblemBase & fe_problem,
+                                              const unsigned int nl_system_num,
                                               const std::set<TagID> & tags)
-  : _fe_problem(fe_problem), _mesh(fe_problem.mesh()), _tags(tags)
+  : _fe_problem(fe_problem),
+    _mesh(fe_problem.mesh()),
+    _tags(tags),
+    _nl_system_num(nl_system_num),
+    _zeroth_copy(true),
+    _incoming_throw_on_error(Moose::_throw_on_error)
 {
+  Moose::_throw_on_error = true;
 }
 
 template <typename RangeType>
 ThreadedFaceLoop<RangeType>::ThreadedFaceLoop(ThreadedFaceLoop & x, Threads::split /*split*/)
-  : _fe_problem(x._fe_problem), _mesh(x._mesh), _tags(x._tags)
+  : _fe_problem(x._fe_problem),
+    _mesh(x._mesh),
+    _tags(x._tags),
+    _nl_system_num(x._nl_system_num),
+    _zeroth_copy(false),
+    _incoming_throw_on_error(false)
 {
 }
 
 template <typename RangeType>
 ThreadedFaceLoop<RangeType>::~ThreadedFaceLoop()
 {
+  if (_zeroth_copy)
+  {
+    Moose::_throw_on_error = _incoming_throw_on_error;
+
+    if (!_error_message.empty())
+      mooseError(_error_message);
+  }
+}
+
+template <typename RangeType>
+void
+ThreadedFaceLoop<RangeType>::join(const ThreadedFaceLoop<RangeType> & y)
+{
+  if (_error_message.empty() && !y._error_message.empty())
+    _error_message = y._error_message;
 }
 
 // TODO: ensure the vector<faceinfo> data structure needs to be built such
@@ -163,6 +226,7 @@ ThreadedFaceLoop<RangeType>::operator()(const RangeType & range, bool bypass_thr
   std::vector<FVKernel *> kernels;
   _fe_problem.theWarehouse()
       .query()
+      .template condition<AttribSysNum>(_nl_system_num)
       .template condition<AttribSystem>("FVFluxKernel")
       .queryInto(kernels);
   if (kernels.size() == 0)
@@ -176,6 +240,7 @@ ThreadedFaceLoop<RangeType>::operator()(const RangeType & range, bool bypass_thr
       _tid = bypass_threading ? 0 : puid.id;
 
       pre();
+      printGeneralExecutionInformation();
 
       _subdomain = Moose::INVALID_BLOCK_ID;
       _neighbor_subdomain = Moose::INVALID_BLOCK_ID;
@@ -190,7 +255,10 @@ ThreadedFaceLoop<RangeType>::operator()(const RangeType & range, bool bypass_thr
         _old_subdomain = _subdomain;
         _subdomain = elem.subdomain_id();
         if (_subdomain != _old_subdomain)
+        {
           subdomainChanged();
+          printBlockExecutionInformation();
+        }
 
         _old_neighbor_subdomain = _neighbor_subdomain;
         if (const Elem * const neighbor = (*faceinfo)->neighborPtr())
@@ -202,7 +270,11 @@ ThreadedFaceLoop<RangeType>::operator()(const RangeType & range, bool bypass_thr
           _neighbor_subdomain = Moose::INVALID_BLOCK_ID;
 
         if (_neighbor_subdomain != _old_neighbor_subdomain)
+        {
           neighborSubdomainChanged();
+          // This is going to cause a lot more printing
+          printBlockExecutionInformation();
+        }
 
         onFace(**faceinfo);
         // Cache data now because onBoundary may clear it. E.g. there was a nasty bug for two
@@ -213,39 +285,54 @@ ThreadedFaceLoop<RangeType>::operator()(const RangeType & range, bool bypass_thr
 
         const std::set<BoundaryID> boundary_ids = (*faceinfo)->boundaryIDs();
         for (auto & it : boundary_ids)
+        {
+          printBoundaryExecutionInformation(it);
           onBoundary(**faceinfo, it);
+        }
 
         postFace(**faceinfo);
 
       } // range
       post();
+
+      // Clear execution printing sets to start printing on every block and boundary again
+      resetExecutionPrinting();
     }
     catch (libMesh::LogicError & e)
     {
-      throw MooseException("We caught a libMesh error");
+      mooseException("We caught a libMesh error: ", e.what());
+    }
+    catch (MetaPhysicL::LogicError & e)
+    {
+      moose::translateMetaPhysicLError(e);
     }
   }
   catch (MooseException & e)
   {
     caughtMooseException(e);
   }
+  catch (std::runtime_error & e)
+  {
+    _error_message = e.what();
+  }
 }
 
 /**
  * Base class for assembly-like calculations.
  */
-template <typename RangeType>
+template <typename RangeType, typename AttributeTagType>
 class ComputeFVFluxThread : public ThreadedFaceLoop<RangeType>
 {
 public:
-  ComputeFVFluxThread(FEProblemBase & fe_problem, const std::set<TagID> & tags);
+  ComputeFVFluxThread(FEProblemBase & fe_problem,
+                      const unsigned int nl_system_num,
+                      const std::set<TagID> & tags);
 
   ComputeFVFluxThread(ComputeFVFluxThread & x, Threads::split split);
 
   virtual ~ComputeFVFluxThread();
 
   virtual void onFace(const FaceInfo & fi) override;
-  virtual void postFace(const FaceInfo & fi) override;
   virtual void pre() override;
   virtual void post() override;
 
@@ -254,6 +341,37 @@ public:
   virtual void subdomainChanged() override;
   virtual void neighborSubdomainChanged() override;
 
+protected:
+  /**
+   * call either computeResidual, computeJacobian, or computeResidualAndJacobian on the provided
+   * residual object depending on what derived class of this class is instantiated
+   */
+  virtual void compute(FVFaceResidualObject & ro, const FaceInfo & fi) = 0;
+
+  /**
+   * call either residualSetup or jacobianSetup depending on what derived class of this class is
+   * instantiated
+   */
+  virtual void setup(SetupInterface & obj) = 0;
+
+  /**
+   * call either addCachedJacobian or addCachedResidual or both  depending on what derived class of
+   * this class is instantiated
+   */
+  virtual void addCached() = 0;
+
+  unsigned int _num_cached = 0;
+
+  using ThreadedFaceLoop<RangeType>::_fe_problem;
+  using ThreadedFaceLoop<RangeType>::_mesh;
+  using ThreadedFaceLoop<RangeType>::_tid;
+  using ThreadedFaceLoop<RangeType>::_tags;
+  using ThreadedFaceLoop<RangeType>::_nl_system_num;
+  using ThreadedFaceLoop<RangeType>::_subdomain;
+  using ThreadedFaceLoop<RangeType>::_neighbor_subdomain;
+  using ThreadedFaceLoop<RangeType>::_blocks_exec_printed;
+  using ThreadedFaceLoop<RangeType>::_boundaries_exec_printed;
+
 private:
   void reinitVariables(const FaceInfo & fi);
   void checkPropDeps(const std::vector<std::shared_ptr<MaterialBase>> & mats) const;
@@ -261,6 +379,18 @@ private:
   static void emptyDifferenceTest(const std::set<unsigned int> & requested,
                                   const std::set<unsigned int> & supplied,
                                   std::set<unsigned int> & difference);
+
+  /// Print list of object types executed and in which order
+  virtual void printGeneralExecutionInformation() const override;
+
+  /// Print ordering of objects executed on each block
+  virtual void printBlockExecutionInformation() const override;
+
+  /// Print ordering of objects exected on each boundary
+  virtual void printBoundaryExecutionInformation(const BoundaryID bnd_id) const override;
+
+  /// Utility to get the subdomain names from the ids
+  std::pair<SubdomainName, SubdomainName> getBlockNames() const;
 
   /// Variables
   std::set<MooseVariableFieldBase *> _fv_vars;
@@ -282,53 +412,44 @@ private:
   std::vector<std::shared_ptr<MaterialBase>> _elem_sub_neigh_face_mats;
   std::vector<std::shared_ptr<MaterialBase>> _neigh_sub_neigh_face_mats;
 
-  const bool _do_jacobian;
   const bool _scaling_jacobian;
   const bool _scaling_residual;
-  unsigned int _num_cached = 0;
-
-  using ThreadedFaceLoop<RangeType>::_fe_problem;
-  using ThreadedFaceLoop<RangeType>::_mesh;
-  using ThreadedFaceLoop<RangeType>::_tid;
-  using ThreadedFaceLoop<RangeType>::_tags;
-  using ThreadedFaceLoop<RangeType>::_subdomain;
-  using ThreadedFaceLoop<RangeType>::_neighbor_subdomain;
 };
 
-template <typename RangeType>
-ComputeFVFluxThread<RangeType>::ComputeFVFluxThread(FEProblemBase & fe_problem,
-                                                    const std::set<TagID> & tags)
-  : ThreadedFaceLoop<RangeType>(fe_problem, tags),
-    _do_jacobian(fe_problem.currentlyComputingJacobian()),
+template <typename RangeType, typename AttributeTagType>
+ComputeFVFluxThread<RangeType, AttributeTagType>::ComputeFVFluxThread(FEProblemBase & fe_problem,
+                                                                      unsigned int nl_system_num,
+                                                                      const std::set<TagID> & tags)
+  : ThreadedFaceLoop<RangeType>(fe_problem, nl_system_num, tags),
     _scaling_jacobian(fe_problem.computingScalingJacobian()),
     _scaling_residual(fe_problem.computingScalingResidual())
 {
 }
 
-template <typename RangeType>
-ComputeFVFluxThread<RangeType>::ComputeFVFluxThread(ComputeFVFluxThread & x, Threads::split split)
+template <typename RangeType, typename AttributeTagType>
+ComputeFVFluxThread<RangeType, AttributeTagType>::ComputeFVFluxThread(ComputeFVFluxThread & x,
+                                                                      Threads::split split)
   : ThreadedFaceLoop<RangeType>(x, split),
     _fv_vars(x._fv_vars),
-    _do_jacobian(x._do_jacobian),
     _scaling_jacobian(x._scaling_jacobian),
     _scaling_residual(x._scaling_residual)
 {
 }
 
-template <typename RangeType>
-ComputeFVFluxThread<RangeType>::~ComputeFVFluxThread()
+template <typename RangeType, typename AttributeTagType>
+ComputeFVFluxThread<RangeType, AttributeTagType>::~ComputeFVFluxThread()
 {
 }
 
-template <typename RangeType>
+template <typename RangeType, typename AttributeTagType>
 void
-ComputeFVFluxThread<RangeType>::reinitVariables(const FaceInfo & fi)
+ComputeFVFluxThread<RangeType, AttributeTagType>::reinitVariables(const FaceInfo & fi)
 {
   // TODO: this skips necessary FE reinit.  In addition to this call, we need
   // to conditionally do some FE-specific reinit here if we have any active FE
   // variables.  However, we still want to keep/do FV-style quadrature.
   // Figure out how to do all this some day.
-  _fe_problem.assembly(_tid).reinitFVFace(fi);
+  _fe_problem.reinitFVFace(_tid, fi);
 
   // TODO: for FE variables, this is handled via setting needed vars through
   // fe problem API which passes the value on to the system class.  Then
@@ -353,130 +474,81 @@ ComputeFVFluxThread<RangeType>::reinitVariables(const FaceInfo & fi)
     mat->computeProperties();
   }
 
-  _fe_problem.resizeMaterialData(Moose::MaterialDataType::NEIGHBOR_MATERIAL_DATA, /*nqp=*/1, _tid);
-
-  for (std::shared_ptr<MaterialBase> mat : _neigh_face_mats)
+  if (fi.neighborPtr())
   {
-    mat->setFaceInfo(fi);
-    mat->computeProperties();
+    _fe_problem.resizeMaterialData(
+        Moose::MaterialDataType::NEIGHBOR_MATERIAL_DATA, /*nqp=*/1, _tid);
+
+    for (std::shared_ptr<MaterialBase> mat : _neigh_face_mats)
+    {
+      mat->setFaceInfo(fi);
+      mat->computeProperties();
+    }
   }
 }
 
-template <typename RangeType>
+template <typename RangeType, typename AttributeTagType>
 void
-ComputeFVFluxThread<RangeType>::onFace(const FaceInfo & fi)
+ComputeFVFluxThread<RangeType, AttributeTagType>::onFace(const FaceInfo & fi)
 {
   reinitVariables(fi);
 
-  if (_fv_flux_kernels.size() == 0)
-    return;
-
-  for (const auto k : _fv_flux_kernels)
-    if (_do_jacobian)
-      k->computeJacobian(fi);
-    else
-      k->computeResidual(fi);
+  for (auto * const k : _fv_flux_kernels)
+    compute(*k, fi);
 }
 
-template <typename RangeType>
+template <typename RangeType, typename AttributeTagType>
 void
-ComputeFVFluxThread<RangeType>::onBoundary(const FaceInfo & fi, BoundaryID bnd_id)
+ComputeFVFluxThread<RangeType, AttributeTagType>::onBoundary(const FaceInfo & fi, BoundaryID bnd_id)
 {
-  // We don't want to do bcs when computing a scaling Jacobian or residual because they might
-  // introduce things like penalty factors
-  mooseAssert(
-      !_do_jacobian ? !_scaling_jacobian : true,
-      "If we're computing the residual, then we definitely shouldn't be computing a scaling "
-      "Jacobian.");
-  mooseAssert(_do_jacobian ? !_scaling_residual : true,
-              "If we're computing the Jacobian, then we definitely shouldn't be computing a "
-              "scaling residual");
-
   if (_scaling_jacobian || _scaling_residual)
     return;
 
   std::vector<FVFluxBC *> bcs;
   _fe_problem.theWarehouse()
       .query()
+      .template condition<AttribSysNum>(_nl_system_num)
       .template condition<AttribSystem>("FVFluxBC")
       .template condition<AttribThread>(_tid)
-      .template condition<AttribVectorTags>(_tags)
+      .template condition<AttributeTagType>(_tags)
       .template condition<AttribBoundaries>(bnd_id)
       .queryInto(bcs);
 
-  for (const auto & bc : bcs)
-    if (_do_jacobian)
-      bc->computeJacobian(fi);
-    else
-      bc->computeResidual(fi);
+  for (auto * const bc : bcs)
+    compute(*bc, fi);
 
   std::vector<FVInterfaceKernel *> iks;
   _fe_problem.theWarehouse()
       .query()
+      .template condition<AttribSysNum>(_nl_system_num)
       .template condition<AttribSystem>("FVInterfaceKernel")
       .template condition<AttribThread>(_tid)
-      .template condition<AttribVectorTags>(_tags)
+      .template condition<AttributeTagType>(_tags)
       .template condition<AttribBoundaries>(bnd_id)
       .queryInto(iks);
 
-  for (const auto & ik : iks)
-    if (_do_jacobian)
-      ik->computeJacobian(fi);
-    else
-      ik->computeResidual(fi);
+  for (auto * const ik : iks)
+    compute(*ik, fi);
 }
 
-template <typename RangeType>
+template <typename RangeType, typename AttributeTagType>
 void
-ComputeFVFluxThread<RangeType>::postFace(const FaceInfo & /*fi*/)
-{
-  _num_cached++;
-  if (_do_jacobian)
-  {
-    // TODO: do we need both calls - or just the neighbor one? - confirm this
-    _fe_problem.cacheJacobian(_tid);
-    _fe_problem.cacheJacobianNeighbor(_tid);
-
-    if (_num_cached % 20 == 0)
-    {
-      Threads::spin_mutex::scoped_lock lock(Threads::spin_mtx);
-      _fe_problem.addCachedJacobian(_tid);
-    }
-  }
-  else
-  {
-    // TODO: do we need both calls - or just the neighbor one? - confirm this
-    _fe_problem.cacheResidual(_tid);
-    _fe_problem.cacheResidualNeighbor(_tid);
-
-    if (_num_cached % 20 == 0)
-    {
-      Threads::spin_mutex::scoped_lock lock(Threads::spin_mtx);
-      _fe_problem.addCachedResidual(_tid);
-    }
-  }
-}
-
-template <typename RangeType>
-void
-ComputeFVFluxThread<RangeType>::post()
+ComputeFVFluxThread<RangeType, AttributeTagType>::post()
 {
   // make sure we add any remaining cached residuals/jacobians to add/record
   Threads::spin_mutex::scoped_lock lock(Threads::spin_mtx);
-  if (_do_jacobian)
-    _fe_problem.addCachedJacobian(_tid);
-  else
-    _fe_problem.addCachedResidual(_tid);
+  addCached();
 
   _fe_problem.clearActiveElementalMooseVariables(_tid);
   _fe_problem.clearActiveMaterialProperties(_tid);
 }
 
-template <typename RangeType>
+template <typename RangeType, typename AttributeTagType>
 void
-ComputeFVFluxThread<RangeType>::emptyDifferenceTest(const std::set<unsigned int> & requested,
-                                                    const std::set<unsigned int> & supplied,
-                                                    std::set<unsigned int> & difference)
+ComputeFVFluxThread<RangeType, AttributeTagType>::emptyDifferenceTest(
+    const std::set<unsigned int> & requested,
+    const std::set<unsigned int> & supplied,
+    std::set<unsigned int> & difference)
 {
   std::set_difference(requested.begin(),
                       requested.end(),
@@ -491,9 +563,9 @@ ComputeFVFluxThread<RangeType>::emptyDifferenceTest(const std::set<unsigned int>
       "variables? If so, that property needs to be moved to a material without FE coupling.");
 }
 
-template <typename RangeType>
+template <typename RangeType, typename AttributeTagType>
 void
-ComputeFVFluxThread<RangeType>::checkPropDeps(
+ComputeFVFluxThread<RangeType, AttributeTagType>::checkPropDeps(
     const std::vector<std::shared_ptr<MaterialBase>> & libmesh_dbg_var(mats)) const
 {
 #ifndef NDEBUG
@@ -546,9 +618,9 @@ ComputeFVFluxThread<RangeType>::checkPropDeps(
 #endif
 }
 
-template <typename RangeType>
+template <typename RangeType, typename AttributeTagType>
 void
-ComputeFVFluxThread<RangeType>::finalizeContainers()
+ComputeFVFluxThread<RangeType, AttributeTagType>::finalizeContainers()
 {
   //
   // Finalize our variables
@@ -608,9 +680,9 @@ ComputeFVFluxThread<RangeType>::finalizeContainers()
   checkPropDeps(_neigh_face_mats);
 }
 
-template <typename RangeType>
+template <typename RangeType, typename AttributeTagType>
 void
-ComputeFVFluxThread<RangeType>::subdomainChanged()
+ComputeFVFluxThread<RangeType, AttributeTagType>::subdomainChanged()
 {
   ThreadedFaceLoop<RangeType>::subdomainChanged();
 
@@ -637,10 +709,11 @@ ComputeFVFluxThread<RangeType>::subdomainChanged()
   std::vector<FVFluxKernel *> kernels;
   _fe_problem.theWarehouse()
       .query()
+      .template condition<AttribSysNum>(_nl_system_num)
       .template condition<AttribSystem>("FVFluxKernel")
       .template condition<AttribSubdomains>(_subdomain)
       .template condition<AttribThread>(_tid)
-      .template condition<AttribVectorTags>(_tags)
+      .template condition<AttributeTagType>(_tags)
       .queryInto(kernels);
 
   _elem_sub_fv_flux_kernels = std::set<FVFluxKernel *>(kernels.begin(), kernels.end());
@@ -666,9 +739,9 @@ ComputeFVFluxThread<RangeType>::subdomainChanged()
   finalizeContainers();
 }
 
-template <typename RangeType>
+template <typename RangeType, typename AttributeTagType>
 void
-ComputeFVFluxThread<RangeType>::neighborSubdomainChanged()
+ComputeFVFluxThread<RangeType, AttributeTagType>::neighborSubdomainChanged()
 {
   ThreadedFaceLoop<RangeType>::neighborSubdomainChanged();
 
@@ -695,10 +768,11 @@ ComputeFVFluxThread<RangeType>::neighborSubdomainChanged()
   std::vector<FVFluxKernel *> kernels;
   _fe_problem.theWarehouse()
       .query()
+      .template condition<AttribSysNum>(_nl_system_num)
       .template condition<AttribSystem>("FVFluxKernel")
       .template condition<AttribSubdomains>(_neighbor_subdomain)
       .template condition<AttribThread>(_tid)
-      .template condition<AttribVectorTags>(_tags)
+      .template condition<AttributeTagType>(_tags)
       .queryInto(kernels);
 
   _neigh_sub_fv_flux_kernels = std::set<FVFluxKernel *>(kernels.begin(), kernels.end());
@@ -727,52 +801,43 @@ ComputeFVFluxThread<RangeType>::neighborSubdomainChanged()
   finalizeContainers();
 }
 
-template <typename RangeType>
+template <typename RangeType, typename AttributeTagType>
 void
-ComputeFVFluxThread<RangeType>::pre()
+ComputeFVFluxThread<RangeType, AttributeTagType>::pre()
 {
   std::vector<FVFluxBC *> bcs;
   _fe_problem.theWarehouse()
       .query()
+      .template condition<AttribSysNum>(_nl_system_num)
       .template condition<AttribSystem>("FVFluxBC")
       .template condition<AttribThread>(_tid)
-      .template condition<AttribVectorTags>(_tags)
+      .template condition<AttributeTagType>(_tags)
       .queryInto(bcs);
 
   std::vector<FVInterfaceKernel *> iks;
   _fe_problem.theWarehouse()
       .query()
+      .template condition<AttribSysNum>(_nl_system_num)
       .template condition<AttribSystem>("FVInterfaceKernel")
       .template condition<AttribThread>(_tid)
-      .template condition<AttribVectorTags>(_tags)
+      .template condition<AttributeTagType>(_tags)
       .queryInto(iks);
 
   std::vector<FVFluxKernel *> kernels;
   _fe_problem.theWarehouse()
       .query()
+      .template condition<AttribSysNum>(_nl_system_num)
       .template condition<AttribSystem>("FVFluxKernel")
       .template condition<AttribThread>(_tid)
-      .template condition<AttribVectorTags>(_tags)
+      .template condition<AttributeTagType>(_tags)
       .queryInto(kernels);
 
-  if (_do_jacobian)
-  {
-    for (auto * bc : bcs)
-      bc->jacobianSetup();
-    for (auto * ik : iks)
-      ik->jacobianSetup();
-    for (auto * kernel : kernels)
-      kernel->jacobianSetup();
-  }
-  else
-  {
-    for (auto * bc : bcs)
-      bc->residualSetup();
-    for (auto * ik : iks)
-      ik->residualSetup();
-    for (auto * kernel : kernels)
-      kernel->residualSetup();
-  }
+  for (auto * const bc : bcs)
+    setup(*bc);
+  for (auto * const ik : iks)
+    setup(*ik);
+  for (auto * const kernel : kernels)
+    setup(*kernel);
 
   // Clear variables
   _fv_vars.clear();
@@ -793,4 +858,280 @@ ComputeFVFluxThread<RangeType>::pre()
   _neigh_face_mats.clear();
   _elem_sub_neigh_face_mats.clear();
   _neigh_sub_neigh_face_mats.clear();
+}
+
+template <typename RangeType>
+class ComputeFVFluxResidualThread : public ComputeFVFluxThread<RangeType, AttribVectorTags>
+{
+public:
+  ComputeFVFluxResidualThread(FEProblemBase & fe_problem,
+                              const unsigned int nl_system_num,
+                              const std::set<TagID> & tags);
+
+  ComputeFVFluxResidualThread(ComputeFVFluxResidualThread & x, Threads::split split);
+
+protected:
+  using ComputeFVFluxThread<RangeType, AttribVectorTags>::_fe_problem;
+  using ComputeFVFluxThread<RangeType, AttribVectorTags>::_tid;
+  using ComputeFVFluxThread<RangeType, AttribVectorTags>::_nl_system_num;
+  using ComputeFVFluxThread<RangeType, AttribVectorTags>::_num_cached;
+
+  void postFace(const FaceInfo & fi) override;
+  void compute(FVFaceResidualObject & ro, const FaceInfo & fi) override { ro.computeResidual(fi); }
+  void setup(SetupInterface & obj) override { obj.residualSetup(); }
+  void addCached() override { _fe_problem.addCachedResidual(_tid); }
+};
+
+template <typename RangeType>
+ComputeFVFluxResidualThread<RangeType>::ComputeFVFluxResidualThread(
+    FEProblemBase & fe_problem, const unsigned int nl_system_num, const std::set<TagID> & tags)
+  : ComputeFVFluxThread<RangeType, AttribVectorTags>(fe_problem, nl_system_num, tags)
+{
+}
+
+template <typename RangeType>
+ComputeFVFluxResidualThread<RangeType>::ComputeFVFluxResidualThread(ComputeFVFluxResidualThread & x,
+                                                                    Threads::split split)
+  : ComputeFVFluxThread<RangeType, AttribVectorTags>(x, split)
+{
+}
+
+template <typename RangeType>
+void
+ComputeFVFluxResidualThread<RangeType>::postFace(const FaceInfo & /*fi*/)
+{
+  _num_cached++;
+  // TODO: do we need both calls - or just the neighbor one? - confirm this
+  _fe_problem.cacheResidual(_tid);
+  _fe_problem.cacheResidualNeighbor(_tid);
+
+  _fe_problem.addCachedResidual(_tid);
+}
+
+template <typename RangeType>
+class ComputeFVFluxJacobianThread : public ComputeFVFluxThread<RangeType, AttribMatrixTags>
+{
+public:
+  ComputeFVFluxJacobianThread(FEProblemBase & fe_problem,
+                              const unsigned int nl_system_num,
+                              const std::set<TagID> & tags);
+
+  ComputeFVFluxJacobianThread(ComputeFVFluxJacobianThread & x, Threads::split split);
+
+protected:
+  using ComputeFVFluxThread<RangeType, AttribMatrixTags>::_fe_problem;
+  using ComputeFVFluxThread<RangeType, AttribMatrixTags>::_tid;
+  using ComputeFVFluxThread<RangeType, AttribMatrixTags>::_num_cached;
+
+  void postFace(const FaceInfo & fi) override;
+  void compute(FVFaceResidualObject & ro, const FaceInfo & fi) override { ro.computeJacobian(fi); }
+  void setup(SetupInterface & obj) override { obj.jacobianSetup(); }
+  void addCached() override { _fe_problem.addCachedJacobian(_tid); }
+};
+
+template <typename RangeType>
+ComputeFVFluxJacobianThread<RangeType>::ComputeFVFluxJacobianThread(
+    FEProblemBase & fe_problem, const unsigned int nl_system_num, const std::set<TagID> & tags)
+  : ComputeFVFluxThread<RangeType, AttribMatrixTags>(fe_problem, nl_system_num, tags)
+{
+}
+
+template <typename RangeType>
+ComputeFVFluxJacobianThread<RangeType>::ComputeFVFluxJacobianThread(ComputeFVFluxJacobianThread & x,
+                                                                    Threads::split split)
+  : ComputeFVFluxThread<RangeType, AttribMatrixTags>(x, split)
+{
+}
+
+template <typename RangeType>
+void
+ComputeFVFluxJacobianThread<RangeType>::postFace(const FaceInfo & /*fi*/)
+{
+  _num_cached++;
+  // TODO: do we need both calls - or just the neighbor one? - confirm this
+  _fe_problem.cacheJacobian(_tid);
+  _fe_problem.cacheJacobianNeighbor(_tid);
+
+  if (_num_cached % 20 == 0)
+  {
+    Threads::spin_mutex::scoped_lock lock(Threads::spin_mtx);
+    _fe_problem.addCachedJacobian(_tid);
+  }
+}
+
+template <typename RangeType>
+class ComputeFVFluxRJThread : public ComputeFVFluxThread<RangeType, AttribVectorTags>
+{
+public:
+  ComputeFVFluxRJThread(FEProblemBase & fe_problem,
+                        const unsigned int nl_system_num,
+                        const std::set<TagID> & vector_tags,
+                        const std::set<TagID> & /*matrix_tags*/);
+
+  ComputeFVFluxRJThread(ComputeFVFluxRJThread & x, Threads::split split);
+
+protected:
+  using ComputeFVFluxThread<RangeType, AttribVectorTags>::_fe_problem;
+  using ComputeFVFluxThread<RangeType, AttribVectorTags>::_tid;
+  using ComputeFVFluxThread<RangeType, AttribVectorTags>::_num_cached;
+
+  void postFace(const FaceInfo & fi) override;
+  void compute(FVFaceResidualObject & ro, const FaceInfo & fi) override
+  {
+    ro.computeResidualAndJacobian(fi);
+  }
+  void setup(SetupInterface & obj) override { obj.residualSetup(); }
+  void addCached() override
+  {
+    _fe_problem.addCachedResidual(_tid);
+    _fe_problem.addCachedJacobian(_tid);
+  }
+};
+
+template <typename RangeType>
+ComputeFVFluxRJThread<RangeType>::ComputeFVFluxRJThread(FEProblemBase & fe_problem,
+                                                        const unsigned int nl_system_num,
+                                                        const std::set<TagID> & vector_tags,
+                                                        const std::set<TagID> & /*matrix_tags*/)
+  : ComputeFVFluxThread<RangeType, AttribVectorTags>(fe_problem, nl_system_num, vector_tags)
+{
+}
+
+template <typename RangeType>
+ComputeFVFluxRJThread<RangeType>::ComputeFVFluxRJThread(ComputeFVFluxRJThread & x,
+                                                        Threads::split split)
+  : ComputeFVFluxThread<RangeType, AttribVectorTags>(x, split)
+{
+}
+
+template <typename RangeType>
+void
+ComputeFVFluxRJThread<RangeType>::postFace(const FaceInfo & /*fi*/)
+{
+  _num_cached++;
+  // TODO: do we need both calls - or just the neighbor one? - confirm this
+  _fe_problem.cacheResidual(_tid);
+  _fe_problem.cacheResidualNeighbor(_tid);
+  _fe_problem.cacheJacobian(_tid);
+  _fe_problem.cacheJacobianNeighbor(_tid);
+
+  if (_num_cached % 20 == 0)
+  {
+    Threads::spin_mutex::scoped_lock lock(Threads::spin_mtx);
+    _fe_problem.addCachedResidual(_tid);
+    _fe_problem.addCachedJacobian(_tid);
+  }
+}
+
+template <typename RangeType, typename AttributeTagType>
+void
+ComputeFVFluxThread<RangeType, AttributeTagType>::printGeneralExecutionInformation() const
+{
+  if (!_fe_problem.shouldPrintExecution(_tid))
+    return;
+  auto & console = _fe_problem.console();
+  auto execute_on = _fe_problem.getCurrentExecuteOnFlag();
+  console << "[DBG] Beginning finite volume flux objects loop on " << execute_on << std::endl;
+  mooseDoOnce(console << "[DBG] Loop on faces (FaceInfo), objects ordered on each face: "
+                      << std::endl;
+              console << "[DBG] - (finite volume) flux kernels" << std::endl;
+              console << "[DBG] - (finite volume) flux boundary conditions" << std::endl;
+              console << "[DBG] - (finite volume) interface kernels" << std::endl;);
+}
+
+template <typename RangeType, typename AttributeTagType>
+void
+ComputeFVFluxThread<RangeType, AttributeTagType>::printBlockExecutionInformation() const
+{
+  if (!_fe_problem.shouldPrintExecution(_tid) || !_fv_flux_kernels.size())
+    return;
+
+  // Print the location of the execution
+  const auto block_pair = std::make_pair(_subdomain, _neighbor_subdomain);
+  const auto block_pair_names = this->getBlockNames();
+  if (_blocks_exec_printed.count(block_pair))
+    return;
+  auto & console = _fe_problem.console();
+  console << "[DBG] Flux kernels on block " << block_pair_names.first;
+  if (_neighbor_subdomain != Moose::INVALID_BLOCK_ID)
+    console << " and neighbor " << block_pair_names.second << std::endl;
+  else
+    console << " with no neighbor block" << std::endl;
+
+  // Print the list of objects
+  std::vector<MooseObject *> fv_flux_kernels;
+  for (const auto & fv_kernel : _fv_flux_kernels)
+    fv_flux_kernels.push_back(dynamic_cast<MooseObject *>(fv_kernel));
+  console << ConsoleUtils::formatString(ConsoleUtils::mooseObjectVectorToString(fv_flux_kernels),
+                                        "[DBG]")
+          << std::endl;
+  _blocks_exec_printed.insert(block_pair);
+}
+
+template <typename RangeType, typename AttributeTagType>
+void
+ComputeFVFluxThread<RangeType, AttributeTagType>::printBoundaryExecutionInformation(
+    const BoundaryID bnd_id) const
+{
+  if (!_fe_problem.shouldPrintExecution(_tid))
+    return;
+  if (_boundaries_exec_printed.count(bnd_id))
+    return;
+  std::vector<MooseObject *> bcs;
+  _fe_problem.theWarehouse()
+      .query()
+      .template condition<AttribSystem>("FVFluxBC")
+      .template condition<AttribThread>(_tid)
+      .template condition<AttributeTagType>(_tags)
+      .template condition<AttribBoundaries>(bnd_id)
+      .queryInto(bcs);
+
+  std::vector<MooseObject *> iks;
+  _fe_problem.theWarehouse()
+      .query()
+      .template condition<AttribSystem>("FVInterfaceKernel")
+      .template condition<AttribThread>(_tid)
+      .template condition<AttributeTagType>(_tags)
+      .template condition<AttribBoundaries>(bnd_id)
+      .queryInto(iks);
+
+  const auto block_pair_names = this->getBlockNames();
+  if (bcs.size())
+  {
+    auto & console = _fe_problem.console();
+    console << "[DBG] FVBCs on boundary " << bnd_id << " between subdomain "
+            << block_pair_names.first;
+    if (_neighbor_subdomain != Moose::INVALID_BLOCK_ID)
+      console << " and neighbor " << block_pair_names.second << std::endl;
+    else
+      console << " and the exterior of the mesh " << std::endl;
+    const std::string fv_bcs = ConsoleUtils::mooseObjectVectorToString(bcs);
+    console << ConsoleUtils::formatString(fv_bcs, "[DBG]") << std::endl;
+  }
+  if (iks.size())
+  {
+    auto & console = _fe_problem.console();
+    console << "[DBG] FVIKs on boundary " << bnd_id << " between subdomain "
+            << block_pair_names.first;
+    if (_neighbor_subdomain != Moose::INVALID_BLOCK_ID)
+      console << " and neighbor " << block_pair_names.second << std::endl;
+    else
+      console << " and the exterior of the mesh " << std::endl;
+    const std::string fv_iks = ConsoleUtils::mooseObjectVectorToString(iks);
+    console << ConsoleUtils::formatString(fv_iks, "[DBG]") << std::endl;
+  }
+  _boundaries_exec_printed.insert(bnd_id);
+}
+
+template <typename RangeType, typename AttributeTagType>
+std::pair<SubdomainName, SubdomainName>
+ComputeFVFluxThread<RangeType, AttributeTagType>::getBlockNames() const
+{
+  auto block_names = std::make_pair(_mesh.getSubdomainName(_subdomain),
+                                    _mesh.getSubdomainName(_neighbor_subdomain));
+  if (block_names.first == "")
+    block_names.first = Moose::stringify(_subdomain);
+  if (block_names.second == "")
+    block_names.second = Moose::stringify(_neighbor_subdomain);
+  return block_names;
 }

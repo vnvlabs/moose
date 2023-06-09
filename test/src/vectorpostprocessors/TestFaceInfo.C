@@ -49,13 +49,7 @@ TestFaceInfo::TestFaceInfo(const InputParameters & parameters)
   {
     _vars = getParam<std::vector<VariableName>>("vars");
     for (auto & v : _vars)
-    {
-      _var_elem_dof.push_back(&declareVector(v + "_elem"));
-      _var_neighbor_dof.push_back(&declareVector(v + "_neighbor"));
-      _var_elem_dof_size.push_back(&declareVector(v + "_size_elem"));
-      _var_neighbor_dof_size.push_back(&declareVector(v + "_size_neighbor"));
       _var_face_type.push_back(&declareVector(v + "_face_type"));
-    }
   }
 }
 
@@ -69,11 +63,6 @@ TestFaceInfo::execute()
     _face_area.push_back(p->faceArea());
     _elem_element_id.push_back(p->elem().id());
     _elem_element_side.push_back(p->elemSideID());
-    // the neighbor element might be a nullptr
-    if (p->neighborPtr())
-      _neighbor_element_id.push_back(p->neighbor().id());
-    else
-      _neighbor_element_id.push_back(-1);
 
     Point normal = p->normal();
     _nx.push_back(normal(0));
@@ -87,45 +76,44 @@ TestFaceInfo::execute()
     _elem_cx.push_back(lc(0));
     _elem_cy.push_back(lc(1));
     _elem_cz.push_back(lc(2));
-    Point rc = p->neighborCentroid();
-    _neighbor_cx.push_back(rc(0));
-    _neighbor_cy.push_back(rc(1));
-    _neighbor_cz.push_back(rc(2));
+    if (p->neighborPtr())
+    {
+      _neighbor_element_id.push_back(p->neighbor().id());
+      _neighbor_element_side.push_back(p->neighborSideID());
+      Point rc = p->neighborCentroid();
+      _neighbor_cx.push_back(rc(0));
+      _neighbor_cy.push_back(rc(1));
+      _neighbor_cz.push_back(rc(2));
+    }
+    else
+    {
+      _neighbor_element_id.push_back(-1);
+      _neighbor_element_side.push_back(-1);
+      _neighbor_cx.push_back(std::numeric_limits<double>::max());
+      _neighbor_cy.push_back(std::numeric_limits<double>::max());
+      _neighbor_cz.push_back(std::numeric_limits<double>::max());
+    }
 
     for (unsigned int l = 0; l < _vars.size(); ++l)
     {
-      std::vector<dof_id_type> elemdofs;
-      std::vector<dof_id_type> neighbordofs;
-      elemdofs = p->elemDofIndices(_vars[l]);
-      neighbordofs = p->neighborDofIndices(_vars[l]);
       FaceInfo::VarFaceNeighbors vfn = p->faceType(_vars[l]);
       Real x = 0;
       switch (vfn)
       {
         case FaceInfo::VarFaceNeighbors::BOTH:
-          _var_elem_dof[l]->push_back(elemdofs[0]);
-          _var_neighbor_dof[l]->push_back(neighbordofs[0]);
           x = 1;
           break;
         case FaceInfo::VarFaceNeighbors::ELEM:
-          _var_elem_dof[l]->push_back(elemdofs[0]);
-          _var_neighbor_dof[l]->push_back(-1);
           x = 2;
           break;
         case FaceInfo::VarFaceNeighbors::NEIGHBOR:
-          _var_elem_dof[l]->push_back(-1);
-          _var_neighbor_dof[l]->push_back(neighbordofs[0]);
           x = 3;
           break;
         case FaceInfo::VarFaceNeighbors::NEITHER:
-          _var_elem_dof[l]->push_back(-1);
-          _var_neighbor_dof[l]->push_back(-1);
           x = 4;
           break;
       }
       _var_face_type[l]->push_back(x);
-      _var_elem_dof_size[l]->push_back(elemdofs.size());
-      _var_neighbor_dof_size[l]->push_back(neighbordofs.size());
     }
     ++j;
   }

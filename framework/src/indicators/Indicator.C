@@ -45,6 +45,7 @@ Indicator::Indicator(const InputParameters & parameters)
     SetupInterface(this),
     FunctionInterface(this),
     UserObjectInterface(this),
+    MooseVariableDependencyInterface(this),
     Restartable(this, "Indicators"),
     OutputInterface(parameters),
     MaterialPropertyInterface(this, blockIDs(), Moose::EMPTY_BOUNDARY_IDS),
@@ -53,7 +54,7 @@ Indicator::Indicator(const InputParameters & parameters)
     _sys(*getCheckedPointerParam<SystemBase *>("_sys")),
     _solution(_sys.solution()),
     _tid(parameters.get<THREAD_ID>("_tid")),
-    _assembly(_subproblem.assembly(_tid)),
+    _assembly(_subproblem.assembly(_tid, 0)),
     _mesh(_subproblem.mesh())
 {
 }

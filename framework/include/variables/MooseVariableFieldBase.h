@@ -24,8 +24,7 @@ class FaceInfo;
 
 /**
  * This class provides an interface for common operations on field variables of
- * both FE and FV types with all their scalar, vector, eigenvector
- * permuations.
+ * both FE and FV types with all their scalar, vector, eigenvector permutations.
  */
 class MooseVariableFieldBase : public MooseVariableBase
 {
@@ -75,6 +74,11 @@ public:
   virtual bool isArray() const = 0;
 
   /**
+   * Get the variable name of a component in libMesh
+   */
+  std::string componentName(const unsigned int comp) const;
+
+  /**
    * @returns true if this is a vector-valued element, false otherwise.
    */
   virtual bool isVector() const = 0;
@@ -98,13 +102,21 @@ public:
   /**
    * The subdomains the variable is active on
    */
-  virtual const std::set<SubdomainID> & activeSubdomains() const = 0;
+  const std::set<SubdomainID> & activeSubdomains() const;
+
   /**
    * Is the variable active on the subdomain?
    * @param subdomain The subdomain id in question
    * @return true if active on subdomain, false otherwise
    */
-  virtual bool activeOnSubdomain(SubdomainID subdomain) const = 0;
+  bool activeOnSubdomain(SubdomainID subdomain) const;
+
+  /**
+   * Is the variable active on the subdomains?
+   * @param subdomains The subdomain ids in question
+   * @return true if active on all provided subdomains, false otherwise
+   */
+  bool activeOnSubdomains(const std::set<SubdomainID> & subdomains) const;
 
   /**
    * Prepare the initial condition

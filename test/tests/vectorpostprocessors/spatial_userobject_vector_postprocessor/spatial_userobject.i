@@ -44,7 +44,7 @@
 [Functions]
   [u]
     type = ParsedFunction
-    value = 'x+2*y+3*z'
+    expression = 'x+2*y+3*z'
   []
 []
 
@@ -74,7 +74,6 @@
 []
 
 [Outputs]
-  exodus = true
   csv = true
   execute_on = 'final'
   hide = 'dummy'

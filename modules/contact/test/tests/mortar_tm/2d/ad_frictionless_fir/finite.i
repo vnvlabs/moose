@@ -88,7 +88,6 @@ name = 'finite'
     primary = plank_right
     secondary = block_left
     formulation = mortar
-    mortar_approach = weighted
     c_normal = 1e0
   []
 []
@@ -207,7 +206,6 @@ name = 'finite'
 []
 
 [Outputs]
-  exodus = true
   file_base = ${name}
   [comp]
     type = CSV

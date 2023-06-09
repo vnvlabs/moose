@@ -71,7 +71,7 @@ public:
   /// hash to completely unrelated values.  Use of std::hash for POD is encouraged.  A convenience
   /// hash_combine function is also provided to combine the results an existing hash with one or
   /// more other values.
-  virtual size_t hash() const = 0;
+  virtual std::size_t hash() const = 0;
 
   /// initFrom reads and stores the desired meta-data from obj for later matching comparisons.
   virtual void initFrom(const MooseObject * obj) = 0;
@@ -91,6 +91,53 @@ private:
   int _id = -1;
 };
 
+#define clonefunc(T)                                                                               \
+  virtual std::unique_ptr<Attribute> clone() const override                                        \
+  {                                                                                                \
+    return std::unique_ptr<Attribute>(new T(*this));                                               \
+  }
+
+#define hashfunc(...)                                                                              \
+  virtual std::size_t hash() const override                                                        \
+  {                                                                                                \
+    std::size_t h = 0;                                                                             \
+    Moose::hash_combine(h, __VA_ARGS__);                                                           \
+    return h;                                                                                      \
+  }
+
+/**
+ * This attribute describes sorting state
+ */
+class AttribSorted : public Attribute
+{
+public:
+  typedef bool Key;
+  void setFrom(const Key & k) { _val = k; }
+
+  AttribSorted(TheWarehouse & w) : Attribute(w, "sorted"), _val(false), _initd(false) {}
+  AttribSorted(TheWarehouse & w, bool is_sorted)
+    : Attribute(w, "sorted"), _val(is_sorted), _initd(true)
+  {
+  }
+  AttribSorted(const AttribSorted &) = default;
+  AttribSorted(AttribSorted &&) = default;
+  AttribSorted & operator=(const AttribSorted &) = default;
+  AttribSorted & operator=(AttribSorted &&) = default;
+
+  virtual void initFrom(const MooseObject * obj) override;
+  virtual bool isMatch(const Attribute & other) const override;
+  virtual bool isEqual(const Attribute & other) const override;
+  hashfunc(_val);
+  clonefunc(AttribSorted);
+
+private:
+  bool _val;
+  bool _initd;
+};
+
+#undef clonefunc
+#undef hashfunc
+
 /// TheWarehouse uses this operator function for indexing and caching queries. So this is
 /// important even though you don't see it being called (directly) anywhere - it *IS* being used.
 bool operator==(const std::unique_ptr<Attribute> & lhs, const std::unique_ptr<Attribute> & rhs);
@@ -102,9 +149,9 @@ template <>
 struct hash<Attribute>
 {
 public:
-  size_t operator()(const Attribute & attrib) const
+  std::size_t operator()(const Attribute & attrib) const
   {
-    size_t h = attrib.hash();
+    std::size_t h = attrib.hash();
     Moose::hash_combine(h, attrib.id());
     return h;
   }
@@ -115,9 +162,9 @@ template <>
 struct hash<std::vector<std::unique_ptr<Attribute>>>
 {
 public:
-  size_t operator()(const std::vector<std::unique_ptr<Attribute>> & attribs) const
+  std::size_t operator()(const std::vector<std::unique_ptr<Attribute>> & attribs) const
   {
-    size_t h = 0;
+    std::size_t h = 0;
     for (auto & attrib : attribs)
       Moose::hash_combine(h, *attrib);
     return h;
@@ -197,7 +244,7 @@ public:
       // do NOT copy the cache.
 
       // only copy over non-parametrized attributes
-      for (size_t i = std::tuple_size<AttribTuple>::value; i < other._attribs.size(); i++)
+      for (std::size_t i = std::tuple_size<AttribTuple>::value; i < other._attribs.size(); i++)
         _attribs.push_back(other._attribs[i]->clone());
       return *this;
     }
@@ -224,7 +271,7 @@ public:
 
       // initialize parametrized attributes and tuple:
       addAttribs<0, Attribs...>(); // MUST have own pointers to attribs to avoid data races.
-      for (size_t i = std::tuple_size<AttribTuple>::value; i < other._attribs.size(); i++)
+      for (std::size_t i = std::tuple_size<AttribTuple>::value; i < other._attribs.size(); i++)
         _attribs.push_back(other._attribs[i]->clone());
     }
 
@@ -244,7 +291,7 @@ public:
     QueryCache clone() const { return Query(*this); }
     /// count returns the number of results that match the query (this requires actually running
     /// the query).
-    size_t count() { return _w->count(_attribs); }
+    std::size_t count() { return _w->count(_attribs); }
 
     TheWarehouse & warehouse() const { return *_w; }
 
@@ -256,20 +303,58 @@ public:
     /// than zero template arguments) args must contain one value for each
     /// parametrized query attribute - the types of args should be equal to the
     /// ::Key typedef specified for each corresponding parametrized attribute.
-    /// All results must be castable to the templated type T.
+    /// All results must be castable to the templated type T. If the objects
+    /// we are querying into inherit from the dependency resolver interface, then
+    /// they will be sorted
     template <typename T, typename... Args>
     std::vector<T *> & queryInto(std::vector<T *> & results, Args &&... args)
+    {
+      return queryIntoHelper(results, true, args...);
+    }
+
+    /// queryInto executes the query and stores the results in the given
+    /// vector.  For parametrized queries (i.e. QueryCaches created with more
+    /// than zero template arguments) args must contain one value for each
+    /// parametrized query attribute - the types of args should be equal to the
+    /// ::Key typedef specified for each corresponding parametrized attribute.
+    /// All results must be castable to the templated type T. These objects
+    /// will not be sorted
+    template <typename T, typename... Args>
+    std::vector<T *> & queryIntoUnsorted(std::vector<T *> & results, Args &&... args)
+    {
+      return queryIntoHelper(results, false, args...);
+    }
+
+    /// Gets the number of attributes associated with the cached query
+    std::size_t numAttribs() const { return _attribs.size(); }
+
+  private:
+    /// queryInto executes the query and stores the results in the given
+    /// vector.  For parametrized queries (i.e. QueryCaches created with more
+    /// than zero template arguments) args must contain one value for each
+    /// parametrized query attribute - the types of args should be equal to the
+    /// ::Key typedef specified for each corresponding parametrized attribute.
+    /// All results must be castable to the templated type T. If the objects
+    /// we are querying into inherit from the dependency resolver interface, then
+    /// they will be sorted if \p sort is true
+    template <typename T, typename... Args>
+    std::vector<T *> & queryIntoHelper(std::vector<T *> & results, const bool sort, Args &&... args)
     {
       std::lock_guard<std::mutex> lock(_cache_mutex);
       setKeysInner<0, KeyType<Attribs>...>(args...);
 
-      size_t query_id;
-      const auto entry = _cache.find(_key_tup);
+      std::size_t query_id;
+      const auto entry = _cache.find(std::make_pair(sort, _key_tup));
       if (entry == _cache.end())
       {
         setAttribsInner<0, KeyType<Attribs>...>(args...);
+        // add the sort attribute. No need (I think) to clear the cache because the base query is
+        // not changing
+        _attribs.emplace_back(new AttribSorted(*_w, sort));
         query_id = _w->queryID(_attribs);
-        _cache[_key_tup] = query_id;
+        _cache[std::make_pair(sort, _key_tup)] = query_id;
+        // remove the sort attribute
+        _attribs.pop_back();
       }
       else
         query_id = entry->second;
@@ -277,10 +362,6 @@ public:
       return _w->queryInto(query_id, results);
     }
 
-    /// Gets the number of attributes associated with the cached query
-    std::size_t numAttribs() const { return _attribs.size(); }
-
-  private:
     template <int Index, typename A, typename... As>
     void addAttribs()
     {
@@ -320,7 +401,7 @@ public:
 
     KeyTuple _key_tup;
     AttribTuple _attrib_tup;
-    std::map<KeyTuple, size_t> _cache;
+    std::map<std::pair<bool, KeyTuple>, std::size_t> _cache;
     std::mutex _cache_mutex;
   };
 
@@ -385,7 +466,7 @@ public:
   /// count returns the number of objects that match the provided query conditions. This requires
   /// executing a full query operation (i.e. as if calling queryInto). A Query object should
   /// generally be used via the query() member function instead.
-  size_t count(const std::vector<std::unique_ptr<Attribute>> & conds);
+  std::size_t count(const std::vector<std::unique_ptr<Attribute>> & conds);
   /// queryInto takes the given conditions (i.e. Attributes holding the values to filter/match
   /// over) and filters all objects in the warehouse that match all conditions (i.e. "and"ing the
   /// conditions together) and stores them in the results vector. All result objects must be
@@ -398,7 +479,7 @@ public:
     return queryInto(queryID(conds), results);
   }
 
-  size_t queryID(const std::vector<std::unique_ptr<Attribute>> & conds);
+  std::size_t queryID(const std::vector<std::unique_ptr<Attribute>> & conds);
 
   template <typename T>
   std::vector<T *> & queryInto(int query_id, std::vector<T *> & results, bool show_all = false)
@@ -430,7 +511,7 @@ private:
 
   std::unique_ptr<Storage> _store;
   std::vector<std::shared_ptr<MooseObject>> _objects;
-  std::unordered_map<MooseObject *, size_t> _obj_ids;
+  std::unordered_map<MooseObject *, std::size_t> _obj_ids;
 
   // Results from queries are cached here. The outer vector index is the query id as stored by the
   // _query_cache data structure.  A list objects that match each query id are stored.

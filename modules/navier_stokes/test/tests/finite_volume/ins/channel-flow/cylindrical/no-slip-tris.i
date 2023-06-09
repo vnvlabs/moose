@@ -1,7 +1,7 @@
-mu=1
-rho=1
-advected_interp_method='average'
-velocity_interp_method='rc'
+mu = 1
+rho = 1
+advected_interp_method = 'average'
+velocity_interp_method = 'rc'
 
 [GlobalParams]
   two_term_boundary_expansion = true
@@ -11,8 +11,8 @@ velocity_interp_method='rc'
 [UserObjects]
   [rc]
     type = INSFVRhieChowInterpolator
-    u = u
-    v = v
+    u = vel_x
+    v = vel_y
     pressure = pressure
   []
 []
@@ -28,16 +28,15 @@ velocity_interp_method='rc'
 []
 
 [Problem]
-  fv_bcs_integrity_check = true
   coord_type = 'RZ'
 []
 
 [Variables]
-  [u]
+  [vel_x]
     type = INSFVVelocityVariable
     initial_condition = 1e-15
   []
-  [v]
+  [vel_y]
     type = INSFVVelocityVariable
     initial_condition = 1e-15
   []
@@ -57,7 +56,7 @@ velocity_interp_method='rc'
 
   [u_advection]
     type = INSFVMomentumAdvection
-    variable = u
+    variable = vel_x
     advected_interp_method = ${advected_interp_method}
     velocity_interp_method = ${velocity_interp_method}
     rho = ${rho}
@@ -65,20 +64,20 @@ velocity_interp_method='rc'
   []
   [u_viscosity]
     type = INSFVMomentumDiffusion
-    variable = u
+    variable = vel_x
     mu = ${mu}
     momentum_component = 'x'
   []
   [u_pressure]
     type = INSFVMomentumPressure
-    variable = u
+    variable = vel_x
     momentum_component = 'x'
     pressure = pressure
   []
 
   [v_advection]
     type = INSFVMomentumAdvection
-    variable = v
+    variable = vel_y
     advected_interp_method = ${advected_interp_method}
     velocity_interp_method = ${velocity_interp_method}
     rho = ${rho}
@@ -87,13 +86,13 @@ velocity_interp_method='rc'
   []
   [v_viscosity]
     type = INSFVMomentumDiffusion
-    variable = v
+    variable = vel_y
     mu = ${mu}
     momentum_component = 'y'
   []
   [v_pressure]
     type = INSFVMomentumPressure
-    variable = v
+    variable = vel_y
     momentum_component = 'y'
     pressure = pressure
   []
@@ -105,37 +104,37 @@ velocity_interp_method='rc'
   [inlet-u]
     type = INSFVInletVelocityBC
     boundary = 'bottom'
-    variable = u
+    variable = vel_x
     function = 0
   []
   [inlet-v]
     type = INSFVInletVelocityBC
     boundary = 'bottom'
-    variable = v
+    variable = vel_y
     function = 1
   []
   [free-slip-wall-u]
     type = INSFVNaturalFreeSlipBC
     boundary = 'right'
-    variable = u
+    variable = vel_x
     momentum_component = 'x'
   []
   [free-slip-wall-v]
     type = INSFVNaturalFreeSlipBC
     boundary = 'right'
-    variable = v
+    variable = vel_y
     momentum_component = 'y'
   []
   [no-slip-wall-u]
     type = INSFVNoSlipWallBC
     boundary = 'right'
-    variable = u
+    variable = vel_x
     function = 0
   []
   [no-slip-wall-v]
     type = INSFVNoSlipWallBC
     boundary = 'right'
-    variable = v
+    variable = vel_y
     function = 0
   []
   [outlet-p]
@@ -147,18 +146,18 @@ velocity_interp_method='rc'
   [axis-u]
     type = INSFVSymmetryVelocityBC
     boundary = 'left'
-    variable = u
-    u = u
-    v = v
+    variable = vel_x
+    u = vel_x
+    v = vel_y
     mu = ${mu}
     momentum_component = x
   []
   [axis-v]
     type = INSFVSymmetryVelocityBC
     boundary = 'left'
-    variable = v
-    u = u
-    v = v
+    variable = vel_y
+    u = vel_x
+    v = vel_y
     mu = ${mu}
     momentum_component = y
   []
@@ -172,10 +171,8 @@ velocity_interp_method='rc'
 [Executioner]
   type = Steady
   solve_type = 'NEWTON'
-  petsc_options = '-options_left'
-  petsc_options_iname = '-pc_type -sub_pc_type -sub_pc_factor_shift_type -ksp_gmres_restart'
-  petsc_options_value = 'asm      lu           NONZERO                   200'
-  line_search = 'none'
+  petsc_options_iname = '-pc_type -pc_factor_shift_type'
+  petsc_options_value = 'lu NONZERO'
   nl_rel_tol = 1e-12
 []
 
@@ -186,12 +183,12 @@ velocity_interp_method='rc'
 [Postprocessors]
   [in]
     type = SideIntegralVariablePostprocessor
-    variable = v
+    variable = vel_y
     boundary = 'bottom'
   []
   [out]
     type = SideIntegralVariablePostprocessor
-    variable = v
+    variable = vel_y
     boundary = 'top'
   []
   [num_lin]

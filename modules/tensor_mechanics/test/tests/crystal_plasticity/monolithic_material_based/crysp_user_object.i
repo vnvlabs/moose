@@ -51,13 +51,13 @@
 [Functions]
   [./tdisp]
     type = ParsedFunction
-    value = 0.01*t
+    expression = 0.01*t
   [../]
 []
 
 [UserObjects]
   [./prop_read]
-    type = ElementPropertyReadFile
+    type = PropertyReadFile
     prop_file_name = 'euler_ang_file.txt'
     # Enter file data as prop#1, prop#2, .., prop#nprop
     nprop = 3

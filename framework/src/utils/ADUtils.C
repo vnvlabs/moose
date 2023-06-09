@@ -9,7 +9,7 @@
 
 #include "ADUtils.h"
 
-#include "SystemBase.h"
+#include "NonlinearSystemBase.h"
 #include "SubProblem.h"
 #include "Assembly.h"
 #include "MooseError.h"
@@ -25,7 +25,9 @@ globalDofIndexToDerivative(const ADReal & ad_real,
                            const ElementType elem_type /*=ElementType::Element*/,
                            const THREAD_ID tid /*=0*/)
 {
-  const Assembly & assembly = sys.subproblem().assembly(tid);
+  mooseAssert(dynamic_cast<const NonlinearSystemBase *>(&sys),
+              "This must be a nonlinear system base object");
+  const Assembly & assembly = sys.subproblem().assembly(tid, sys.number());
   const Elem * elem;
   switch (elem_type)
   {
@@ -67,13 +69,7 @@ globalDofIndexToDerivative(const ADReal & ad_real,
     // Map from global index to derivative
     for (MooseIndex(global_indices) local_index = 0; local_index < global_indices.size();
          ++local_index)
-    {
-#ifndef MOOSE_SPARSE_AD
-      mooseAssert(ad_offset + local_index < MOOSE_AD_MAX_DOFS_PER_ELEM,
-                  "Out of bounds access in derivative vector.");
-#endif
       ret_val[global_indices[local_index]] = ad_real.derivatives()[ad_offset + local_index];
-    }
   }
 
   return ret_val;

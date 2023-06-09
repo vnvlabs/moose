@@ -54,7 +54,7 @@
 [Functions]
   [./temperature_load]
     type = ParsedFunction
-    value = t*(500.0)+300.0
+    expression = t*(500.0)+300.0
   [../]
 []
 
@@ -135,6 +135,7 @@
     thermal_expansion_coeff = 1.0e-5
     temperature = temp
     eigenstrain_name = eigenstrain1
+    mean_thermal_expansion_coefficient_name = mean1
   [../]
   [./thermal_expansion_strain2]
     type = ComputeThermalExpansionEigenstrain
@@ -142,6 +143,7 @@
     thermal_expansion_coeff = 0.3e-5
     temperature = temp
     eigenstrain_name = eigenstrain2
+    mean_thermal_expansion_coefficient_name = mean2
   [../]
 []
 
@@ -162,7 +164,6 @@
 []
 
 [Outputs]
-  csv = true
   exodus = true
   checkpoint = true
 []

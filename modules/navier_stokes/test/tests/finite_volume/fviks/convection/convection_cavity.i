@@ -92,7 +92,7 @@ advected_interp_method = 'average'
     block = 0
   []
   [mean_zero_pressure]
-    type = FVScalarLagrangeMultiplier
+    type = FVIntegralValueConstraint
     variable = pressure
     lambda = lambda
     block = 0
@@ -175,8 +175,8 @@ advected_interp_method = 'average'
     variable2 = Ts
     boundary = 'interface'
     h = 5
-    temp_solid = Ts
-    temp_fluid = T
+    T_solid = Ts
+    T_fluid = T
     subdomain1 = 0
     subdomain2 = 1
     bulk_distance = 0.3
@@ -237,7 +237,7 @@ advected_interp_method = 'average'
 [Functions]
   [lid_function]
     type = ParsedFunction
-    value = '4*x*(1-x)'
+    expression = '4*x*(1-x)'
   []
 []
 

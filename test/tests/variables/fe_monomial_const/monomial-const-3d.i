@@ -16,28 +16,28 @@
 [Functions]
   [./bc_fn]
     type=ParsedFunction
-    value=0
+    expression=0
   [../]
   [./bc_fnt]
     type = ParsedFunction
-    value = 0
+    expression = 0
   [../]
   [./bc_fnb]
     type = ParsedFunction
-    value = 0
+    expression = 0
   [../]
   [./bc_fnl]
     type = ParsedFunction
-    value = 0
+    expression = 0
   [../]
   [./bc_fnr]
     type = ParsedFunction
-    value = 0
+    expression = 0
   [../]
 
   [./forcing_fn]
 #    type = ParsedFunction
-#    value = 0
+#    expression = 0
     type = MTPiecewiseConst3D
   [../]
 
@@ -148,7 +148,6 @@
 
 [Outputs]
   execute_on = 'timestep_end'
-  csv = true
   [./out]
     type = Exodus
     elemental_as_nodal = true

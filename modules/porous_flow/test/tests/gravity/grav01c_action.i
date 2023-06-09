@@ -25,15 +25,13 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [the_simple_fluid]
-      type = SimpleFluidProperties
-      thermal_expansion = 0.0
-      bulk_modulus = 2.0
-      viscosity = 1.0
-      density0 = 1.0
-    []
+[FluidProperties]
+  [the_simple_fluid]
+    type = SimpleFluidProperties
+    thermal_expansion = 0.0
+    bulk_modulus = 2.0
+    viscosity = 1.0
+    density0 = 1.0
   []
 []
 
@@ -52,9 +50,9 @@
 [Functions]
   [ana_pp]
     type = ParsedFunction
-    vars = 'g B p0 rho0'
-    vals = '1 2 -1 1'
-    value = '-B*log(exp(-p0/B)+g*rho0*x/B)' # expected pp at base
+    symbol_names = 'g B p0 rho0'
+    symbol_values = '1 2 -1 1'
+    expression = '-B*log(exp(-p0/B)+g*rho0*x/B)' # expected pp at base
   []
 []
 

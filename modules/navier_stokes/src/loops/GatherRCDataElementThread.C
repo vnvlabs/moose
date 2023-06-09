@@ -10,17 +10,20 @@
 #include "GatherRCDataElementThread.h"
 #include "INSFVAttributes.h"
 #include "INSFVMomentumResidualObject.h"
+#include "FVElementalKernel.h"
+#include "FVTimeKernel.h"
 
 GatherRCDataElementThread::GatherRCDataElementThread(FEProblemBase & fe_problem,
+                                                     const unsigned int nl_sys_number,
                                                      const std::vector<unsigned int> & vars)
-  : ThreadedElementLoop<ConstElemRange>(fe_problem), _vars(vars)
+  : ThreadedElementLoop<ConstElemRange>(fe_problem), _nl_system_num(nl_sys_number), _vars(vars)
 {
 }
 
 // Splitting Constructor
 GatherRCDataElementThread::GatherRCDataElementThread(GatherRCDataElementThread & x,
                                                      Threads::split split)
-  : ThreadedElementLoop<ConstElemRange>(x, split), _vars(x._vars)
+  : ThreadedElementLoop<ConstElemRange>(x, split), _nl_system_num(x._nl_system_num), _vars(x._vars)
 {
 }
 
@@ -34,6 +37,7 @@ GatherRCDataElementThread::subdomainChanged()
   auto queries = _fe_problem.theWarehouse()
                      .query()
                      .template condition<AttribSystem>("FVElementalKernel")
+                     .template condition<AttribSysNum>(this->_nl_system_num)
                      .template condition<AttribThread>(_tid)
                      .template condition<AttribSubdomains>(_subdomain);
 
@@ -43,10 +47,11 @@ GatherRCDataElementThread::subdomainChanged()
     // any results out of the query (e.g. an object cannot have a variable that simultaneously has
     // both var number 0 and 1)
     auto copied_queries = queries;
-    std::vector<INSFVMomentumResidualObject *> var_eks;
+    std::vector<FVElementalKernel *> var_eks;
     copied_queries.template condition<AttribVar>(static_cast<int>(var_num)).queryInto(var_eks);
-    for (auto * const var_ek : var_eks)
-      _insfv_elemental_kernels.push_back(var_ek);
+    for (auto var_ek : var_eks)
+      if (auto insfv_ek = dynamic_cast<INSFVMomentumResidualObject *>(var_ek))
+        _insfv_elemental_kernels.push_back(insfv_ek);
   }
 }
 

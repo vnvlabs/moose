@@ -1,8 +1,27 @@
 [Tests]
   [rom]
-    issues = '#14046 #16520 #17287'
+    issues = '#14046 #16520 #17287 #20827'
     design = '/LAROMANCE.md'
     requirement = 'The system shall compute a creep rate based on a reduced order model '
+    [3tile_strain]
+      type = 'CSVDiff'
+      input = '3tile_strain.i'
+      csvdiff = '3tile_strain_out.csv'
+      cli_args = 'Materials/rom_stress_prediction/finite_difference_width=1e-2'
+      detail = 'and evolve over time with an good finite difference width.'
+      petsc_version = '>=3.9.0'
+      allow_test_objects = true
+    []
+    [3tile_strain_small_fd]
+      type = 'CSVDiff'
+      input = '3tile_strain.i'
+      csvdiff = '3tile_strain_small_fd_out.csv'
+      cli_args = 'Outputs/file_base=3tile_strain_small_fd_out Materials/rom_stress_prediction/finite_difference_width=1e-20'
+      detail = 'and evolve over time with an poor finite difference width with more nonlinear iterations than with a good finite difference width.'
+      petsc_version = '>=3.9.0'
+      allow_test_objects = true
+    []
+
     [3d]
       type = 'CSVDiff'
       input = '3d.i'
@@ -31,28 +50,34 @@
       allow_test_objects = true
     []
 
-    [verification]
+    [2drz_json]
       type = 'CSVDiff'
-      input = 'verification.i'
-      csvdiff = 'verification_1e-3_out.csv'
+      input = '2drz_json.i'
+      csvdiff = '2drz_json_out.csv'
+      detail = 'in 2DRz with a model loaded from a JSON data file.'
       petsc_version = '>=3.9.0'
-      cli_args = 'Executioner/dt=1e-3 Outputs/file_base=verification_1e-3_out'
-      max_parallel = 1
-      allow_test_objects = true
-      detail = 'in isolation (i.e. without a full displacement solve), and match with code-to-code '
-               'comparison with a small set of input parameters.'
     []
-    [verification_heavy]
+
+    [nonad_verification]
       type = 'CSVDiff'
-      input = 'verification.i'
-      csvdiff = 'verification_1e-5_out.csv'
-      heavy = true
+      input = 'nonad_verification.i'
+      csvdiff = 'nonad_verification_out.csv'
       petsc_version = '>=3.9.0'
-      cli_args = 'Executioner/dt=1e-5 Outputs/file_base=verification_1e-5_out'
       max_parallel = 1
       allow_test_objects = true
-      detail = 'in isolation (i.e. without a full displacement solve), and match with code-to-code '
-               'comparison with a large set of input parameters.'
+      detail = 'in isolation (i.e. without a full displacement solve), and match with code-to-code comparison with a small set of input parameters not using AD.'
+    []
+    [nonad_verification_heavy]
+      type = 'CSVDiff'
+      input = 'nonad_verification.i'
+      csvdiff = 'nonad_verification_heavy_out.csv'
+      heavy = true
+      max_time = 500
+      petsc_version = '>=3.9.0'
+      cli_args = 'Executioner/dt=1e-5 Outputs/file_base=nonad_verification_heavy_out Outputs/interval=100'
+      max_parallel = 1
+      allow_test_objects = true
+      detail = 'in isolation (i.e. without a full displacement solve), and match with code-to-code comparison with a large set of input parameters not using AD.'
     []
 
     [lower_limit]
@@ -70,13 +95,30 @@
       allow_test_objects = true
       detail = 'below the lower temperature limit and extrapolate correctly.'
     []
+    [lower_limit_error]
+      type = 'RunException'
+      input = lower_limit.i
+      expect_err = "In rom_stress_prediction: temperature input parameter with value \(500\) is out "
+                   "of lower global range"
+      cli_args = 'temp=500 disp=0.5e6 Materials/rom_stress_prediction/temperature_input_window_low_failure=ERROR'
+      allow_test_objects = true
+      detail = 'but should error out below the lower temperature limit if requested by the user.'
+    []
+    [upper_limit_error]
+      type = 'RunException'
+      input = lower_limit.i
+      expect_err = "In rom_stress_prediction: temperature input parameter with value \(2500\) is out "
+                   "of upper global range"
+      cli_args = 'temp=2500 disp=0.5e6 Materials/rom_stress_prediction/temperature_input_window_low_failure=ERROR'
+      allow_test_objects = true
+      detail = 'but should error out above the upper temperature limit if requested by the user.'
+    []
     [creep_ramp_sub_false]
       type = 'CSVDiff'
       input = creep_ramp_sub_false.i
       csvdiff = creep_ramp_sub_false_out.csv
       allow_test_objects = true
-      detail = 'when substepping is off and the time step size does not guarantee the most accurate '
-               'results.'
+      detail = 'when substepping is off and the time step size does not guarantee the most accurate results.'
     []
     [creep_ramp_sub_false_more_steps]
       type = 'CSVDiff'
@@ -91,8 +133,7 @@
       csvdiff = creep_ramp_sub_true_out.csv
       allow_test_objects = true
       allow_warnings = true
-      detail = 'when substepping is on and the numerical integration error selected by the user '
-               'guarantees accurate results.'
+      detail = 'when substepping is on and the numerical integration error selected by the user guarantees accurate results.'
     []
     [creep_ramp_sub_true_exception]
       type = 'RunApp'
@@ -101,10 +142,43 @@
       cli_args = 'Materials/rom_stress_prediction/substep_strain_tolerance=5.0e-6'
       allow_test_objects = true
       allow_warnings = true
-      detail = 'when substepping is on and the numerical integration error selected by the user '
-               'guarantees accurate results but substepping settings require a system-wise time step '
-               'cut because the computed number of substeps exceeds the maximum_number_substeps '
-               'parameter.'
+      detail = 'when substepping is on and the numerical integration error selected by the user guarantees accurate results but substepping settings require a system-wise time step cut because the computed number of substeps exceeds the maximum_number_substeps parameter.'
+    []
+
+    [3tile]
+      type = 'CSVDiff'
+      input = '3tile.i'
+      csvdiff = '3tile_out.csv'
+      detail = 'for a variety of overlapping tiles and two overlapping partitions.'
+      petsc_version = '>=3.9.0'
+      allow_test_objects = true
+    []
+
+    [3tile_json]
+      type = 'CSVDiff'
+      input = '3tile_json.i'
+      csvdiff = '3tile_json_out.csv'
+      detail = 'for a variety of overlapping tiles and two overlapping partitions with a model loaded from a JSON data file.'
+      petsc_version = '>=3.9.0'
+    []
+
+    [3tile_json_relative]
+      type = 'CSVDiff'
+      input = '3tile_json.i'
+      csvdiff = '3tile_json_out.csv'
+      cli_args = 'Materials/rom_stress_prediction/model=gold/3tile_json_export.json'
+      detail = 'for a variety of overlapping tiles and two overlapping partitions with a model loaded from a JSON data file relative to the input.'
+      petsc_version = '>=3.9.0'
+    []
+
+    [3tile_json_export]
+      type = 'JSONDiff'
+      input = '3tile.i'
+      jsondiff = '3tile_json_export.json'
+      detail = 'for a variety of overlapping tiles and two overlapping partitions, and be able to export the model data to a JSON file.'
+      petsc_version = '>=3.9.0'
+      cli_args = 'Materials/rom_stress_prediction/export_model=3tile_json_export.json'
+      allow_test_objects = true
     []
   []
   [ADrom]
@@ -164,28 +238,26 @@
       allow_test_objects = true
     []
 
-    [verification]
+    [ad_verification]
       type = 'CSVDiff'
-      input = 'ADverification.i'
-      csvdiff = 'verification_1e-3_out.csv'
+      input = 'ad_verification.i'
+      csvdiff = 'ad_verification_out.csv'
       petsc_version = '>=3.9.0'
-      cli_args = 'Executioner/dt=1e-3 Outputs/file_base=verification_1e-3_out'
       max_parallel = 1
       allow_test_objects = true
-      detail = 'in isolation (i.e. without a full displacement solve), and match with code-to-code '
-               'comparison with a small set of input parameters.'
+      detail = 'in isolation (i.e. without a full displacement solve), and match with code-to-code comparison with a small set of input parameters using AD.'
     []
-    [verification_heavy]
+    [ad_verification_heavy]
       type = 'CSVDiff'
-      input = 'ADverification.i'
-      csvdiff = 'verification_1e-5_out.csv'
+      input = 'ad_verification.i'
+      csvdiff = 'ad_verification_heavy_out.csv'
       heavy = true
+      max_time = 500
       petsc_version = '>=3.9.0'
-      cli_args = 'Executioner/dt=1e-5 Outputs/file_base=verification_1e-5_out'
+      cli_args = 'Executioner/dt=1e-5 Outputs/file_base=ad_verification_heavy_out Outputs/interval=100'
       max_parallel = 1
       allow_test_objects = true
-      detail = 'in isolation (i.e. without a full displacement solve), and match with code-to-code '
-               'comparison with a large set of input parameters.'
+      detail = 'in isolation (i.e. without a full displacement solve), and match with code-to-code comparison with a large set of input parameters using AD.'
     []
 
     [lower_limit]

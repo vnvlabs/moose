@@ -8,12 +8,12 @@
 [Functions]
   [./test_function]
     type = ParsedFunction
-    value = '2.5*x^2 + 0.75*y^2 + 0.15*x*y'
+    expression = '2.5*x^2 + 0.75*y^2 + 0.15*x*y'
   [../]
 []
 
 [AuxVariables]
-  [./from_master]
+  [./from_parent]
     family = monomial
     order = first
   [../]

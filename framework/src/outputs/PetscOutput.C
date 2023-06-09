@@ -21,11 +21,14 @@ PetscOutput::validParams()
   InputParameters params = Output::validParams();
 
   // Toggled for outputting nonlinear and linear residuals, only if we have PETSc
-  params.addParam<bool>(
-      "output_linear", false, "Specifies whether output occurs on each linear residual evaluation");
-  params.addParam<bool>("output_nonlinear",
+  params.addParam<bool>("output_linear",
                         false,
-                        "Specifies whether output occurs on each nonlinear residual evaluation");
+                        "Specifies whether output occurs on each PETSc linear residual evaluation");
+  params.addParam<bool>(
+      "output_nonlinear",
+      false,
+      "Specifies whether output occurs on each PETSc nonlinear residual evaluation");
+  params.addParamNamesToGroup("output_linear output_nonlinear", "execute_on");
 
   // **** DEPRECATED PARAMETERS ****
   params.addDeprecatedParam<bool>(
@@ -38,7 +41,7 @@ PetscOutput::validParams()
       false,
       "Specifies whether output occurs on each nonlinear residual evaluation",
       "Please use 'output_nonlinear' to get this behavior.");
-  // Psuedo time step divisors
+  // Pseudo time step divisors
   params.addParam<Real>(
       "nonlinear_residual_dt_divisor",
       1000,
@@ -145,14 +148,14 @@ PetscOutput::solveSetup()
   if (_execute_on.contains(EXEC_NONLINEAR) &&
       (_time >= _nonlinear_start_time - _t_tol && _time <= _nonlinear_end_time + _t_tol))
   {
-    PetscErrorCode ierr = SNESMonitorSet(snes, petscNonlinearOutput, this, PETSC_NULL);
+    PetscErrorCode ierr = SNESMonitorSet(snes, petscNonlinearOutput, this, LIBMESH_PETSC_NULLPTR);
     CHKERRABORT(_communicator.get(), ierr);
   }
 
   if (_execute_on.contains(EXEC_LINEAR) &&
       (_time >= _linear_start_time - _t_tol && _time <= _linear_end_time + _t_tol))
   {
-    PetscErrorCode ierr = KSPMonitorSet(ksp, petscLinearOutput, this, PETSC_NULL);
+    PetscErrorCode ierr = KSPMonitorSet(ksp, petscLinearOutput, this, LIBMESH_PETSC_NULLPTR);
     CHKERRABORT(_communicator.get(), ierr);
   }
 }

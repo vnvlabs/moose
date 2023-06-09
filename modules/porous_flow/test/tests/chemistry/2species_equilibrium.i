@@ -139,15 +139,13 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [simple_fluid]
-      type = SimpleFluidProperties
-      bulk_modulus = 2e9 # huge, so mimic chemical_reactions
-      density0 = 1000
-      thermal_expansion = 0
-      viscosity = 1e-3
-    []
+[FluidProperties]
+  [simple_fluid]
+    type = SimpleFluidProperties
+    bulk_modulus = 2e9 # huge, so mimic chemical_reactions
+    density0 = 1000
+    thermal_expansion = 0
+    viscosity = 1e-3
   []
 []
 
@@ -228,4 +226,5 @@
   print_linear_residuals = true
   exodus = true
   perf_graph = true
+  hide = eqm_k0
 []

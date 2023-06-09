@@ -25,7 +25,8 @@ FileOutput::validParams()
 {
   // Create InputParameters object for this stand-alone object
   InputParameters params = PetscOutput::validParams();
-  params.addRequiredParam<std::string>(
+  params.addClassDescription("Base class for all file-based output");
+  params.addParam<std::string>(
       "file_base",
       "The desired solution output name without an extension. If not provided, MOOSE sets it "
       "with Outputs/file_base when available. Otherwise, MOOSE uses input file name and this "
@@ -38,21 +39,22 @@ FileOutput::validParams()
                                "is used (see http://www.cplusplus.com/reference/ctime/strftime).");
   // Add the padding option and list it as 'Advanced'
   params.addParam<unsigned int>(
-      "padding", 4, "The number of for extension suffix (e.g., out.e-s002)");
+      "padding", 4, "The number of digits for the extension suffix (e.g., out.e-s002)");
   params.addParam<std::vector<std::string>>("output_if_base_contains",
                                             std::vector<std::string>(),
                                             "If this is supplied then output will only be done in "
                                             "the case that the output base contains one of these "
                                             "strings.  This is helpful in outputting only a subset "
                                             "of outputs when using MultiApps.");
-  params.addParamNamesToGroup("padding output_if_base_contains", "Advanced");
+  params.addParamNamesToGroup(
+      "file_base append_date append_date_format padding output_if_base_contains",
+      "File name customization");
 
   return params;
 }
 
 FileOutput::FileOutput(const InputParameters & parameters)
   : PetscOutput(parameters),
-    _file_base(getParam<std::string>("file_base")),
     _file_num(declareRecoverableData<unsigned int>("file_num", 0)),
     _padding(getParam<unsigned int>("padding")),
     _output_if_base_contains(getParam<std::vector<std::string>>("output_if_base_contains"))
@@ -60,6 +62,61 @@ FileOutput::FileOutput(const InputParameters & parameters)
   // If restarting reset the file number
   if (_app.isRestarting())
     _file_num = 0;
+
+  if (isParamValid("file_base"))
+    setFileBaseInternal(getParam<std::string>("file_base"));
+}
+
+bool
+FileOutput::shouldOutput(const ExecFlagType & type)
+{
+  if (!checkFilename())
+    return false;
+  return Output::shouldOutput(type);
+}
+
+bool
+FileOutput::checkFilename()
+{
+  // Return true if 'output_if_base_contains' is not utilized
+  if (_output_if_base_contains.empty())
+    return true;
+
+  // Assumed output is false
+  bool output = false;
+
+  // Loop through each string in the list
+  for (const auto & search_string : _output_if_base_contains)
+  {
+    // Search for the string in the file base, if found set the output to true and break the loop
+    if (_file_base.find(search_string) != std::string::npos)
+    {
+      output = true;
+      break;
+    }
+  }
+
+  // Return the value
+  return output;
+}
+
+std::string
+FileOutput::filename()
+{
+  return _file_base;
+}
+
+void
+FileOutput::setFileBase(const std::string & file_base)
+{
+  if (!isParamValid("file_base"))
+    setFileBaseInternal(file_base);
+}
+
+void
+FileOutput::setFileBaseInternal(const std::string & file_base)
+{
+  _file_base = file_base;
 
   // Append the date/time
   if (getParam<bool>("append_date"))
@@ -104,45 +161,6 @@ FileOutput::FileOutput(const InputParameters & parameters)
           mooseError("Could not create directory: " + inc_path + " for file base: " + _file_base);
     }
   }
-}
-
-bool
-FileOutput::shouldOutput(const ExecFlagType & type)
-{
-  if (!checkFilename())
-    return false;
-  return Output::shouldOutput(type);
-}
-
-bool
-FileOutput::checkFilename()
-{
-  // Return true if 'output_if_base_contains' is not utilized
-  if (_output_if_base_contains.empty())
-    return true;
-
-  // Assumed output is false
-  bool output = false;
-
-  // Loop through each string in the list
-  for (const auto & search_string : _output_if_base_contains)
-  {
-    // Search for the string in the file base, if found set the output to true and break the loop
-    if (_file_base.find(search_string) != std::string::npos)
-    {
-      output = true;
-      break;
-    }
-  }
-
-  // Return the value
-  return output;
-}
-
-std::string
-FileOutput::filename()
-{
-  return _file_base;
 }
 
 void

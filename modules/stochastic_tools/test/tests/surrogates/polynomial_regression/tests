@@ -29,9 +29,9 @@
   []
 
   [vector]
-    type = CheckFiles
+    type = JSONDiff
     input = poly_reg_vec.i
-    check_files = 'poly_reg_vec_out.json'
+    jsondiff = 'poly_reg_vec_out.json'
     requirement = 'The sytem shall be able to create polynomial regression surrogate with vector-type response.'
   []
 []

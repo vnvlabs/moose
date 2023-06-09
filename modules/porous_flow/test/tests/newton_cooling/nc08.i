@@ -63,14 +63,12 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [idealgas]
-      type = IdealGasFluidProperties
-      molar_mass = 1.4
-      gamma = 1.2
-      mu = 1.2
-    []
+[FluidProperties]
+  [idealgas]
+    type = IdealGasFluidProperties
+    molar_mass = 1.4
+    gamma = 1.2
+    mu = 1.2
   []
 []
 
@@ -179,7 +177,6 @@
 [Outputs]
   file_base = nc08
   execute_on = timestep_end
-  exodus = true
   [along_line]
     type = CSV
     execute_vector_postprocessors_on = timestep_end

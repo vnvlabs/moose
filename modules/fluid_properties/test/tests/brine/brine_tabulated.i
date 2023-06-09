@@ -1,5 +1,5 @@
 # Test BrineFluidProperties calculations of density, viscosity and thermal
-# conductivity with a TabulatedFluidProperties water.
+# conductivity with a TabulatedBiCubicFluidProperties water.
 #
 # Experimental density values from Pitzer et al, "Thermodynamic properties
 # of aqueous sodium chloride solution", Journal of Physical and Chemical
@@ -78,15 +78,15 @@
 [Functions]
   [./pic]
     type = ParsedFunction
-    value = 'if(x<2,20e6, 40e6)'
+    expression = 'if(x<2,20e6, 40e6)'
   [../]
   [./tic]
     type = ParsedFunction
-    value = 'if(x<1, 323.15, 473.15)'
+    expression = 'if(x<1, 323.15, 473.15)'
   [../]
   [./xic]
     type = ParsedFunction
-    value = 'if(x<2,0.1047, 0.2261)'
+    expression = 'if(x<2,0.1047, 0.2261)'
   [../]
 []
 
@@ -126,20 +126,18 @@
   [../]
 []
 
-[Modules]
-  [./FluidProperties]
-    [./water]
-      type = Water97FluidProperties
-    [../]
-    [./water_tab]
-      type = TabulatedFluidProperties
-      fp = water
-      save_file = false
-    [../]
-    [./brine]
-      type = BrineFluidProperties
-      water_fp = water_tab
-    [../]
+[FluidProperties]
+  [./water]
+    type = Water97FluidProperties
+  [../]
+  [./water_tab]
+    type = TabulatedBicubicFluidProperties
+    fp = water
+    save_file = false
+  [../]
+  [./brine]
+    type = BrineFluidProperties
+    water_fp = water_tab
   [../]
 []
 

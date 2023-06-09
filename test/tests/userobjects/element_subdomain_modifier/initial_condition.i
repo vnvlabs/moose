@@ -41,7 +41,7 @@
 [Functions]
   [moving_circle]
     type = ParsedFunction
-    value = '(x-t)^2+(y)^2-0.5^2'
+    expression = '(x-t)^2+(y)^2-0.5^2'
   []
 []
 
@@ -54,6 +54,13 @@
   []
   [phi]
   []
+
+  # for the 'displaced' test only
+  inactive = 'disp_x disp_y'
+  [disp_x]
+  []
+  [disp_y]
+  []
 []
 
 [AuxKernels]
@@ -61,13 +68,24 @@
     type = FunctionAux
     variable = phi
     function = moving_circle
-    execute_on = 'INITIAL TIMESTEP_BEGIN TIMESTEP_END'
+    execute_on = 'INITIAL TIMESTEP_BEGIN'
   []
   [double_u]
     type = StatefulAux
     variable = u
     coupled = u
     block = 1
+  []
+[]
+
+[Postprocessors]
+  # for the 'subdomain_caching' test only
+  active = ''
+  [average]
+    type = SideAverageValue
+    variable = u
+    boundary = bottom
+    execute_on = 'INITIAL TIMESTEP_BEGIN'
   []
 []
 
@@ -78,5 +96,7 @@
 []
 
 [Outputs]
-  exodus = true
+  [out]
+    type = Exodus
+  []
 []

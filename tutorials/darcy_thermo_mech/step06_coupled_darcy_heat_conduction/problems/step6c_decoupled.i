@@ -1,10 +1,14 @@
 [Mesh]
-  type = GeneratedMesh
-  dim = 2
-  nx = 200
-  ny = 10
-  xmax = 0.304 # Length of test chamber
-  ymax = 0.0257 # Test chamber radius
+  [gmg]
+    type = GeneratedMeshGenerator
+    dim = 2
+    nx = 200
+    ny = 10
+    xmax = 0.304 # Length of test chamber
+    ymax = 0.0257 # Test chamber radius
+  []
+  coord_type = RZ
+  rz_coord_axis = X
 []
 
 [Variables]
@@ -22,7 +26,7 @@
   [pressure]
     type = FunctionAux
     variable = pressure
-    function = 't*x*x*y'
+    function = '4000 - 3000 * x - 3000 * t*x*x*y'
     execute_on = timestep_end
   []
 []
@@ -67,8 +71,6 @@
 
 [Problem]
   type = FEProblem
-  coord_type = RZ
-  rz_coord_axis = X
 []
 
 [Executioner]

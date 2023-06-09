@@ -1,56 +1,42 @@
-# Do not use jinja templating (A physical change to this file is required to trigger a build)
-{% set build = 5 %}
-{% set strbuild = "build_" + build|string %}
-{% set vtk_version = "9.1.0" %}
-{% set friendly_version = "9.1" %}
-{% set sha256 = "8fed42f4f8f1eb8083107b68eaa9ad71da07110161a3116ad807f43e5ca5ce96" %}
+# Making a Change to this package?
+# REMEMBER TO UPDATE the .yaml files for the following packages:
+#   libmesh/
+#   template/
+#   moose/
+#   moose-dev/
+# ALSO: Follow the directions in scripts/tests/versioner_hashes.yaml
+{% set build = 1 %}
+{% set vtk_version = "9.2.6" %}
+{% set vtk_friendly_version = "9.2" %}
+{% set sha256 = "06fc8d49c4e56f498c40fcb38a563ed8d4ec31358d0101e8988f0bb4d539dd12" %}
 
 package:
   name: moose-libmesh-vtk
   version: {{ vtk_version }}
 
 source:
-  url: https://www.vtk.org/files/release/{{ friendly_version }}/VTK-{{ vtk_version }}.tar.gz
+  url: https://www.vtk.org/files/release/{{ vtk_friendly_version }}/VTK-{{ vtk_version }}.tar.gz
+  vtk_friendly_version: {{ vtk_friendly_version }}
   sha256: {{ sha256 }}
 
 build:
   number: {{ build }}
-  string: {{ strbuild }}
-  skip: true  # [win]
+  skip: true             # [win]
   script_env:
     - MOOSE_JOBS
+    - vtk_friendly_version={{ vtk_friendly_version }}
 
 requirements:
   build:
     - {{ moose_mpich }}
-    - cmake
     - ninja
-    - {{ moose_libglu }}       # [linux]
-    - {{ moose_mesalib }}      # [linux]
-    - {{ moose_libxt }}        # [linux]
-    - {{ moose_libsm }}        # [linux]
-    - {{ moose_libx11 }}       # [linux]
-    - {{ moose_libice }}       # [linux]
-    - {{ moose_libxext }}      # [linux]
-    - {{ moose_mesa_libgl }}   # [linux]
-    - {{ moose_xorg_x11 }}     # [linux]
-
   run:
     - {{ moose_mpich }}
-    - {{ moose_libglu }}       # [linux]
-    - {{ moose_mesalib }}      # [linux]
-    - {{ moose_libxt }}        # [linux]
-    - {{ moose_libsm }}        # [linux]
-    - {{ moose_libx11 }}       # [linux]
-    - {{ moose_libice }}       # [linux]
-    - {{ moose_libxext }}      # [linux]
-    - {{ moose_mesa_libgl }}   # [linux]
-    - {{ moose_xorg_x11 }}     # [linux]
 
 test:
   commands:
-    - test -f $PREFIX/libmesh-vtk/lib/libvtkCommonCore-{{ friendly_version }}.dylib # [osx]
-    - test -f $PREFIX/libmesh-vtk/lib/libvtkCommonCore-{{ friendly_version }}.so    # [linux]
+    - test -f $PREFIX/libmesh-vtk/lib/libvtkCommonCore-{{ vtk_friendly_version }}.dylib   # [osx]
+    - test -f $PREFIX/libmesh-vtk/lib/libvtkCommonCore-{{ vtk_friendly_version }}.so      # [linux]
 
 about:
   home: http://www.vtk.org/

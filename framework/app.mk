@@ -6,15 +6,6 @@
 # in your application. You can turn it on/off by changing it in your application Makefile.
 GEN_REVISION ?= yes
 
-# Set a default to install the main application's tests if one isn't set in the Makefile
-ifndef INSTALLABLE_DIRS
-  ifneq ($(wildcard $(APPLICATION_DIR)/test/.),)
-    INSTALLABLE_DIRS := test/tests
-  else
-    INSTALLABLE_DIRS := tests
-  endif
-endif
-
 # list of application-wide excluded source files
 excluded_srcfiles :=
 
@@ -49,6 +40,11 @@ ifneq ($(SUFFIX),)
   app_LIB_SUFFIX := $(app_LIB_SUFFIX)_$(SUFFIX)
 endif
 
+ifeq ($(MOOSE_SKIP_DOCS),)
+  DOCUMENTATION := yes
+else
+  DOCUMENTATION := no
+endif
 ##############################################################################
 ######################### Application Variables ##############################
 ##############################################################################
@@ -308,6 +304,16 @@ ifneq (,$(MODULE_NAME))
   endif
 else
   ifeq ($(BUILD_EXEC),yes)
+
+    # Set a default to install the main application's tests if one isn't set in the Makefile
+    ifndef INSTALLABLE_DIRS
+      ifneq ($(wildcard $(APPLICATION_DIR)/test/.),)
+        INSTALLABLE_DIRS := test/tests->tests
+      else
+        INSTALLABLE_DIRS := tests
+      endif
+    endif
+
     all: $(app_EXEC)
   else
     all: $(app_LIB)
@@ -333,6 +339,11 @@ $(app_HEADER): $(app_HEADER_deps)
 	@echo "Checking if header needs updating: "$@"..."
 	$(shell $(FRAMEWORK_DIR)/scripts/get_repo_revision.py $(curr_dir) $@ $(curr_app))
 	@ln -sf $@ $(all_header_dir)
+
+#
+# .APPNAME resource file
+#
+app_resource = $(APPLICATION_DIR)/$(APPLICATION_NAME).yaml
 
 # Target-specific Variable Values (See GNU-make manual)
 $(app_LIB): curr_objs := $(app_objects)
@@ -374,25 +385,25 @@ endif
 # for more explanations/details.
 uniq = $(if $1,$(firstword $1) $(call uniq,$(filter-out $(firstword $1),$1)))
 compilertype := unknown
-applibs :=  $(app_test_LIB) $(app_LIBS) $(depend_test_libs)
-applibs := $(call uniq,$(applibs))
-ifeq ($(libmesh_static),yes)
-  ifneq (,$(findstring clang,$(CXX)))
+ifneq (,$(findstring clang,$(CXX)))
+  compilertype := clang
+else
+ifneq (,$(findstring g++,$(CXX)))
+  compilertype := gcc
+else
+ifneq (,$(findstring mpicxx,$(CXX)))
+  ifneq (,$(findstring clang,$(shell mpicxx -show)))
     compilertype := clang
   else
-  ifneq (,$(findstring g++,$(CXX)))
     compilertype := gcc
-  else
-  ifneq (,$(findstring mpicxx,$(CXX)))
-    ifneq (,$(findstring clang,$(shell mpicxx -show)))
-      compilertype := clang
-    else
-      compilertype := gcc
-    endif
   endif
-  endif
-  endif
+endif
+endif
+endif
+applibs :=  $(app_test_LIB) $(app_LIBS) $(depend_test_libs)
+applibs := $(call uniq,$(applibs))
 
+ifeq ($(libmesh_static),yes)
   ifeq ($(compilertype),clang)
     # replace .a with .dylib for testing in dynamic configuration:
     applibs := $(foreach lib,$(patsubst %.la,%.a,$(applibs)),-Wl,-force_load,$(lib))
@@ -400,6 +411,22 @@ ifeq ($(libmesh_static),yes)
     applibs := $(foreach lib,$(patsubst %.la,%.a,$(applibs)),-Wl,--whole-archive,$(lib),--no-whole-archive)
   endif
 endif
+
+# Write resource file
+$(app_resource):
+	@echo "Creating resource file"
+	@$(shell $(FRAMEWORK_DIR)/scripts/write_appresource_file.py $(app_resource) $(APPLICATION_NAME) \
+     $(libmesh_CXXFLAGS) \
+     compiler_type=$(compilertype) \
+     documentation=$(DOCUMENTATION) \
+     installation_type=in_tree)
+
+# Update and Copy resource file to prefix/bin
+install_$(APPLICATION_NAME)_resource:
+	@echo "Installing $(APPLICATION_NAME).yaml resource file"
+	@$(shell $(FRAMEWORK_DIR)/scripts/write_appresource_file.py $(app_resource) $(APPLICATION_NAME) installation_type=relocated)
+	@mkdir -p $(bin_install_dir)
+	@cp $(app_resource) $(bin_install_dir)
 
 # Codesign command (OS X Only)
 codesign :=
@@ -410,7 +437,7 @@ ifneq (,$(findstring darwin,$(libmesh_HOST)))
   endif
 endif
 
-$(app_EXEC): $(app_LIBS) $(mesh_library) $(main_object) $(app_test_LIB) $(depend_test_libs) $(ADDITIONAL_DEPEND_LIBS)
+$(app_EXEC): $(app_LIBS) $(mesh_library) $(main_object) $(app_test_LIB) $(depend_test_libs) $(ADDITIONAL_DEPEND_LIBS) $(app_resource)
 	@echo "Linking Executable "$@"..."
 	@$(libmesh_LIBTOOL) --tag=CXX $(LIBTOOLFLAGS) --mode=link --quiet \
 	  $(libmesh_CXX) $(CXXFLAGS) $(libmesh_CXXFLAGS) -o $@ $(main_object) $(depend_test_libs_flags) $(applibs) $(ADDITIONAL_LIBS) $(libmesh_LDFLAGS) $(libmesh_LIBS) $(EXTERNAL_FLAGS)
@@ -420,50 +447,77 @@ $(app_EXEC): $(app_LIBS) $(mesh_library) $(main_object) $(app_test_LIB) $(depend
 docs_dir := $(APPLICATION_DIR)/doc
 bindst = $(bin_install_dir)/$(notdir $(app_EXEC))
 binlink = $(share_install_dir)/$(notdir $(app_EXEC))
-copy_input_targets := $(foreach dir,$(INSTALLABLE_DIRS),target_$(APPLICATION_NAME)_$(dir))
+# Strip the trailing slashes (if provided) and transform into a suitable Makefile targets
+copy_input_targets := $(foreach dir,$(INSTALLABLE_DIRS),target_$(APPLICATION_NAME)_$(patsubst %/,%,$(dir)))
 
-lib_install_targets = $(foreach lib,$(applibs),$(dir $(lib))install_lib_$(notdir $(lib)))
-ifneq ($(app_test_LIB),)
-	lib_install_targets += $(dir $(app_test_LIB))install_lib_$(notdir $(app_test_LIB))
+ifeq ($(want_exec),yes)
+  install_bin: $(bindst)
+  lib_install_targets = $(foreach lib,$(applibs),$(dir $(lib))install_lib_$(notdir $(lib)))
+else
+  install_bin:
 endif
 
-install_libs: $(lib_install_targets)
+install_libs:: $(lib_install_targets)
 
-$(copy_input_targets): all
-	@$(eval target_dir := $(subst target_$(APPLICATION_NAME)_,,$@))
-	@$(eval base_dir := $(notdir $(target_dir)))
-	@echo "Installing inputs from directory \"$(target_dir)\""
-	@rm -rf $(share_install_dir)/$(base_dir)
-	@mkdir -p $(share_install_dir)/$(base_dir)
-	@cp -R $(APPLICATION_DIR)/$(target_dir) $(share_install_dir)/$(base_dir)
+ifneq ($(wildcard $(APPLICATION_DIR)/data/.),)
+install_data_$(APPLICATION_NAME)_src := $(APPLICATION_DIR)/data
+install_data_$(APPLICATION_NAME)_dst := $(share_install_dir)
+install_data:: install_data_$(APPLICATION_NAME)
+endif
+
+install_data_%:
+	@echo "Installing data "$($@_dst)"..."
+	@mkdir -p $($@_dst)
+	@cp -r $($@_src) $($@_dst)
+
+$(copy_input_targets):
+	@$(eval kv := $(subst ->, ,$(subst target_$(APPLICATION_NAME)_,,$@)))
+	@$(eval source_dir := $(word 1, $(kv)))
+	@$(eval dest_dir := $(if $(word 2, $(kv)),$(word 2, $(kv)),$(source_dir)))
+	@echo "Installing inputs from directory \"$(source_dir)\" into $(dest_dir)"
+	@rm -rf $(share_install_dir)/$(dest_dir)
+	@mkdir -p $(share_install_dir)/$(dest_dir)
+	@$(eval abs_source_dir := $(realpath $(APPLICATION_DIR)/$(source_dir)))
+	@if [ "$(abs_source_dir)" != "" ]; \
+	then \
+		cp -R $(abs_source_dir)/ $(share_install_dir)/$(dest_dir); \
+	else \
+		(echo "ERROR: Source directory $(APPLICATION_DIR)/$(source_dir) does not exist!"; exit 1) \
+	fi;
 	@if [ -e $(APPLICATION_DIR)/testroot ]; \
 	then \
-		cp -f $(APPLICATION_DIR)/testroot $(share_install_dir)/$(base_dir)/; \
-	elif [ -e $(target_dir)/testroot ]; \
+		cp -f $(APPLICATION_DIR)/testroot $(share_install_dir)/$(dest_dir)/; \
+	elif [ -e $(source_dir)/testroot ]; \
 	then \
-		cp -f $(target_dir)/testroot $(share_install_dir)/$(base_dir)/; \
+		cp -f $(source_dir)/testroot $(share_install_dir)/$(dest_dir)/; \
 	else \
-		echo "app_name = $(APPLICATION_NAME)" > $(share_install_dir)/$(base_dir)/testroot; \
+		echo "app_name = $(APPLICATION_NAME)" > $(share_install_dir)/$(dest_dir)/testroot; \
 	fi; \
 
 
-install_lib_%: % all
-	@echo "Installing $<"
+install_lib_%: %
 	@mkdir -p $(lib_install_dir)
 	@$(eval libname := $(shell grep "dlname='.*'" $< | sed -E "s/dlname='(.*)'/\1/g"))
-	@$(eval libdst := $(lib_install_dir)/$(libname))
-	@cp $(dir $<)$(libname) $(libdst)
+	@$(eval libdst := $(lib_install_dir)/$(libname))  # full installed path (includes library name)
+	@$(eval source_dir := $(dir $<))
+	@$(eval la_installed = $(lib_install_dir)/$(notdir $<))
+	@echo "Installing library $(libdst)"
+	@cp $< $(la_installed)                   # Copy the library archive file
+	@cp $(source_dir)/$(libname) $(libdst)   # Copy the library file
+	@$(call patch_la,$(la_installed),$(lib_install_dir))
 	@$(call patch_rpath,$(libdst),../$(lib_install_suffix/.))
 	@$(call patch_relink,$(libdst),$(libpath_pcre),$(libname_pcre))
 	@$(call patch_relink,$(libdst),$(libpath_framework),$(libname_framework))
+# These lines are critical in that they are a catch-all for nested applications. (e.g. These will properly remap MOOSE and the modules
+# in an application library to the installed locations) - DO NOT REMOVE! Yes, this can probably be done better
 	@$(eval libnames := $(foreach lib,$(applibs),$(shell grep "dlname='.*'" $(lib) 2>/dev/null | sed -E "s/dlname='(.*)'/\1/g")))
 	@$(eval libpaths := $(foreach lib,$(applibs),$(dir $(lib))$(shell grep "dlname='.*'" $(lib) 2>/dev/null | sed -E "s/dlname='(.*)'/\1/g")))
 	@for lib in $(libpaths); do $(call patch_relink,$(libdst),$$lib,$$(basename $$lib)); done
 
-$(binlink): all $(copy_input_targets)
+$(binlink): $(copy_input_targets)
 	ln -sf ../../bin/$(notdir $(app_EXEC)) $@
 
-install_$(APPLICATION_NAME)_docs:
+install_$(APPLICATION_NAME)_docs: install_python $(app_EXEC)
 ifeq ($(MOOSE_SKIP_DOCS),)
 	@echo "Installing docs"
 	@mkdir -p $(docs_install_dir)
@@ -472,8 +526,8 @@ else
 	@echo "Skipping docs installation."
 endif
 
-$(bindst): $(app_EXEC) all $(copy_input_targets) install_$(APPLICATION_NAME)_docs $(binlink)
-	@echo "Installing $<"
+$(bindst): $(app_EXEC) $(copy_input_targets) install_$(APPLICATION_NAME)_docs install_$(APPLICATION_NAME)_resource $(binlink)
+	@echo "Installing binary $@"
 	@mkdir -p $(bin_install_dir)
 	@cp $< $@
 	@$(call patch_rpath,$@,../$(lib_install_suffix)/.)

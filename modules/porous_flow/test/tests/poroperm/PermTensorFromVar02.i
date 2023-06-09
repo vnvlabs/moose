@@ -51,7 +51,7 @@
 [Functions]
   [perm_fn]
     type = ParsedFunction
-    value = '2*(x+1)'
+    expression = '2*(x+1)'
   []
 []
 
@@ -151,11 +151,9 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [simple_fluid]
-      type = SimpleFluidProperties
-    []
+[FluidProperties]
+  [simple_fluid]
+    type = SimpleFluidProperties
   []
 []
 

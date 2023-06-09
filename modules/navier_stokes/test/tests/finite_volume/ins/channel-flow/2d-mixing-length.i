@@ -4,10 +4,10 @@ von_karman_const = 0.2
 D = 1
 rho = 1
 bulk_u = 1
-mu = ${fparse rho * bulk_u * D / Re}
+mu = '${fparse rho * bulk_u * D / Re}'
 
-advected_interp_method='upwind'
-velocity_interp_method='rc'
+advected_interp_method = 'upwind'
+velocity_interp_method = 'rc'
 
 [GlobalParams]
   rhie_chow_user_object = 'rc'
@@ -16,8 +16,8 @@ velocity_interp_method='rc'
 [UserObjects]
   [rc]
     type = INSFVRhieChowInterpolator
-    u = u
-    v = v
+    u = vel_x
+    v = vel_y
     pressure = pressure
   []
 []
@@ -29,23 +29,19 @@ velocity_interp_method='rc'
     xmin = 0
     xmax = 5
     ymin = 0
-    ymax = ${fparse 0.5 * D}
+    ymax = '${fparse 0.5 * D}'
     nx = 20
     ny = 10
-    bias_y = ${fparse 1 / 1.2}
+    bias_y = '${fparse 1 / 1.2}'
   []
-[]
-
-[Problem]
-  fv_bcs_integrity_check = true
 []
 
 [Variables]
-  [u]
+  [vel_x]
     type = INSFVVelocityVariable
     initial_condition = 1
   []
-  [v]
+  [vel_y]
     type = INSFVVelocityVariable
     initial_condition = 1
   []
@@ -58,7 +54,7 @@ velocity_interp_method='rc'
 []
 
 [AuxVariables]
-  [mixing_len]
+  [mixing_length]
     order = CONSTANT
     family = MONOMIAL
     fv = true
@@ -76,7 +72,7 @@ velocity_interp_method='rc'
 
   [u_advection]
     type = INSFVMomentumAdvection
-    variable = u
+    variable = vel_x
     advected_interp_method = ${advected_interp_method}
     velocity_interp_method = ${velocity_interp_method}
     rho = ${rho}
@@ -84,29 +80,29 @@ velocity_interp_method='rc'
   []
   [u_viscosity]
     type = INSFVMomentumDiffusion
-    variable = u
+    variable = vel_x
     mu = ${mu}
     momentum_component = 'x'
   []
   [u_viscosity_rans]
     type = INSFVMixingLengthReynoldsStress
-    variable = u
+    variable = vel_x
     rho = ${rho}
-    mixing_length = mixing_len
+    mixing_length = 'mixing_length'
     momentum_component = 'x'
-    u = u
-    v = v
+    u = vel_x
+    v = vel_y
   []
   [u_pressure]
     type = INSFVMomentumPressure
-    variable = u
+    variable = vel_x
     momentum_component = 'x'
     pressure = pressure
   []
 
   [v_advection]
     type = INSFVMomentumAdvection
-    variable = v
+    variable = vel_y
     advected_interp_method = ${advected_interp_method}
     velocity_interp_method = ${velocity_interp_method}
     rho = ${rho}
@@ -114,22 +110,22 @@ velocity_interp_method='rc'
   []
   [v_viscosity]
     type = INSFVMomentumDiffusion
-    variable = v
+    variable = vel_y
     mu = ${mu}
     momentum_component = 'y'
   []
   [v_viscosity_rans]
     type = INSFVMixingLengthReynoldsStress
-    variable = v
+    variable = vel_y
     rho = ${rho}
-    mixing_length = mixing_len
+    mixing_length = 'mixing_length'
     momentum_component = 'y'
-    u = u
-    v = v
+    u = vel_x
+    v = vel_y
   []
   [v_pressure]
     type = INSFVMomentumPressure
-    variable = v
+    variable = vel_y
     momentum_component = 'y'
     pressure = pressure
   []
@@ -143,9 +139,9 @@ velocity_interp_method='rc'
   [scalar_diffusion_rans]
     type = INSFVMixingLengthScalarDiffusion
     variable = scalar
-    mixing_length = mixing_len
-    u = u
-    v = v
+    mixing_length = 'mixing_length'
+    u = vel_x
+    v = vel_y
     schmidt_number = 1.0
   []
   [scalar_src]
@@ -159,7 +155,7 @@ velocity_interp_method='rc'
   [mixing_len]
     type = WallDistanceMixingLengthAux
     walls = 'top bottom'
-    variable = mixing_len
+    variable = 'mixing_length'
     execute_on = 'initial'
     von_karman_const = ${von_karman_const}
   []
@@ -169,13 +165,13 @@ velocity_interp_method='rc'
   [inlet-u]
     type = INSFVInletVelocityBC
     boundary = 'left'
-    variable = u
+    variable = vel_x
     function = '1'
   []
   [inlet-v]
     type = INSFVInletVelocityBC
     boundary = 'left'
-    variable = v
+    variable = vel_y
     function = '0'
   []
   [inlet_scalar]
@@ -187,31 +183,31 @@ velocity_interp_method='rc'
   [wall-u]
     type = INSFVNoSlipWallBC
     boundary = 'top'
-    variable = u
+    variable = vel_x
     function = 0
   []
   [wall-v]
     type = INSFVNoSlipWallBC
     boundary = 'top'
-    variable = v
+    variable = vel_y
     function = 0
   []
   [sym-u]
     type = INSFVSymmetryVelocityBC
     boundary = 'bottom'
-    variable = u
-    u = u
-    v = v
-    mu = ${mu}
+    variable = vel_x
+    u = vel_x
+    v = vel_y
+    mu = 'total_viscosity'
     momentum_component = x
   []
   [sym-v]
     type = INSFVSymmetryVelocityBC
     boundary = 'bottom'
-    variable = v
-    u = u
-    v = v
-    mu = ${mu}
+    variable = vel_y
+    u = vel_x
+    v = vel_y
+    mu = 'total_viscosity'
     momentum_component = y
   []
   [outlet_p]
@@ -222,12 +218,22 @@ velocity_interp_method='rc'
   []
 []
 
+[Materials]
+  [total_viscosity]
+    type = MixingLengthTurbulentViscosityMaterial
+    u = 'vel_x' #computes total viscosity = mu_t + mu
+    v = 'vel_y' #property is called total_viscosity
+    mixing_length = 'mixing_length'
+    mu = ${mu}
+    rho = ${rho}
+  []
+[]
+
 [Executioner]
   type = Steady
   solve_type = 'NEWTON'
-  petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_pc_type -sub_pc_factor_shift_type'
-  petsc_options_value = 'asm      200                lu           NONZERO'
-  line_search = 'none'
+  petsc_options_iname = '-pc_type -pc_factor_shift_type'
+  petsc_options_value = 'lu NONZERO'
   nl_rel_tol = 1e-12
 []
 

@@ -28,7 +28,7 @@
     input = 'except04.i'
     expect_err = 'Each previous_turning_point must lie in the range [0.0, 1.0]'
     match_literal = true
-    requirement = 'An error shall be thrown if the hysteretic turning points do not lie in the range [0, 1]'
+    requirement = 'An error shall be thrown if the hysteretic turning points do not lie in the range \[0, 1\]'
     design = 'PorousFlowHysteresisOrder.md'
     issues = '#16021'
   [../]
@@ -37,7 +37,7 @@
     input = 'except05.i'
     expect_err = 'Each previous_turning_point must lie in the range [0.0, 1.0]'
     match_literal = true
-    requirement = 'An error shall be thrown if the hysteretic turning points do not lie in the range [0, 1]'
+    requirement = 'An error shall be thrown if the hysteretic turning points do not lie in the range \[0, 1\]'
     design = 'PorousFlowHysteresisOrder.md'
     issues = '#16021'
   [../]
@@ -1187,6 +1187,14 @@
     requirement = 'PorousFlow shall be able to compute saturation in 1-phase hysteretic systems, as the system evolves in time along the primary drying curve and then along a first-order wetting curve'
     design = 'PorousFlow1PhaseHysP.md'
     issues = '#16129'
+  [../]
+  [./1phase_bc]
+    type = CSVDiff
+    input = '1phase_bc.i'
+    csvdiff = '1phase_bc_out.csv'
+    requirement = 'PorousFlow shall be able to compute saturation in 1-phase hysteretic systems, as the system evolves in time along the primary drying curve and then along a first-order wetting curve, when the input file has a PorousFlow boundary condition'
+    design = 'PorousFlow1PhaseHysP.md'
+    issues = '#23871'
   [../]
   [./1phase_3rd]
     type = CSVDiff

@@ -26,15 +26,13 @@ porosity0 = 0.1
   strain_at_nearest_qp = true
 []
 
-[Modules]
-  [FluidProperties]
-    [simple_fluid]
-      type = SimpleFluidProperties
-      thermal_expansion = 0 # Not doing a thermal simulation
-      bulk_modulus = 2E9
-      density0 = ${fluid_density}
-      viscosity = 5E-4
-    []
+[FluidProperties]
+  [simple_fluid]
+    type = SimpleFluidProperties
+    thermal_expansion = 0 # Not doing a thermal simulation
+    bulk_modulus = 2E9
+    density0 = ${fluid_density}
+    viscosity = 5E-4
   []
 []
 
@@ -67,12 +65,12 @@ porosity0 = 0.1
 [Functions]
   [ini_stress]
     type = ParsedFunction
-    value = '-${gravity} * z * (${solid_density} - ${fluid_density}) * (1.0 - ${porosity0})'  # initial effective stress that should result from weight force
+    expression = '-${gravity} * z * (${solid_density} - ${fluid_density}) * (1.0 - ${porosity0})'  # initial effective stress that should result from weight force
   []
 
   [ini_pp]
     type = ParsedFunction
-    value = '${gravity} * z * ${fluid_density} + 1E5'
+    expression = '${gravity} * z * ${fluid_density} + 1E5'
   []
 []
 

@@ -37,6 +37,13 @@ Applications:
         log_missing_markdown: WARNING
         show_warning: false
 
+    electromagnetics:
+        exe_directory: modules/combined
+        app_types:
+            - ElectromagneticsApp
+        content_directory: modules/electromagnetics/doc/content
+        show_warning: false
+
     external_petsc_solver:
         exe_directory: modules/combined
         app_types:
@@ -130,6 +137,20 @@ Applications:
             - framework/doc/remove.yml
         unregister:
             - framework/doc/unregister.yml
+        log_stub_files: WARNING
+        show_warning: false
+
+    optimization:
+        exe_directory: modules/combined
+        app_types:
+            - OptimizationApp
+        content_directory: modules/optimization/doc/content
+        remove:
+            - framework/doc/remove.yml
+        unregister:
+            - framework/doc/unregister.yml
+        log_stub_files: WARNING
+        show_warning: false
 
     peridynamics:
         exe_directory: modules/combined
@@ -197,6 +218,26 @@ Applications:
             - framework/doc/remove.yml
         unregister:
             - framework/doc/unregister.yml
+
+    scalar_transport:
+        exe_directory: modules/combined
+        app_types:
+            - ScalarTransportApp
+        content_directory: modules/scalar_transport/doc/content
+        unregister:
+            - framework/doc/unregister.yml
+        remove:
+            - framework/doc/remove.yml
+
+    solid_properties:
+        exe_directory: modules/combined
+        app_types:
+            - SolidPropertiesApp
+        content_directory: modules/solid_properties/doc/content
+        unregister:
+            - framework/doc/unregister.yml
+        remove:
+            - framework/doc/remove.yml
 
     stochastic_tools:
         exe_directory: modules/combined
@@ -319,6 +360,11 @@ Requirements:
         log_missing_requirement: WARNING
         show_warning: false
 
+    electromagnetics:
+        directories:
+            - modules/electromagnetics
+        show_warning: false
+
     external_petsc_solver:
         directories:
             - modules/external_petsc_solver
@@ -362,6 +408,10 @@ Requirements:
         directories:
             - modules/navier_stokes
 
+    optimization:
+        directories:
+            - modules/optimization
+
     phase_field:
         directories:
             - modules/phase_field
@@ -403,6 +453,14 @@ Requirements:
         directories:
             - modules/richards
         log_missing: NONE # deprcated module
+
+    scalar_transport:
+        directories:
+            - modules/scalar_transport
+
+    solid_properties:
+        directories:
+            - modules/solid_properties
 
     stochastic_tools:
         directories:

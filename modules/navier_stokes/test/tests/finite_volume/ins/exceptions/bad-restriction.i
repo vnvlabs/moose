@@ -53,7 +53,6 @@ restricted_blocks = '1'
 
 [Problem]
   kernel_coverage_check = false
-  fv_bcs_integrity_check = true
 []
 
 [Variables]
@@ -256,9 +255,4 @@ restricted_blocks = '1'
   petsc_options_value = 'asm      100                lu           NONZERO'
   line_search = 'none'
   nl_rel_tol = 1e-12
-[]
-
-[Outputs]
-  exodus = true
-  csv = true
 []

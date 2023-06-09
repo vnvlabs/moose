@@ -13,6 +13,7 @@
 #include "libmesh/libmesh_common.h"
 #include "XTermConstants.h"
 
+#include <memory>
 #include <set>
 #include <string>
 
@@ -22,6 +23,13 @@ template <typename>
 class NumericVector;
 template <typename>
 class SparseMatrix;
+
+// This was deprecated in libMesh a year ago!  It was obsolete 5 years
+// ago!  How are 6 apps in CI still using it!?
+#ifdef LIBMESH_ENABLE_DEPRECATED
+template <typename T>
+using UniquePtr = std::unique_ptr<T>;
+#endif
 }
 
 using namespace libMesh;
@@ -110,6 +118,8 @@ extern const ExecFlagType EXEC_LINEAR;
 extern const ExecFlagType EXEC_NONLINEAR;
 extern const ExecFlagType EXEC_TIMESTEP_END;
 extern const ExecFlagType EXEC_TIMESTEP_BEGIN;
+extern const ExecFlagType EXEC_MULTIAPP_FIXED_POINT_BEGIN;
+extern const ExecFlagType EXEC_MULTIAPP_FIXED_POINT_END;
 extern const ExecFlagType EXEC_FINAL;
 extern const ExecFlagType EXEC_FORCED;
 extern const ExecFlagType EXEC_FAILED;
@@ -121,8 +131,26 @@ extern const ExecFlagType EXEC_PRE_MULTIAPP_SETUP;
 extern const ExecFlagType EXEC_TRANSFER;
 extern const ExecFlagType EXEC_PRE_KERNELS;
 extern const ExecFlagType EXEC_ALWAYS;
+
 namespace Moose
 {
+// MOOSE is not tested with LIBMESH_DIM != 3
+static_assert(LIBMESH_DIM == 3,
+              "MOOSE must be built with a libmesh library compiled without --enable-1D-only "
+              "or --enable-2D-only");
+
+/**
+ * This is the dimension of all vector and tensor datastructures used in MOOSE.
+ * We enforce LIBMESH_DIM == 3 through a static assertion above.
+ * Note that lower dimensional simulations embedded in 3D space can always be requested at runtime.
+ */
+static constexpr std::size_t dim = LIBMESH_DIM;
+
+/**
+ * Used by the signal handler to determine if we should write a checkpoint file out at any point
+ * during operation.
+ */
+extern int interrupt_signal_number;
 
 /**
  * Set to true (the default) to print the stack trace with error and warning
@@ -158,10 +186,18 @@ extern bool _warnings_are_errors;
 extern bool _deprecated_is_error;
 
 /**
- * Variable to turn on exceptions during mooseError() and mooseWarning(), should
- * only be used with MOOSE unit.
+ * Variable to turn on exceptions during mooseError(), should only be used within MOOSE unit tests
+ * or when about to perform threaded operations because exception throwing in threaded regions is
+ * safe while aborting is inherently not when singletons are involved (e.g. what thread is
+ * responsible for destruction, or what do you do about mutexes?)
  */
 extern bool _throw_on_error;
+
+/**
+ * Variable to turn on exceptions during mooseWarning(), should
+ * only be used in MOOSE unit tests.
+ */
+extern bool _throw_on_warning;
 
 /**
  * Storage for the registered execute flags. This is needed for the ExecuteMooseObjectWarehouse
@@ -209,7 +245,6 @@ void registerActions(Syntax & syntax, ActionFactory & action_factory);
 void registerActions(Syntax & syntax,
                      ActionFactory & action_factory,
                      const std::set<std::string> & obj_labels);
-void registerExecFlags(Factory & factory);
 
 void associateSyntax(Syntax & syntax, ActionFactory & action_factory);
 

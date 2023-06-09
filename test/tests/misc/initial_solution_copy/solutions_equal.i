@@ -13,7 +13,7 @@
 [Functions]
   [./initial_func]
     type = ParsedFunction
-    value = sin(pi*x)*sin(pi*y)
+    expression = sin(pi*x)*sin(pi*y)
   [../]
 []
 
@@ -71,10 +71,6 @@
 
   petsc_options_iname = '-pc_type -pc_hypre_type'
   petsc_options_value = 'hypre boomeramg'
-[]
-
-[Outputs]
-  exodus = true
 []
 
 [ICs]

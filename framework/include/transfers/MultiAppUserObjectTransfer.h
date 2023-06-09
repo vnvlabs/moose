@@ -19,7 +19,7 @@
  * Note: Higher order variables are not supported.
  *
  * This transfer can be block and boundary restricted. The BlockRestrictable and
- * BoundaryRestrictable classes cannot be used, becuase they would check the block, boundary and
+ * BoundaryRestrictable classes cannot be used, because they would check the block, boundary and
  * target variable during object construction. At that time, the underlying sub-app is not created
  * yet, so this check would fail. That is also the reason why the block and boundary restriction are
  * pulled in during `execute` and not in the constructor. Also note, that in a sub-app setup there
@@ -78,18 +78,30 @@ protected:
    */
   bool isBoundaryElem(const MooseMesh * mesh, const Elem * elem) const;
 
+  /**
+   * Gets the UserObject to transfer from when transferring from_multiapp
+   * @param p The point in the parent app that is being transferred to
+   * @return the subapp index, will return static_cast<unsigned int>(-1) if none is found
+   */
+  unsigned int findSubAppToTransferFrom(const Point & p);
+
   std::string _user_object_name;
 
   /**
-   * Boolean variable to generate error if every master node
+   * Boolean variable to generate error if every parent app node
    * cannot be mapped to a subApp during from_multiapp transfer
    **/
-  const bool _all_master_nodes_contained_in_sub_app;
+  const bool _all_parent_nodes_contained_in_sub_app;
 
   /// whether to check the bounding box check or not
   const bool _skip_bbox_check;
 
+  /// Whether to utilize the nearest sub-app to transfer from
+  const bool & _nearest_sub_app;
+
 private:
+  bool usesMooseAppCoordTransform() const override { return true; }
+
   /// Set of block ids this transfer is restricted to
   std::set<SubdomainID> _blk_ids;
 

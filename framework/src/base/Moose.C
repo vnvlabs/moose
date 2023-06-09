@@ -20,31 +20,31 @@
 #include "PetscSupport.h"
 #include "Syntax.h"
 #include "MooseSyntax.h"
+#include "ExecFlagRegistry.h"
 
 #include <unistd.h>
 
-// Define the available execute flags for MOOSE. The flags using a hex value are setup to retain the
-// same numbers that were utilized with older versions of MOOSE for keeping existing applications
-// working using the deprecated flags. In the future, as in the EXEC_SAME_AS_MULTIAPP flag, there is
-// no reason to keep these flags bitwise comparable or to assigned an id because the MultiMooseEnum
-// that is used to store these has convenience methods for determining the what flags are active.
-const ExecFlagType EXEC_NONE("NONE", 0x00);                     // 0
-const ExecFlagType EXEC_INITIAL("INITIAL", 0x01);               // 1
-const ExecFlagType EXEC_LINEAR("LINEAR", 0x02);                 // 2
-const ExecFlagType EXEC_NONLINEAR("NONLINEAR", 0x04);           // 4
-const ExecFlagType EXEC_TIMESTEP_END("TIMESTEP_END", 0x08);     // 8
-const ExecFlagType EXEC_TIMESTEP_BEGIN("TIMESTEP_BEGIN", 0x10); // 16
-const ExecFlagType EXEC_FINAL("FINAL", 0x20);                   // 32
-const ExecFlagType EXEC_FORCED("FORCED", 0x40);                 // 64
-const ExecFlagType EXEC_FAILED("FAILED", 0x80);                 // 128
-const ExecFlagType EXEC_CUSTOM("CUSTOM", 0x100);                // 256
-const ExecFlagType EXEC_SUBDOMAIN("SUBDOMAIN", 0x200);          // 512
-const ExecFlagType EXEC_ALWAYS("ALWAYS", 0x400);                // 1024
-const ExecFlagType EXEC_PRE_DISPLACE("PRE_DISPLACE");
-const ExecFlagType EXEC_SAME_AS_MULTIAPP("SAME_AS_MULTIAPP");
-const ExecFlagType EXEC_PRE_MULTIAPP_SETUP("PRE_MULTIAPP_SETUP");
-const ExecFlagType EXEC_TRANSFER("TRANSFER");
-const ExecFlagType EXEC_PRE_KERNELS("PRE_KERNELS");
+const ExecFlagType EXEC_NONE = registerDefaultExecFlag("NONE");
+const ExecFlagType EXEC_INITIAL = registerDefaultExecFlag("INITIAL");
+const ExecFlagType EXEC_LINEAR = registerDefaultExecFlag("LINEAR");
+const ExecFlagType EXEC_NONLINEAR = registerDefaultExecFlag("NONLINEAR");
+const ExecFlagType EXEC_TIMESTEP_END = registerDefaultExecFlag("TIMESTEP_END");
+const ExecFlagType EXEC_TIMESTEP_BEGIN = registerDefaultExecFlag("TIMESTEP_BEGIN");
+const ExecFlagType EXEC_MULTIAPP_FIXED_POINT_END =
+    registerDefaultExecFlag("MULTIAPP_FIXED_POINT_END");
+const ExecFlagType EXEC_MULTIAPP_FIXED_POINT_BEGIN =
+    registerDefaultExecFlag("MULTIAPP_FIXED_POINT_BEGIN");
+const ExecFlagType EXEC_FINAL = registerDefaultExecFlag("FINAL");
+const ExecFlagType EXEC_FORCED = registerExecFlag("FORCED");
+const ExecFlagType EXEC_FAILED = registerExecFlag("FAILED");
+const ExecFlagType EXEC_CUSTOM = registerDefaultExecFlag("CUSTOM");
+const ExecFlagType EXEC_SUBDOMAIN = registerExecFlag("SUBDOMAIN");
+const ExecFlagType EXEC_ALWAYS = registerDefaultExecFlag("ALWAYS");
+const ExecFlagType EXEC_PRE_DISPLACE = registerExecFlag("PRE_DISPLACE");
+const ExecFlagType EXEC_SAME_AS_MULTIAPP = registerExecFlag("SAME_AS_MULTIAPP");
+const ExecFlagType EXEC_PRE_MULTIAPP_SETUP = registerExecFlag("PRE_MULTIAPP_SETUP");
+const ExecFlagType EXEC_TRANSFER = registerExecFlag("TRANSFER");
+const ExecFlagType EXEC_PRE_KERNELS = registerExecFlag("PRE_KERNELS");
 
 namespace Moose
 {
@@ -57,7 +57,7 @@ registerAll(Factory & f, ActionFactory & af, Syntax & s)
   registerObjects(f, {"MooseApp"});
   associateSyntaxInner(s, af);
   registerActions(s, af, {"MooseApp"});
-  registerExecFlags(f);
+  registerDataFilePath();
 }
 
 void
@@ -105,6 +105,7 @@ addActionTypes(Syntax & syntax)
   registerMooseObjectTask("set_mesh_base",                MooseMesh,              false);
   registerMooseObjectTask("init_mesh",                    MooseMesh,              false);
   registerMooseObjectTask("add_mesh_generator",           MeshGenerator,          false);
+  registerTask("create_added_mesh_generators", true);
   registerMooseObjectTask("append_mesh_generator",        MeshGenerator,          false);
 
   registerMooseObjectTask("add_kernel",                   Kernel,                 false);
@@ -118,6 +119,7 @@ addActionTypes(Syntax & syntax)
 
   registerMooseObjectTask("add_nodal_kernel",             NodalKernel,            false);
 
+  registerMooseObjectTask("add_functor_material",         MaterialBase,           false);
   registerMooseObjectTask("add_material",                 MaterialBase,           false);
   registerMooseObjectTask("add_bc",                       BoundaryCondition,      false);
 
@@ -132,6 +134,7 @@ addActionTypes(Syntax & syntax)
   registerMooseObjectTask("add_scalar_kernel",            ScalarKernel,           false);
   registerMooseObjectTask("add_aux_scalar_kernel",        AuxScalarKernel,        false);
   registerMooseObjectTask("add_dirac_kernel",             DiracKernel,            false);
+  appendMooseObjectTask  ("add_dirac_kernel",             VectorDiracKernel);
   registerMooseObjectTask("add_dg_kernel",                DGKernel,               false);
   registerMooseObjectTask("add_fv_kernel",                FVKernel,               false);
   registerMooseObjectTask("add_fv_bc",                    FVBoundaryCondition,    false);
@@ -145,7 +148,9 @@ addActionTypes(Syntax & syntax)
 
   registerMooseObjectTask("add_damper",                   Damper,                 false);
   registerMooseObjectTask("setup_predictor",              Predictor,              false);
-  registerMooseObjectTask("setup_time_stepper",           TimeStepper,            false);
+  registerMooseObjectTask("add_time_steppers",            TimeStepper,            false);
+  registerMooseObjectTask("add_time_stepper",             TimeStepper,            false);
+  registerTask           ("compose_time_stepper",                                 true);
   registerMooseObjectTask("setup_time_integrator",        TimeIntegrator,         false);
 
   registerMooseObjectTask("add_preconditioning",          MoosePreconditioner,    false);
@@ -157,6 +162,7 @@ addActionTypes(Syntax & syntax)
   registerMooseObjectTask("add_postprocessor",            Postprocessor,          false);
   registerMooseObjectTask("add_vector_postprocessor",     VectorPostprocessor,    false);
   registerMooseObjectTask("add_reporter",                 Reporter,               false);
+  registerMooseObjectTask("add_positions",                Positions,              false);
 
   registerMooseObjectTask("add_indicator",                Indicator,              false);
   registerMooseObjectTask("add_marker",                   Marker,                 false);
@@ -171,7 +177,6 @@ addActionTypes(Syntax & syntax)
 
   // clang-format on
 
-  registerTask("check_legacy_params", true);
   registerTask("dynamic_object_registration", false);
   registerTask("common_output", true);
   registerTask("setup_recover_file_base", true);
@@ -189,6 +194,7 @@ addActionTypes(Syntax & syntax)
   registerTask("prepare_mesh", false);
   registerTask("delete_remote_elements_after_late_geometric_ghosting", false);
   registerTask("setup_mesh_complete", true); // calls prepare
+  registerTask("post_mesh_prepared", false);
   registerTask("add_geometric_rm", false);
   registerTask("attach_geometric_rm", true);
   registerTask("attach_geometric_rm_final", true);
@@ -204,6 +210,7 @@ addActionTypes(Syntax & syntax)
   registerTask("copy_nodal_vars", true);
   registerTask("copy_nodal_aux_vars", true);
   registerTask("setup_postprocessor_data", false);
+  registerTask("setup_time_steppers", true);
 
   registerTask("setup_dampers", true);
   registerTask("check_integrity", true);
@@ -237,6 +244,8 @@ addActionTypes(Syntax & syntax)
   registerTask("create_problem_custom", false);
   registerTask("create_problem_complete", false);
 
+  // Action for setting up the signal-based checkpoint
+  registerTask("auto_checkpoint_action", true);
   /**************************/
   /****** Dependencies ******/
   /**************************/
@@ -251,8 +260,7 @@ addActionTypes(Syntax & syntax)
    */
 
   // clang-format off
-  syntax.addDependencySets("(check_legacy_params)"
-                           "(meta_action)"
+  syntax.addDependencySets("(meta_action)"
                            "(dynamic_object_registration)"
                            "(common_output)"
                            "(set_global_params)"
@@ -262,6 +270,7 @@ addActionTypes(Syntax & syntax)
                            "(add_geometric_rm)"
                            "(add_partitioner)"
                            "(add_mesh_generator)"
+                           "(create_added_mesh_generators)"
                            "(append_mesh_generator)"
                            "(execute_mesh_generators)"
                            "(recover_meta_data)"
@@ -272,6 +281,7 @@ addActionTypes(Syntax & syntax)
                            "(add_mortar_interface)"
                            "(uniform_refine_mesh)"
                            "(setup_mesh_complete)"
+                           "(post_mesh_prepared)"
                            "(determine_system_type)"
                            "(create_problem)"
                            "(create_problem_custom)"
@@ -301,18 +311,23 @@ addActionTypes(Syntax & syntax)
                            "(add_ic)"
                            "(add_constraint, add_field_split)"
                            "(add_preconditioning)"
-                           "(setup_time_stepper)"
+                           "(add_time_stepper, add_time_steppers)"
+                           "(compose_time_stepper)"
+                           "(setup_time_steppers)"
                            "(ready_to_init)"
                            "(setup_dampers)"
                            "(setup_residual_debug)"
                            "(add_bounds_vectors)"
+                           "(add_positions)"
                            "(add_multi_app)"
                            "(add_transfer)"
                            "(copy_nodal_vars, copy_nodal_aux_vars)"
                            "(add_material)"
                            "(add_master_action_material)"
+                           "(add_functor_material)"
                            "(add_output_aux_variables)"
                            "(add_output)"
+                           "(auto_checkpoint_action)"
                            "(add_postprocessor)"
                            "(add_vector_postprocessor)" // MaterialVectorPostprocessor requires this
                                                         // to be after material objects are created.
@@ -383,27 +398,6 @@ registerActions(Syntax & syntax,
 }
 
 void
-registerExecFlags(Factory & factory)
-{
-  registerExecFlag(EXEC_NONE);
-  registerExecFlag(EXEC_INITIAL);
-  registerExecFlag(EXEC_LINEAR);
-  registerExecFlag(EXEC_NONLINEAR);
-  registerExecFlag(EXEC_TIMESTEP_END);
-  registerExecFlag(EXEC_TIMESTEP_BEGIN);
-  registerExecFlag(EXEC_FINAL);
-  registerExecFlag(EXEC_FORCED);
-  registerExecFlag(EXEC_FAILED);
-  registerExecFlag(EXEC_CUSTOM);
-  registerExecFlag(EXEC_TRANSFER);
-  registerExecFlag(EXEC_SUBDOMAIN);
-  registerExecFlag(EXEC_PRE_DISPLACE);
-  registerExecFlag(EXEC_SAME_AS_MULTIAPP);
-  registerExecFlag(EXEC_PRE_MULTIAPP_SETUP);
-  registerExecFlag(EXEC_PRE_KERNELS);
-}
-
-void
 associateSyntaxInner(Syntax & syntax, ActionFactory & /*action_factory*/)
 {
   /**
@@ -421,6 +415,8 @@ associateSyntaxInner(Syntax & syntax, ActionFactory & /*action_factory*/)
   registerSyntaxTask("AddKernelAction", "AuxKernels/*", "add_aux_kernel");
   registerSyntaxTask("AddKernelAction", "Bounds/*", "add_aux_kernel");
 
+  registerSyntax("AddAuxKernelAction", "AuxVariables/*/AuxKernel");
+
   registerSyntaxTask("AddScalarKernelAction", "ScalarKernels/*", "add_scalar_kernel");
   registerSyntaxTask("AddScalarKernelAction", "AuxScalarKernels/*", "add_aux_scalar_kernel");
 
@@ -434,6 +430,8 @@ associateSyntaxInner(Syntax & syntax, ActionFactory & /*action_factory*/)
   registerSyntax("CreateDisplacedProblemAction", "Mesh");
   registerSyntax("DisplayGhostingAction", "Mesh");
   registerSyntax("AddMeshGeneratorAction", "Mesh/*");
+  registerSyntax("ElementIDOutputAction", "Mesh");
+  syntax.registerSyntaxType("Mesh/*", "MeshGeneratorName");
 
   registerSyntax("AddFunctionAction", "Functions/*");
   syntax.registerSyntaxType("Functions/*", "FunctionName");
@@ -441,7 +439,10 @@ associateSyntaxInner(Syntax & syntax, ActionFactory & /*action_factory*/)
   registerSyntax("GlobalParamsAction", "GlobalParams");
 
   registerSyntax("AddDistributionAction", "Distributions/*");
+  syntax.registerSyntaxType("Distributions/*", "DistributionName");
+
   registerSyntax("AddSamplerAction", "Samplers/*");
+  syntax.registerSyntaxType("Samplers/*", "SamplerName");
 
   registerSyntax("SetupDebugAction", "Debug");
   registerSyntax("SetupResidualDebugAction", "Debug");
@@ -465,6 +466,10 @@ associateSyntaxInner(Syntax & syntax, ActionFactory & /*action_factory*/)
   registerSyntaxTask("AddInitialConditionAction", "ICs/*", "add_ic");
 
   registerSyntax("AddMaterialAction", "Materials/*");
+  syntax.registerSyntaxType("Materials/*", "MaterialName");
+
+  registerSyntax("AddFunctorMaterialAction", "FunctorMaterials/*");
+  syntax.registerSyntaxType("FunctorMaterials/*", "MaterialName");
 
   registerSyntax("AddPostprocessorAction", "Postprocessors/*");
   syntax.registerSyntaxType("Postprocessors/*", "PostprocessorName");
@@ -475,6 +480,9 @@ associateSyntaxInner(Syntax & syntax, ActionFactory & /*action_factory*/)
 
   registerSyntax("AddReporterAction", "Reporters/*");
   syntax.registerSyntaxType("Reporters/*", "ReporterName");
+
+  registerSyntax("AddPositionsAction", "Positions/*");
+  syntax.registerSyntaxType("Positions/*", "PositionsName");
 
   registerSyntax("AddDamperAction", "Dampers/*");
 
@@ -488,8 +496,13 @@ associateSyntaxInner(Syntax & syntax, ActionFactory & /*action_factory*/)
 
   registerSyntax("CreateExecutionerAction", "Executioner");
   registerSyntax("ReadExecutorParamsAction", "Executors/*");
-  registerSyntax("SetupTimeStepperAction", "Executioner/TimeStepper");
+
+  registerSyntaxTask("AddTimeStepperAction", "Executioner/TimeSteppers/*", "add_time_steppers");
+  registerSyntaxTask("AddTimeStepperAction", "Executioner/TimeStepper", "add_time_stepper");
+  registerSyntaxTask(
+      "ComposeTimeStepperAction", "Executioner/TimeSteppers", "compose_time_stepper");
   registerSyntax("SetupTimeIntegratorAction", "Executioner/TimeIntegrator");
+  syntax.registerSyntaxType("Executors/*", "ExecutorName");
 
   registerSyntax("SetupQuadratureAction", "Executioner/Quadrature");
   registerSyntax("SetupPredictorAction", "Executioner/Predictor");
@@ -588,6 +601,8 @@ setColorConsole(bool use_color, bool force)
 bool _warnings_are_errors = false;
 bool _deprecated_is_error = false;
 bool _throw_on_error = false;
+bool _throw_on_warning = false;
+int interrupt_signal_number = 0;
 bool show_trace = true;
 bool show_multiple = false;
 

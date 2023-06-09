@@ -15,6 +15,7 @@
 #include "MooseMesh.h"
 #include "MooseVariableFE.h"
 #include "SystemBase.h"
+#include "MooseAppCoordTransform.h"
 
 #include "libmesh/dof_map.h"
 #include "libmesh/linear_implicit_system.h"
@@ -60,6 +61,7 @@ MultiAppProjectionTransfer::validParams()
   params.addRelationshipManager("ElementSideNeighborLayers",
                                 Moose::RelationshipManagerType::GEOMETRIC |
                                     Moose::RelationshipManagerType::ALGEBRAIC);
+  MultiAppTransfer::addBBoxFactorParam(params);
   return params;
 }
 
@@ -81,8 +83,6 @@ void
 MultiAppProjectionTransfer::initialSetup()
 {
   MultiAppConservativeTransfer::initialSetup();
-
-  getAppInfo();
 
   _proj_sys.resize(_to_problems.size(), NULL);
 
@@ -191,9 +191,8 @@ MultiAppProjectionTransfer::assembleL2(EquationSystems & es, const std::string &
 void
 MultiAppProjectionTransfer::execute()
 {
-  _console << "Beginning projection transfer " << name() << std::endl;
-
-  getAppInfo();
+  TIME_SECTION(
+      "MultiAppProjectionTransfer::execute()", 5, "Transferring variables through projection");
 
   ////////////////////
   // We are going to project the solutions by solving some linear systems.  In
@@ -244,6 +243,9 @@ MultiAppProjectionTransfer::execute()
   {
     for (unsigned int i_to = 0; i_to < _to_problems.size(); i_to++)
     {
+      // Indexing into the coordinate transforms vector
+      const auto to_global_num =
+          _current_direction == FROM_MULTIAPP ? 0 : _to_local2global_map[i_to];
       MeshBase & to_mesh = _to_meshes[i_to]->getMesh();
 
       LinearImplicitSystem & system = *_proj_sys[i_to];
@@ -269,7 +271,7 @@ MultiAppProjectionTransfer::execute()
             for (unsigned int qp = 0; qp < qrule.n_points() && !qp_hit; qp++)
             {
               Point qpt = xyz[qp];
-              if (bboxes[from0 + i_from].contains_point(qpt + _to_positions[i_to]))
+              if (bboxes[from0 + i_from].contains_point((*_to_transforms[to_global_num])(qpt)))
                 qp_hit = true;
             }
           }
@@ -284,7 +286,7 @@ MultiAppProjectionTransfer::execute()
             for (unsigned int qp = 0; qp < qrule.n_points(); qp++)
             {
               Point qpt = xyz[qp];
-              outgoing_qps[i_proc].push_back(qpt + _to_positions[i_to]);
+              outgoing_qps[i_proc].push_back((*_to_transforms[to_global_num])(qpt));
             }
           }
         }
@@ -319,7 +321,7 @@ MultiAppProjectionTransfer::execute()
   }
 
   // Setup the local mesh functions.
-  std::vector<MeshFunction *> local_meshfuns(froms_per_proc[processor_id()], NULL);
+  std::vector<MeshFunction> local_meshfuns;
   for (unsigned int i_from = 0; i_from < _from_problems.size(); i_from++)
   {
     FEProblemBase & from_problem = *_from_problems[i_from];
@@ -328,11 +330,10 @@ MultiAppProjectionTransfer::execute()
     System & from_sys = from_var.sys().system();
     unsigned int from_var_num = from_sys.variable_number(from_var.name());
 
-    MeshFunction * from_func = new MeshFunction(
+    local_meshfuns.emplace_back(
         from_problem.es(), *from_sys.current_local_solution, from_sys.get_dof_map(), from_var_num);
-    from_func->init();
-    from_func->enable_out_of_mesh_mode(OutOfMeshValue);
-    local_meshfuns[i_from] = from_func;
+    local_meshfuns.back().init();
+    local_meshfuns.back().enable_out_of_mesh_mode(OutOfMeshValue);
   }
 
   // Recieve quadrature points from other processors, evaluate mesh frunctions
@@ -377,10 +378,12 @@ MultiAppProjectionTransfer::execute()
       {
         if (local_bboxes[i_from].contains_point(qpt))
         {
+          const auto from_global_num =
+              _current_direction == TO_MULTIAPP ? 0 : _from_local2global_map[i_from];
           outgoing_evals_ids[pid][qp].first =
-              (*local_meshfuns[i_from])(qpt - _from_positions[i_from]);
+              (local_meshfuns[i_from])(_from_transforms[from_global_num]->mapBack(qpt));
           if (_current_direction == FROM_MULTIAPP)
-            outgoing_evals_ids[pid][qp].second = _local2global_map[i_from];
+            outgoing_evals_ids[pid][qp].second = from_global_num;
         }
       }
     }
@@ -487,13 +490,8 @@ MultiAppProjectionTransfer::execute()
     _to_es[i_to]->parameters.set<std::map<dof_id_type, unsigned int> *>("element_map") = NULL;
   }
 
-  for (unsigned int i = 0; i < _from_problems.size(); i++)
-    delete local_meshfuns[i];
-
   if (_fixed_meshes)
     _qps_cached = true;
-
-  _console << "Finished projection transfer " << name() << std::endl;
 
   postExecute();
 }

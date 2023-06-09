@@ -17,10 +17,23 @@
 
 #include <tuple>
 
+template <typename>
+class MooseVariableFV;
+
 namespace Moose
 {
 namespace FV
 {
+
+/**
+ * This function infers based on elements if the faceinfo between them
+ * belongs to the element or not.
+ * @param elem Reference to an element
+ * @param neighbor Pointer to the neighbor of the element
+ * @return If the element (first argument) is the owner of the faceinfo between the two elements
+ */
+bool elemHasFaceInfo(const Elem & elem, const Elem * const neighbor);
+
 template <typename ActionFunctor>
 void
 loopOverElemFaceInfo(const Elem & elem,
@@ -35,22 +48,15 @@ loopOverElemFaceInfo(const Elem & elem,
   {
     const Elem * const candidate_neighbor = elem.neighbor_ptr(side);
 
-    bool elem_has_info;
+    bool elem_has_info = elemHasFaceInfo(elem, candidate_neighbor);
 
     std::set<const Elem *> neighbors;
 
+    const bool inactive_neighbor_detected =
+        candidate_neighbor ? !candidate_neighbor->active() : false;
+
     // See MooseMesh::buildFaceInfo for corresponding checks/additions of FaceInfo
-    if (!candidate_neighbor)
-    {
-      neighbors.insert(candidate_neighbor);
-      elem_has_info = true;
-    }
-    else if (elem.level() != candidate_neighbor->level())
-    {
-      neighbors.insert(candidate_neighbor);
-      elem_has_info = candidate_neighbor->level() < elem.level();
-    }
-    else if (!candidate_neighbor->active())
+    if (inactive_neighbor_detected)
     {
       // We must be next to an element that has been refined
       mooseAssert(candidate_neighbor->has_children(), "We should have children");
@@ -67,17 +73,9 @@ loopOverElemFaceInfo(const Elem & elem,
                       "We shouldn't have greater than a face mismatch level of one");
           neighbors.insert(child);
         }
-
-      elem_has_info = false;
     }
     else
-    {
       neighbors.insert(candidate_neighbor);
-
-      // Both elements are active and they are on the same level, so which one has the info is
-      // determined by the lower ID
-      elem_has_info = elem.id() < candidate_neighbor->id();
-    }
 
     for (const Elem * const neighbor : neighbors)
     {
@@ -88,10 +86,14 @@ loopOverElemFaceInfo(const Elem & elem,
       mooseAssert(fi, "We should have found a FaceInfo");
       mooseAssert(elem_has_info ? &elem == &fi->elem() : &elem == fi->neighborPtr(),
                   "Doesn't seem like we understand how this FaceInfo thing is working");
-      mooseAssert(neighbor
-                      ? (elem_has_info ? neighbor == fi->neighborPtr() : neighbor == &fi->elem())
-                      : true,
-                  "Doesn't seem like we understand how this FaceInfo thing is working");
+      if (neighbor)
+      {
+        mooseAssert(neighbor != libMesh::remote_elem,
+                    "Remote element detected. This indicates that you have insufficient geometric "
+                    "ghosting. Please contact your application developers.");
+        mooseAssert(elem_has_info ? neighbor == fi->neighborPtr() : neighbor == &fi->elem(),
+                    "Doesn't seem like we understand how this FaceInfo thing is working");
+      }
 
       const Point elem_normal = elem_has_info ? fi->normal() : Point(-fi->normal());
 
@@ -122,38 +124,6 @@ loopOverElemFaceInfo(const Elem & elem,
  */
 template <typename OutputType>
 std::tuple<const Elem *, const Elem *, bool>
-determineElemOneAndTwo(const FaceInfo & fi, const MooseVariableFV<OutputType> & var)
-{
-  auto ft = fi.faceType(var.name());
-  mooseAssert(ft == FaceInfo::VarFaceNeighbors::BOTH
-                  ? var.hasBlocks(fi.elem().subdomain_id()) && fi.neighborPtr() &&
-                        var.hasBlocks(fi.neighborPtr()->subdomain_id())
-                  : true,
-              "Finite volume variable " << var.name()
-                                        << " does not exist on both sides of the face despite "
-                                           "what the FaceInfo is telling us.");
-  mooseAssert(ft == FaceInfo::VarFaceNeighbors::ELEM
-                  ? var.hasBlocks(fi.elem().subdomain_id()) &&
-                        (!fi.neighborPtr() || !var.hasBlocks(fi.neighborPtr()->subdomain_id()))
-                  : true,
-              "Finite volume variable " << var.name()
-                                        << " does not exist on or only on the elem side of the "
-                                           "face despite what the FaceInfo is telling us.");
-  mooseAssert(ft == FaceInfo::VarFaceNeighbors::NEIGHBOR
-                  ? fi.neighborPtr() && var.hasBlocks(fi.neighborPtr()->subdomain_id()) &&
-                        !var.hasBlocks(fi.elem().subdomain_id())
-                  : true,
-              "Finite volume variable " << var.name()
-                                        << " does not exist on or only on the neighbor side of the "
-                                           "face despite what the FaceInfo is telling us.");
-
-  bool one_is_elem =
-      ft == FaceInfo::VarFaceNeighbors::BOTH || ft == FaceInfo::VarFaceNeighbors::ELEM;
-  const Elem * const elem_one = one_is_elem ? &fi.elem() : fi.neighborPtr();
-  mooseAssert(elem_one, "This elem should be non-null!");
-  const Elem * const elem_two = one_is_elem ? fi.neighborPtr() : &fi.elem();
-
-  return std::make_tuple(elem_one, elem_two, one_is_elem);
-}
+determineElemOneAndTwo(const FaceInfo & fi, const MooseVariableFV<OutputType> & var);
 }
 }

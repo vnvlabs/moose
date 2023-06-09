@@ -93,26 +93,23 @@
 
 [Transfers]
   [v_to_sub]
-    type = MultiAppMeshFunctionTransfer
-    direction = to_multiapp
+    type = MultiAppShapeEvaluationTransfer
     source_variable = v
     variable = v
-    multi_app = level2-
+    to_multi_app = level2-
     execute_on = 'timestep_end'
   []
   [w_from_sub]
-    type = MultiAppMeshFunctionTransfer
-    direction = from_multiapp
+    type = MultiAppShapeEvaluationTransfer
     source_variable = w
     variable = w
-    multi_app = level2-
+    from_multi_app = level2-
     execute_on = 'timestep_end'
   []
 []
 
 [Outputs]
   exodus = true
-  csv = true
   perf_graph = true
   [screen]
     type = Console

@@ -31,7 +31,7 @@
     background_intervals = 2
     hexagon_size = 25
     sides_to_adapt = '0 1 5'
-    inputs = 'pattern_1 pattern_1 pattern_1'
+    meshes_to_adapt_to = 'pattern_1 pattern_1 pattern_1'
     is_control_drum = true
   []
   [pattern_2]
@@ -44,5 +44,12 @@
                1 0'
     generate_control_drum_positions_file = true
     assign_control_drum_id = true
+  []
+[]
+
+[Outputs]
+  [out]
+    type = Exodus
+    output_extra_element_ids = false
   []
 []

@@ -126,10 +126,10 @@ injection_rate = 10 # kg/s
   [heat_transfer_coefficient_auxk]
     type = ParsedAux
     variable = heat_transfer_coefficient
-    args = 'enclosing_element_normal_length enclosing_element_normal_thermal_cond'
+    coupled_variables = 'enclosing_element_normal_length enclosing_element_normal_thermal_cond'
     constant_names = h_s
     constant_expressions = 1E3 # should be much bigger than thermal_conductivity / L ~ 1
-    function = 'if(enclosing_element_normal_length = 0, 0, h_s * enclosing_element_normal_thermal_cond * 2 * enclosing_element_normal_length / (h_s * enclosing_element_normal_length * enclosing_element_normal_length + enclosing_element_normal_thermal_cond * 2 * enclosing_element_normal_length))'
+    expression = 'if(enclosing_element_normal_length = 0, 0, h_s * enclosing_element_normal_thermal_cond * 2 * enclosing_element_normal_length / (h_s * enclosing_element_normal_length * enclosing_element_normal_length + enclosing_element_normal_thermal_cond * 2 * enclosing_element_normal_length))'
   []
   [aperture]
     type = PorousFlowPropertyAux
@@ -215,19 +215,17 @@ injection_rate = 10 # kg/s
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [true_water]
-      type = Water97FluidProperties
-    []
-    [water]
-      type = TabulatedFluidProperties
-      fp = true_water
-      temperature_min = 275 # K
-      temperature_max = 600
-      interpolated_properties = 'density viscosity enthalpy internal_energy'
-      fluid_property_file = water97_tabulated.csv
-    []
+[FluidProperties]
+  [true_water]
+    type = Water97FluidProperties
+  []
+  [water]
+    type = TabulatedFluidProperties
+    fp = true_water
+    temperature_min = 275 # K
+    temperature_max = 600
+    interpolated_properties = 'density viscosity enthalpy internal_energy'
+    fluid_property_file = water97_tabulated.csv
   []
 []
 
@@ -261,13 +259,13 @@ injection_rate = 10 # kg/s
 [Functions]
   [kg_rate]
     type = ParsedFunction
-    vals = 'dt kg_out'
-    vars = 'dt kg_out'
-    value = 'kg_out/dt'
+    symbol_values = 'dt kg_out'
+    symbol_names = 'dt kg_out'
+    expression = 'kg_out/dt'
   []
   [insitu_pp]
     type = ParsedFunction
-    value = '10 - 0.847E-2 * z' # Approximate hydrostatic in MPa
+    expression = '10 - 0.847E-2 * z' # Approximate hydrostatic in MPa
   []
 []
 
@@ -331,8 +329,8 @@ injection_rate = 10 # kg/s
     dt = 1
     optimal_iterations = 10
     growth_factor = 1.5
-    timestep_limiting_postprocessor = 1E8
   []
+  dtmax = 1E8
   end_time = 1E8
   nl_abs_tol = 1E-3
   nl_max_its = 20

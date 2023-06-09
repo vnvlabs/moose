@@ -1,5 +1,5 @@
-mu=1.1
-rho=1.1
+mu = 1.1
+rho = 1.1
 
 [Mesh]
   [gen]
@@ -63,7 +63,7 @@ rho=1.1
     function = forcing_p
   []
   [mean_zero_pressure]
-    type = FVScalarLagrangeMultiplier
+    type = FVIntegralValueConstraint
     variable = pressure
     lambda = lambda
   []
@@ -142,58 +142,65 @@ rho=1.1
 [Functions]
   [exact_u]
     type = ParsedFunction
-    value = 'sin(y)*sin(x*pi)'
+    expression = 'sin(y)*sin(x*pi)'
   []
   [exact_rhou]
     type = ParsedFunction
-    value = 'rho*sin(y)*sin(x*pi)'
-    vars = 'rho'
-    vals = '${rho}'
+    expression = 'rho*sin(y)*sin(x*pi)'
+    symbol_names = 'rho'
+    symbol_values = '${rho}'
   []
   [forcing_u]
-    type = ADParsedFunction
-    value = 'mu*sin(y)*sin(x*pi) - (-x*pi^2*mu*sin(y)*sin(x*pi) + pi*mu*sin(y)*cos(x*pi))/x + (2*x*pi*rho*sin(y)^2*sin(x*pi)*cos(x*pi) + rho*sin(y)^2*sin(x*pi)^2)/x + (-1/2*x*pi*rho*sin(x)*sin(y)*sin(x*pi)*sin((1/2)*y*pi) + x*rho*sin(x)*sin(x*pi)*cos(y)*cos((1/2)*y*pi))/x'
-    vars = 'mu rho'
-    vals = '${mu} ${rho}'
+    type = ParsedFunction
+    expression = 'mu*sin(y)*sin(x*pi) - (-x*pi^2*mu*sin(y)*sin(x*pi) + pi*mu*sin(y)*cos(x*pi))/x + '
+            '(2*x*pi*rho*sin(y)^2*sin(x*pi)*cos(x*pi) + rho*sin(y)^2*sin(x*pi)^2)/x + '
+            '(-1/2*x*pi*rho*sin(x)*sin(y)*sin(x*pi)*sin((1/2)*y*pi) + '
+            'x*rho*sin(x)*sin(x*pi)*cos(y)*cos((1/2)*y*pi))/x'
+    symbol_names = 'mu rho'
+    symbol_values = '${mu} ${rho}'
   []
   [exact_v]
     type = ParsedFunction
-    value = 'sin(x)*cos((1/2)*y*pi)'
+    expression = 'sin(x)*cos((1/2)*y*pi)'
   []
   [exact_rhov]
     type = ParsedFunction
-    value = 'rho*sin(x)*cos((1/2)*y*pi)'
-    vars = 'rho'
-    vals = '${rho}'
+    expression = 'rho*sin(x)*cos((1/2)*y*pi)'
+    symbol_names = 'rho'
+    symbol_values = '${rho}'
   []
   [forcing_v]
-    type = ADParsedFunction
-    value = '(1/4)*pi^2*mu*sin(x)*cos((1/2)*y*pi) - pi*rho*sin(x)^2*sin((1/2)*y*pi)*cos((1/2)*y*pi) + cos(y) - (-x*mu*sin(x)*cos((1/2)*y*pi) + mu*cos(x)*cos((1/2)*y*pi))/x + (x*pi*rho*sin(x)*sin(y)*cos(x*pi)*cos((1/2)*y*pi) + x*rho*sin(y)*sin(x*pi)*cos(x)*cos((1/2)*y*pi) + rho*sin(x)*sin(y)*sin(x*pi)*cos((1/2)*y*pi))/x'
-    vars = 'mu rho'
-    vals = '${mu} ${rho}'
+    type = ParsedFunction
+    expression = '(1/4)*pi^2*mu*sin(x)*cos((1/2)*y*pi) - pi*rho*sin(x)^2*sin((1/2)*y*pi)*cos((1/2)*y*pi) '
+            '+ cos(y) - (-x*mu*sin(x)*cos((1/2)*y*pi) + mu*cos(x)*cos((1/2)*y*pi))/x + '
+            '(x*pi*rho*sin(x)*sin(y)*cos(x*pi)*cos((1/2)*y*pi) + '
+            'x*rho*sin(y)*sin(x*pi)*cos(x)*cos((1/2)*y*pi) + '
+            'rho*sin(x)*sin(y)*sin(x*pi)*cos((1/2)*y*pi))/x'
+    symbol_names = 'mu rho'
+    symbol_values = '${mu} ${rho}'
   []
   [exact_p]
     type = ParsedFunction
-    value = 'sin(y)'
+    expression = 'sin(y)'
   []
   [forcing_p]
     type = ParsedFunction
-    value = '-1/2*pi*rho*sin(x)*sin((1/2)*y*pi) + (x*pi*rho*sin(y)*cos(x*pi) + rho*sin(y)*sin(x*pi))/x'
-    vars = 'rho'
-    vals = '${rho}'
+    expression = '-1/2*pi*rho*sin(x)*sin((1/2)*y*pi) + (x*pi*rho*sin(y)*cos(x*pi) + '
+            'rho*sin(y)*sin(x*pi))/x'
+    symbol_names = 'rho'
+    symbol_values = '${rho}'
   []
 []
 
 [Executioner]
   type = Steady
   solve_type = 'NEWTON'
-  petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_pc_type -sub_pc_factor_shift_type'
-  petsc_options_value = 'asm      30                 lu           NONZERO'
+  petsc_options_iname = '-pc_type -pc_factor_shift_type'
+  petsc_options_value = 'lu NONZERO'
   nl_rel_tol = 1e-12
 []
 
 [Outputs]
-  exodus = true
   csv = true
 []
 
@@ -203,25 +210,25 @@ rho=1.1
     outputs = 'console csv'
     execute_on = 'timestep_end'
   []
-  [./L2u]
+  [L2u]
     type = ElementL2Error
     variable = u
     function = exact_u
     outputs = 'console csv'
     execute_on = 'timestep_end'
-  [../]
-  [./L2v]
+  []
+  [L2v]
     type = ElementL2Error
     variable = v
     function = exact_v
     outputs = 'console csv'
     execute_on = 'timestep_end'
-  [../]
-  [./L2p]
+  []
+  [L2p]
     variable = pressure
     function = exact_p
     type = ElementL2Error
     outputs = 'console csv'
     execute_on = 'timestep_end'
-  [../]
+  []
 []

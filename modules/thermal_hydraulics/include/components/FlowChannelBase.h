@@ -9,7 +9,8 @@
 
 #pragma once
 
-#include "GeometricalFlowComponent.h"
+#include "Component1D.h"
+#include "GravityInterface.h"
 
 class ClosuresBase;
 
@@ -18,7 +19,7 @@ class ClosuresBase;
  *
  * A flow channel is defined by its position, direction, length and area.
  */
-class FlowChannelBase : public GeometricalFlowComponent
+class FlowChannelBase : public Component1D, public GravityInterface
 {
 public:
   FlowChannelBase(const InputParameters & params);
@@ -41,9 +42,25 @@ public:
   /// Map of pipe type to enum
   static const std::map<std::string, EPipeType> _pipe_type_to_enum;
 
-  virtual void buildMesh() override;
   virtual void addVariables() override;
   virtual void addMooseObjects() override;
+
+  /**
+   * Gets the gravity angle for this component
+   *
+   * @return gravity angle for this component
+   */
+  virtual const Real & getGravityAngle() const { return _gravity_angle; }
+
+  /**
+   * Gets the name of the fluid properties user object for this component
+   */
+  const UserObjectName & getFluidPropertiesName() const { return _fp_name; }
+
+  /**
+   * Gets the flow model ID
+   */
+  virtual const THM::FlowModelID & getFlowModelID() const = 0;
 
   /**
    * Gets a MooseEnum for convective heat transfer geometry type
@@ -76,9 +93,6 @@ public:
    */
   virtual FunctionName createAreaFunctionAndGetName();
 
-  unsigned int getNodesetID() const;
-  const BoundaryName & getNodesetName() const;
-
   /**
    * Gets heat transfer geometry
    */
@@ -108,6 +122,7 @@ public:
    * Gets wall temperature names for connected heat transfers
    */
   std::vector<VariableName> getWallTemperatureNames() const { return _T_wall_names; }
+  std::vector<MaterialPropertyName> getWallTemperatureMatNames() const { return _T_wall_mat_names; }
 
   /**
    * Gets wall heat flux names for connected heat transfers
@@ -154,8 +169,6 @@ protected:
 
   virtual std::shared_ptr<ClosuresBase> buildClosures();
 
-  virtual void buildMeshNodes();
-
   /**
    * Adds objects which are common for single- and two-phase flow
    */
@@ -168,6 +181,12 @@ protected:
 
   /// The flow model used by this flow channel
   std::shared_ptr<FlowModel> _flow_model;
+
+  /// Name of fluid properties user object
+  const UserObjectName & _fp_name;
+
+  /// Angle between orientation vector and gravity vector, in degrees
+  const Real _gravity_angle;
 
   /// Function describing the flow channel area
   FunctionName _area_function;
@@ -190,11 +209,6 @@ protected:
   /// True if user provides PoD
   bool _has_PoD;
 
-  /// Nodeset id for all flow channel nodes
-  BoundaryID _nodeset_id;
-  /// Nodeset name for all flow channel nodes
-  BoundaryName _nodeset_name;
-
   /// True if there is one or more sources specified by wall temperature
   bool _temperature_mode;
   /// Names of the heat transfer components connected to this component
@@ -210,8 +224,10 @@ protected:
   std::vector<MaterialPropertyName> _Hw_vapor_names;
   /// heated perimeter names for connected heat transfers
   std::vector<VariableName> _P_hf_names;
-  /// wall temperature names for connected heat transfers
+  /// wall temperature auxvariable names for connected heat transfers
   std::vector<VariableName> _T_wall_names;
+  /// wall temperature material names for connected heat transfers
+  std::vector<MaterialPropertyName> _T_wall_mat_names;
   /// wall heat flux names for connected heat transfers
   std::vector<MaterialPropertyName> _q_wall_names;
 

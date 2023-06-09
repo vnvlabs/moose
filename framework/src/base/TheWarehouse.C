@@ -22,9 +22,9 @@ class Storage
 {
 public:
   virtual ~Storage() = default;
-  virtual void add(size_t obj_id, std::vector<std::unique_ptr<Attribute>> attribs) = 0;
-  virtual std::vector<size_t> query(const std::vector<std::unique_ptr<Attribute>> & conds) = 0;
-  virtual void set(size_t obj_id, std::vector<std::unique_ptr<Attribute>> attribs) = 0;
+  virtual void add(std::size_t obj_id, std::vector<std::unique_ptr<Attribute>> attribs) = 0;
+  virtual std::vector<std::size_t> query(const std::vector<std::unique_ptr<Attribute>> & conds) = 0;
+  virtual void set(std::size_t obj_id, std::vector<std::unique_ptr<Attribute>> attribs) = 0;
 };
 
 bool
@@ -35,10 +35,28 @@ operator==(const std::unique_ptr<Attribute> & lhs, const std::unique_ptr<Attribu
 
 Attribute::Attribute(TheWarehouse & w, const std::string name) : _id(w.attribID(name)) {}
 
+void
+AttribSorted::initFrom(const MooseObject *)
+{
+}
+
+bool
+AttribSorted::isMatch(const Attribute & other) const
+{
+  auto a = dynamic_cast<const AttribSorted *>(&other);
+  return _initd && a && a->_initd && (a->_val == _val);
+}
+
+bool
+AttribSorted::isEqual(const Attribute & other) const
+{
+  return isMatch(other);
+}
+
 class VecStore : public Storage
 {
 public:
-  virtual void add(size_t obj_id, std::vector<std::unique_ptr<Attribute>> attribs) override
+  virtual void add(std::size_t obj_id, std::vector<std::unique_ptr<Attribute>> attribs) override
   {
     std::lock_guard<std::mutex> l(_mutex);
     if (obj_id != _data.size())
@@ -46,11 +64,12 @@ public:
     _data.push_back(std::move(attribs));
   }
 
-  virtual std::vector<size_t> query(const std::vector<std::unique_ptr<Attribute>> & conds) override
+  virtual std::vector<std::size_t>
+  query(const std::vector<std::unique_ptr<Attribute>> & conds) override
   {
-    std::vector<size_t> ids;
+    std::vector<std::size_t> ids;
     std::lock_guard<std::mutex> l(_mutex);
-    for (size_t i = 0; i < _data.size(); i++)
+    for (std::size_t i = 0; i < _data.size(); i++)
     {
       auto & data = _data[i];
       bool ismatch = true;
@@ -68,7 +87,7 @@ public:
     return ids;
   }
 
-  virtual void set(size_t obj_id, std::vector<std::unique_ptr<Attribute>> attribs) override
+  virtual void set(std::size_t obj_id, std::vector<std::unique_ptr<Attribute>> attribs) override
   {
     if (obj_id > _data.size())
       throw std::runtime_error("unknown object id " + std::to_string(obj_id));
@@ -85,7 +104,7 @@ private:
   std::vector<std::vector<std::unique_ptr<Attribute>>> _data;
 };
 
-TheWarehouse::TheWarehouse() : _store(new VecStore()) {}
+TheWarehouse::TheWarehouse() : _store(std::make_unique<VecStore>()) {}
 TheWarehouse::~TheWarehouse() {}
 
 void isValid(MooseObject * obj);
@@ -95,7 +114,7 @@ TheWarehouse::add(std::shared_ptr<MooseObject> obj)
 {
   isValid(obj.get());
 
-  size_t obj_id = 0;
+  std::size_t obj_id = 0;
   {
     std::lock_guard<std::mutex> lock(_obj_mutex);
     _objects.push_back(obj);
@@ -140,7 +159,26 @@ TheWarehouse::update(MooseObject * obj)
 int
 TheWarehouse::prepare(std::vector<std::unique_ptr<Attribute>> conds)
 {
+  bool sort = false;
+  std::unique_ptr<Attribute> sorted_attrib;
+  if (!conds.empty() && dynamic_cast<AttribSorted *>(conds.back().get()))
+  {
+    sorted_attrib = std::move(conds.back());
+    static const AttribSorted sorted_attrib_true(*this, true);
+    sort = sorted_attrib->isMatch(sorted_attrib_true);
+    // Remove the sorted condition temporarily
+    conds.pop_back();
+  }
+
+#ifdef DEBUG
+  for (auto & cond : conds)
+    mooseAssert(!dynamic_cast<AttribSorted *>(cond.get()),
+                "There should be no sorted attributes in this container.");
+#endif
+
   auto obj_ids = _store->query(conds);
+  if (sorted_attrib)
+    conds.push_back(std::move(sorted_attrib));
 
   std::lock_guard<std::mutex> lock(_obj_cache_mutex);
   _obj_cache.push_back({});
@@ -155,7 +193,7 @@ TheWarehouse::prepare(std::vector<std::unique_ptr<Attribute>> conds)
   for (auto & id : obj_ids)
     vec.push_back(_objects[id].get());
 
-  if (!vec.empty() && dynamic_cast<DependencyResolverInterface *>(vec[0]))
+  if (sort && !vec.empty() && dynamic_cast<DependencyResolverInterface *>(vec[0]))
   {
     std::vector<DependencyResolverInterface *> dependers;
     for (auto obj : vec)
@@ -173,9 +211,9 @@ TheWarehouse::prepare(std::vector<std::unique_ptr<Attribute>> conds)
     {
       DependencyResolverInterface::sort(dependers);
     }
-    catch (CyclicDependencyException<GeneralUserObject *> & e)
+    catch (CyclicDependencyException<DependencyResolverInterface *> & e)
     {
-      DependencyResolverInterface::cyclicDependencyError<GeneralUserObject *>(
+      DependencyResolverInterface::cyclicDependencyError<UserObject *>(
           e, "Cyclic dependency detected in object ordering");
     }
 
@@ -189,12 +227,12 @@ TheWarehouse::prepare(std::vector<std::unique_ptr<Attribute>> conds)
 const std::vector<MooseObject *> &
 TheWarehouse::query(int query_id)
 {
-  if (static_cast<size_t>(query_id) >= _obj_cache.size())
+  if (static_cast<std::size_t>(query_id) >= _obj_cache.size())
     throw std::runtime_error("unknown query id");
   return _obj_cache[query_id];
 }
 
-size_t
+std::size_t
 TheWarehouse::queryID(const std::vector<std::unique_ptr<Attribute>> & conds)
 {
   {
@@ -206,18 +244,18 @@ TheWarehouse::queryID(const std::vector<std::unique_ptr<Attribute>> & conds)
 
   std::vector<std::unique_ptr<Attribute>> conds_clone;
   conds_clone.resize(conds.size());
-  for (size_t i = 0; i < conds.size(); i++)
+  for (std::size_t i = 0; i < conds.size(); i++)
     conds_clone[i] = conds[i]->clone();
   return prepare(std::move(conds_clone));
 }
 
-size_t
+std::size_t
 TheWarehouse::count(const std::vector<std::unique_ptr<Attribute>> & conds)
 {
   auto query_id = queryID(conds);
   std::lock_guard<std::mutex> lock(_obj_cache_mutex);
   auto & objs = query(query_id);
-  size_t count = 0;
+  std::size_t count = 0;
   for (auto obj : objs)
     if (obj->enabled())
       count++;

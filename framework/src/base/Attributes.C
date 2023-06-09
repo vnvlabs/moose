@@ -27,8 +27,13 @@
 #include "ShapeElementUserObject.h"
 #include "Reporter.h"
 #include "SystemBase.h"
+#include "DomainUserObject.h"
+#include "MortarUserObject.h"
+#include "ExecFlagRegistry.h"
 
 #include <algorithm>
+
+const ExecFlagType AttribExecOns::EXEC_ALL = registerExecFlag("ALL");
 
 std::ostream &
 operator<<(std::ostream & os, Interfaces & iface)
@@ -60,6 +65,10 @@ operator<<(std::ostream & os, Interfaces & iface)
     os << "|InterfaceUserObject";
   if (static_cast<bool>(iface & Interfaces::Reporter))
     os << "|Reporter";
+  if (static_cast<bool>(iface & Interfaces::DomainUserObject))
+    os << "|DomainUserObject";
+  if (static_cast<bool>(iface & Interfaces::MortarUserObject))
+    os << "|MortarUserObject";
   os << ")";
   return os;
 }
@@ -100,7 +109,7 @@ AttribMatrixTags::initFrom(const MooseObject * obj)
   auto t = dynamic_cast<const TaggingInterface *>(obj);
   if (t)
   {
-    for (auto & tag : t->getMatrixTags())
+    for (auto & tag : t->getMatrixTags({}))
       _vals.push_back(static_cast<int>(tag));
   }
 }
@@ -112,7 +121,7 @@ AttribVectorTags::initFrom(const MooseObject * obj)
   auto t = dynamic_cast<const TaggingInterface *>(obj);
   if (t)
   {
-    for (auto & tag : t->getVectorTags())
+    for (auto & tag : t->getVectorTags({}))
       _vals.push_back(static_cast<int>(tag));
   }
 }
@@ -121,13 +130,12 @@ void
 AttribExecOns::initFrom(const MooseObject * obj)
 {
   _vals.clear();
-  auto sup = dynamic_cast<const SetupInterface *>(obj);
-  if (sup)
+  if (const auto sup = dynamic_cast<const SetupInterface *>(obj))
   {
-    auto e = sup->getExecuteOnEnum();
-    for (auto & on : e.items())
-      if (e.contains(on))
-        _vals.push_back(on);
+    const auto & current_items = sup->getExecuteOnEnum();
+    _vals.reserve(current_items.size());
+    for (auto & on : current_items)
+      _vals.push_back(on);
   }
 }
 
@@ -135,14 +143,14 @@ bool
 AttribExecOns::isMatch(const Attribute & other) const
 {
   auto a = dynamic_cast<const AttribExecOns *>(&other);
-  if (!a || a->_vals.size() < 1)
+  if (!a || a->_vals.empty())
     return false;
   auto cond = a->_vals[0];
-  if (cond == Moose::ALL)
+  if (cond == EXEC_ALL)
     return true;
 
-  for (auto val : _vals)
-    if (val == Moose::ALL || val == cond)
+  for (const auto val : _vals)
+    if (val == EXEC_ALL || val == cond)
       return true;
   return false;
 }
@@ -273,6 +281,24 @@ AttribThread::isEqual(const Attribute & other) const
 }
 
 void
+AttribExecutionOrderGroup::initFrom(const MooseObject * obj)
+{
+  const auto * uo = dynamic_cast<const UserObject *>(obj);
+  _val = uo ? uo->getParam<int>("execution_order_group") : 0;
+}
+bool
+AttribExecutionOrderGroup::isMatch(const Attribute & other) const
+{
+  auto a = dynamic_cast<const AttribExecutionOrderGroup *>(&other);
+  return a && (a->_val == _val);
+}
+bool
+AttribExecutionOrderGroup::isEqual(const Attribute & other) const
+{
+  return isMatch(other);
+}
+
+void
 AttribSysNum::initFrom(const MooseObject * obj)
 {
   auto * sys = obj->getParam<SystemBase *>("_sys");
@@ -388,10 +414,7 @@ AttribName::isEqual(const Attribute & other) const
 void
 AttribSystem::initFrom(const MooseObject * obj)
 {
-  if (!obj->isParamValid("_moose_warehouse_system_name"))
-    mooseError("The base objects supplied to the TheWarehouse must call "
-               "'registerSystemAttributeName' method in the validParams function.");
-  _val = obj->getParam<std::string>("_moose_warehouse_system_name");
+  _val = obj->parameters().getSystemAttributeName();
 }
 
 bool
@@ -467,6 +490,8 @@ AttribInterfaces::initFrom(const MooseObject * obj)
   _val |= (unsigned int)Interfaces::BlockRestrictable         * (dynamic_cast<const BlockRestrictable *>(obj) != nullptr);
   _val |= (unsigned int)Interfaces::BoundaryRestrictable      * (dynamic_cast<const BoundaryRestrictable *>(obj) != nullptr);
   _val |= (unsigned int)Interfaces::Reporter                  * (dynamic_cast<const Reporter *>(obj) != nullptr);
+  _val |= (unsigned int)Interfaces::DomainUserObject          * (dynamic_cast<const DomainUserObject *>(obj) != nullptr);
+  _val |= (unsigned int)Interfaces::MortarUserObject          * (dynamic_cast<const MortarUserObject *>(obj) != nullptr);
   // clang-format on
 }
 

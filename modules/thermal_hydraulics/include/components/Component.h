@@ -47,7 +47,23 @@ public:
 
   Component * parent() { return _parent; }
 
-  THMMesh & mesh() const { return _mesh; }
+  /**
+   * Const reference to mesh, which can be called at any point
+   *
+   * Note that overloading mesh() was not possible due to the need to call this
+   * const version, even when the component is not const.
+   */
+  const THMMesh & constMesh() const { return _mesh; }
+
+  /**
+   * Non-const reference to THM mesh, which can only be called before the end of mesh setup
+   */
+  THMMesh & mesh();
+
+  /**
+   * Gets the THM problem
+   */
+  THMProblem & getTHMProblem() const;
 
   /**
    * Test if a parameter exists in the object's input parameters
@@ -86,6 +102,11 @@ public:
    * Wrapper function for \c setupMesh() that marks the function as being called
    */
   void executeSetupMesh();
+
+  /**
+   * Adds relationship managers for the component
+   */
+  virtual void addRelationshipManagers(Moose::RelationshipManagerType /*input_rm_type*/) {}
 
   virtual void addVariables() {}
 
@@ -211,6 +232,19 @@ public:
    */
   void addDependency(const std::string & dependency);
 
+  /**
+   * Gets an enum parameter
+   *
+   * This function takes the name of a MooseEnum parameter that is tied to an
+   * enum defined in THM. If the value is invalid, an error will be logged,
+   * and a negative integer will be cast into the enum type.
+   *
+   * @tparam    T       enum type
+   * @param[in] param   name of the MooseEnum parameter
+   */
+  template <typename T>
+  T getEnumParam(const std::string & param) const;
+
 protected:
   /**
    * Performs any post-constructor, pre-mesh-setup setup
@@ -247,17 +281,15 @@ protected:
   virtual void setupMesh() {}
 
   /**
-   * Gets an enum parameter
+   * Method to add a relationship manager for the objects being added to the system. Relationship
+   * managers have to be added relatively early. In many cases before the Action::act() method
+   * is called.
    *
-   * This function takes the name of a MooseEnum parameter that is tied to an
-   * enum defined in THM. If the value is invalid, an error will be logged,
-   * and a negative integer will be cast into the enum type.
+   * This method was copied from Action.
    *
-   * @tparam    T       enum type
-   * @param[in] param   name of the MooseEnum parameter
+   * @param moose_object_pars The MooseObject to inspect for RelationshipManagers to add
    */
-  template <typename T>
-  T getEnumParam(const std::string & param) const;
+  void addRelationshipManagersFromParameters(const InputParameters & moose_object_pars);
 
   /**
    * Runtime check to make sure that a parameter of specified type exists in the component's input
@@ -362,63 +394,44 @@ protected:
   void checkMutuallyExclusiveParameters(const std::vector<std::string> & params,
                                         bool need_one_specified = true) const;
 
-  /**
-   * Checks that an rDG parameter was provided
-   *
-   * @param[in] param   parameter name
-   */
-  void checkRDGRequiredParameter(const std::string & param) const;
-
-  /**
-   * Checks that a 1-phase parameter was provided
-   *
-   * @param[in] param   parameter name
-   */
-  void check1PhaseRequiredParameter(const std::string & param) const;
-
-  /**
-   * Checks that a 2-phase parameter was provided
-   *
-   * @param[in] param   parameter name
-   */
-  void check2PhaseRequiredParameter(const std::string & param) const;
-
-  /**
-   * Checks that a 7-equation (2-phase plus phase interaction) parameter was provided
-   *
-   * @param[in] param   parameter name
-   */
-  void check7EqnRequiredParameter(const std::string & param) const;
-
-  /**
-   * Checks that a 7-equation (2-phase plus phase interaction) + NCG parameter was provided
-   *
-   * @param[in] param   parameter name
-   */
-  void check7EqnNCGRequiredParameter(const std::string & param) const;
-
-  /**
-   * Logs an error for the model type not being implemented for the component
-   *
-   * @param[in] model   model type
-   */
-  void logModelNotImplementedError(const THM::FlowModelID & model) const;
-
   /// Pointer to a parent component (used in composed components)
   Component * _parent;
 
   /// THM problem this component is part of
+  /// TODO: make _sim private (applications need to switch to getters to avoid breaking).
+  /// Also, rename to "_thm_problem" at that point.
   THMProblem & _sim;
 
   /// The Factory associated with the MooseApp
   Factory & _factory;
 
-  /// Global mesh this component works on
-  THMMesh & _mesh;
-
   const Real & _zero;
 
+  /// The THM mesh
+  /// TODO: make _mesh private (applications need to switch to getters to avoid breaking)
+  THMMesh & _mesh;
+
 private:
+  /**
+   * Method for adding a single relationship manager
+   *
+   * This method was copied from Action.
+   *
+   * @param moose_object_pars The parameters of the MooseObject that requested the RM
+   * @param rm_name The class type of the RM, e.g. ElementSideNeighborLayers
+   * @param rm_type The RelationshipManagerType, e.g. geometric, algebraic, coupling
+   * @param rm_input_parameter_func The RM callback function, typically a lambda defined in the
+   *                                requesting MooseObject's validParams function
+   * @param sys_type A RMSystemType that can be used to limit the systems and consequent dof_maps
+   *                 that the RM can be attached to
+   */
+  void
+  addRelationshipManager(const InputParameters & moose_object_pars,
+                         std::string rm_name,
+                         Moose::RelationshipManagerType rm_type,
+                         Moose::RelationshipManagerInputParameterCallback rm_input_parameter_func,
+                         Moose::RMSystemType sys_type = Moose::RMSystemType::NONE);
+
   /// Component setup status
   mutable EComponentSetupStatus _component_setup_status;
 
@@ -475,7 +488,7 @@ Component::getEnumParam(const std::string & param) const
 {
   const MooseEnum & moose_enum = getParam<MooseEnum>(param);
   const T value = THM::stringToEnum<T>(moose_enum);
-  if (value < 0)
+  if (static_cast<int>(value) < 0) // cast necessary for scoped enums
   {
     // Get the keys from the MooseEnum. Unfortunately, this returns a list of
     // *all* keys, including the invalid key that was supplied. Thus, that key

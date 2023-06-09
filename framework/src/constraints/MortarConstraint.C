@@ -10,13 +10,15 @@
 #include "MortarConstraint.h"
 
 // MOOSE includes
-#include "MooseVariable.h"
 #include "Assembly.h"
+#include "MooseVariable.h"
+#include "SystemBase.h"
 
 InputParameters
 MortarConstraint::validParams()
 {
-  return MortarConstraintBase::validParams();
+  InputParameters params = MortarConstraintBase::validParams();
+  return params;
 }
 
 MortarConstraint::MortarConstraint(const InputParameters & parameters)
@@ -65,7 +67,7 @@ MortarConstraint::computeResidual(Moose::MortarType mortar_type)
 void
 MortarConstraint::computeJacobian(Moose::MortarType mortar_type)
 {
-  size_t test_space_size = 0;
+  std::size_t test_space_size = 0;
   typedef Moose::ConstraintJacobianType JType;
   typedef Moose::MortarType MType;
   std::array<JType, 3> jacobian_types;
@@ -141,9 +143,6 @@ MortarConstraint::computeJacobian(Moose::MortarType mortar_type)
     for (MooseIndex(3) type_index = 0; type_index < 3; ++type_index)
     {
       const auto jacobian_type = jacobian_types[type_index];
-      // There's no actual coupling between secondary and primary dofs
-      if ((jacobian_type == JType::SecondaryPrimary) || (jacobian_type == JType::PrimarySecondary))
-        continue;
 
       prepareMatrixTagLower(_assembly, ivar, jvar, jacobian_type);
 

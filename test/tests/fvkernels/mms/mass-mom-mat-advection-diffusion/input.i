@@ -99,30 +99,29 @@
 [Executioner]
   type = Steady
   solve_type = NEWTON
-  line_search = 'none'
 []
 
 [Outputs]
-  csv = true
   exodus = true
+  csv = true
 []
 
 [Functions]
   [forcing_rho]
     type = ParsedFunction
-    value = '-1.331*sin(1.1*x)^2 + 1.331*sin(1.1*x) + 1.331*cos(1.1*x)^2'
+    expression = '-1.331*sin(1.1*x)^2 + 1.331*sin(1.1*x) + 1.331*cos(1.1*x)^2'
   []
   [exact_rho]
     type = ParsedFunction
-    value = '1.1*sin(1.1*x)'
+    expression = '1.1*sin(1.1*x)'
   []
   [forcing_vel]
     type = ParsedFunction
-    value = '-2.9282*sin(1.1*x)^2*cos(1.1*x) + 1.4641*cos(1.1*x)^3 + 1.331*cos(1.1*x)'
+    expression = '-2.9282*sin(1.1*x)^2*cos(1.1*x) + 1.4641*cos(1.1*x)^3 + 1.331*cos(1.1*x)'
   []
   [exact_vel]
     type = ParsedFunction
-    value = '1.1*cos(1.1*x)'
+    expression = '1.1*cos(1.1*x)'
   []
 []
 
@@ -131,19 +130,16 @@
     type = ElementL2Error
     variable = fv_rho
     function = exact_rho
-    outputs = 'console csv'
-    execute_on = 'timestep_end'
+    execute_on = timestep_end
   [../]
   [./l2_vel]
     type = ElementL2Error
     variable = fv_vel
     function = exact_vel
-    outputs = 'console csv'
-    execute_on = 'timestep_end'
+    execute_on = timestep_end
   [../]
   [h]
     type = AverageElementSize
-    outputs = 'console csv'
-    execute_on = 'timestep_end'
+    execute_on = timestep_end
   []
 []

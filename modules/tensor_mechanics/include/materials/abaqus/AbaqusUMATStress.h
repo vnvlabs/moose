@@ -9,18 +9,25 @@
 
 #pragma once
 
-#include "ComputeStressBase.h"
+#include "ComputeGeneralStressBase.h"
 #include "DynamicLibraryLoader.h"
+#include "ComputeFiniteStrain.h"
+#include "StepUOInterface.h"
+
+class StepUserObject;
 
 /**
  * Coupling material to use Abaqus UMAT models in MOOSE
  */
-class AbaqusUMATStress : public ComputeStressBase
+class AbaqusUMATStress : public ComputeGeneralStressBase, public StepUOInterface
 {
 public:
   static InputParameters validParams();
 
   AbaqusUMATStress(const InputParameters & parameters);
+
+  /// check optional material properties for consistency
+  void initialSetup() override;
 
   /// perform per-element computation/initialization
   void computeProperties() override;
@@ -196,13 +203,13 @@ protected:
 
   const MaterialProperty<RankTwoTensor> & _stress_old;
   const MaterialProperty<RankTwoTensor> & _total_strain_old;
-  const MaterialProperty<RankTwoTensor> & _strain_increment;
+  const OptionalMaterialProperty<RankTwoTensor> & _strain_increment;
 
   /// Jacobian multiplier
   MaterialProperty<RankFourTensor> & _jacobian_mult;
 
-  const MaterialProperty<RankTwoTensor> & _Fbar;
-  const MaterialProperty<RankTwoTensor> & _Fbar_old;
+  const OptionalMaterialProperty<RankTwoTensor> & _Fbar;
+  const OptionalMaterialProperty<RankTwoTensor> & _Fbar_old;
 
   MaterialProperty<std::vector<Real>> & _state_var;
   const MaterialProperty<std::vector<Real>> & _state_var_old;
@@ -215,7 +222,7 @@ protected:
   MaterialProperty<Real> & _material_timestep;
 
   // Time step rotation increment
-  const MaterialProperty<RankTwoTensor> & _rotation_increment;
+  const OptionalMaterialProperty<RankTwoTensor> & _rotation_increment;
 
   // Coupled temperature field
   const VariableValue & _temperature;
@@ -238,4 +245,11 @@ protected:
 
   /// parameter to assist with the transition to 1-based indexing
   const bool _use_one_based_indexing;
+
+private:
+  /// Method being used to compute strain and rotation increments
+  const ComputeFiniteStrain::DecompMethod _decomposition_method;
+
+  /// User object that determines step number
+  const StepUserObject * _step_user_object;
 };

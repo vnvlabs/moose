@@ -42,12 +42,10 @@ x_sep = 35
   [../]
 []
 
-[Modules]
-  [./FluidProperties]
-    [./fp]
-      type = IdealGasFluidProperties
-      allow_imperfect_jacobians = true
-    [../]
+[FluidProperties]
+  [./fp]
+    type = IdealGasFluidProperties
+    allow_imperfect_jacobians = true
   [../]
 []
 
@@ -248,8 +246,4 @@ x_sep = 35
     type = PostprocessorDT
     postprocessor = cfl_dt
   [../]
-[]
-
-[Outputs]
-  exodus = true
 []

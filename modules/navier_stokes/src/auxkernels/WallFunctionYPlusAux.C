@@ -8,7 +8,7 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "WallFunctionYPlusAux.h"
-#include "INSFVMethods.h"
+#include "NavierStokesMethods.h"
 
 registerMooseObject("NavierStokesApp", WallFunctionYPlusAux);
 
@@ -76,10 +76,9 @@ WallFunctionYPlusAux::computeValue()
       {
         if (side_id == wall_id)
         {
-          const auto side_elem_ptr = elem.side_ptr(i_side);
           const FaceInfo * const fi = _mesh.faceInfo(&elem, i_side);
           const Point & this_normal = fi->normal();
-          Point this_wall_vec = (elem.vertex_average() - side_elem_ptr->vertex_average());
+          Point this_wall_vec = (elem.vertex_average() - fi->faceCentroid());
           Real dist = std::abs(this_wall_vec * normal);
           if (dist < min_wall_dist)
           {
@@ -96,12 +95,14 @@ WallFunctionYPlusAux::computeValue()
   if (!wall_bounded)
     return 0;
 
+  const auto state = determineState();
+
   // Get the velocity vector
-  ADRealVectorValue velocity(_u_var->getElemValue(&elem));
+  ADRealVectorValue velocity(_u_var->getElemValue(&elem, state));
   if (_v_var)
-    velocity(1) = _v_var->getElemValue(&elem);
+    velocity(1) = _v_var->getElemValue(&elem, state);
   if (_w_var)
-    velocity(2) = _w_var->getElemValue(&elem);
+    velocity(2) = _w_var->getElemValue(&elem, state);
 
   // Compute the velocity and direction of the velocity component that is parallel to the wall
   Real dist = std::abs(wall_vec * normal);
@@ -118,9 +119,9 @@ WallFunctionYPlusAux::computeValue()
 
   // Compute the friction velocity and the wall shear stress
   const auto elem_arg = makeElemArg(_current_elem);
-  const auto rho = _rho(elem_arg);
-  const auto mu = _mu(elem_arg);
-  ADReal u_star = findUStar(mu.value(), rho.value(), parallel_speed, dist);
+  const auto rho = _rho(elem_arg, state);
+  const auto mu = _mu(elem_arg, state);
+  ADReal u_star = NS::findUStar(mu.value(), rho.value(), parallel_speed, dist);
   ADReal tau = u_star * u_star * rho;
 
   return (dist * u_star * rho / mu).value();

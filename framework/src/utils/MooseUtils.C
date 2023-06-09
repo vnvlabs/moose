@@ -15,28 +15,17 @@
 #include "InputParameters.h"
 #include "ExecFlagEnum.h"
 #include "InfixIterator.h"
-#include "MaterialBase.h"
+#include "Registry.h"
 #include "MortarConstraintBase.h"
 #include "MortarNodalAuxKernel.h"
+#include "ExecFlagRegistry.h"
 
 #include "libmesh/utility.h"
 #include "libmesh/elem.h"
 
 // External includes
 #include "pcrecpp.h"
-/**
- * Ignore GCC warnings from tinydir corresponding to memory overlap and possible
- * uninitialized variables
- */
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wrestrict"
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
 #include "tinydir.h"
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
 
 // C++ includes
 #include <iostream>
@@ -94,8 +83,20 @@ findTestRoot()
   return "";
 }
 
+bool
+parsesToReal(const std::string & input)
+{
+  std::istringstream ss(input);
+  Real real_value;
+  if (ss >> real_value && ss.eof())
+    return true;
+  return false;
+}
+
 std::string
-installedInputsDir(const std::string & app_name, const std::string & dir_name)
+installedInputsDir(const std::string & app_name,
+                   const std::string & dir_name,
+                   const std::string & extra_error_msg)
 {
   // See moose.mk for a detailed explanation of the assumed installed application
   // layout. Installed inputs are expected to be installed in "share/<app_name>/<folder>".
@@ -105,7 +106,10 @@ installedInputsDir(const std::string & app_name, const std::string & dir_name)
 
   auto test_root = pathjoin(installed_path, "testroot");
   if (!pathExists(installed_path))
-    mooseError("Couldn't locate any installed inputs to copy in path: ", installed_path);
+    mooseError("Couldn't locate any installed inputs to copy in path: ",
+               installed_path,
+               '\n',
+               extra_error_msg);
 
   checkFileReadable(test_root);
   return installed_path;
@@ -236,6 +240,16 @@ pathExists(const std::string & path)
 {
   struct stat buffer;
   return (stat(path.c_str(), &buffer) == 0);
+}
+
+bool
+pathIsDirectory(const std::string & path)
+{
+  struct stat buffer;
+  // stat call fails?
+  if (stat(path.c_str(), &buffer))
+    return false;
+  return S_IFDIR & buffer.st_mode;
 }
 
 bool
@@ -682,10 +696,19 @@ removeColor(std::string & msg)
 }
 
 void
+addLineBreaks(std::string & message,
+              unsigned int line_width /*= ConsoleUtils::console_line_length*/)
+{
+  for (auto i : make_range(int(message.length() / line_width)))
+    message.insert((i + 1) * (line_width + 2) - 2, "\n");
+}
+
+void
 indentMessage(const std::string & prefix,
               std::string & message,
               const char * color /*= COLOR_CYAN*/,
-              bool indent_first_line)
+              bool indent_first_line,
+              const std::string & post_prefix)
 {
   // First we need to see if the message we need to indent (with color) also contains color codes
   // that span lines.
@@ -708,7 +731,7 @@ indentMessage(const std::string & prefix,
     match_color.FindAndConsume(&line_piece, &color_code);
 
     if (!first || indent_first_line)
-      colored_message += color + prefix + ": " + curr_color;
+      colored_message += color + prefix + post_prefix + curr_color;
 
     colored_message += line;
 
@@ -962,17 +985,7 @@ toLower(const std::string & name)
 ExecFlagEnum
 getDefaultExecFlagEnum()
 {
-  ExecFlagEnum exec_enum = ExecFlagEnum();
-  exec_enum.addAvailableFlags(EXEC_NONE,
-                              EXEC_INITIAL,
-                              EXEC_LINEAR,
-                              EXEC_NONLINEAR,
-                              EXEC_TIMESTEP_END,
-                              EXEC_TIMESTEP_BEGIN,
-                              EXEC_FINAL,
-                              EXEC_CUSTOM,
-                              EXEC_ALWAYS);
-  return exec_enum;
+  return moose::internal::ExecFlagRegistry::getExecFlagRegistry().getDefaultFlags();
 }
 
 int
@@ -1068,24 +1081,6 @@ rsplit(const std::string & str, const std::string & delimiter, std::size_t max_c
   return output;
 }
 
-template <typename T>
-std::string
-join(const T & strings, const std::string & delimiter)
-{
-  std::ostringstream oss;
-  std::copy(
-      strings.begin(), strings.end(), infix_ostream_iterator<std::string>(oss, delimiter.c_str()));
-  return oss.str();
-}
-template std::string join<std::vector<std::string>>(const std::vector<std::string> &,
-                                                    const std::string &);
-template std::string join<std::set<std::string>>(const std::set<std::string> &,
-                                                 const std::string &);
-template std::string join<std::vector<MooseEnumItem>>(const std::vector<MooseEnumItem> &,
-                                                      const std::string &);
-template std::string join<std::set<MooseEnumItem>>(const std::set<MooseEnumItem> &,
-                                                   const std::string &);
-
 void
 createSymlink(const std::string & target, const std::string & link)
 {
@@ -1155,20 +1150,8 @@ std::string
 realpath(const std::string & path)
 {
   char dummy[PETSC_MAX_PATH_LEN];
-#if defined(PETSC_HAVE_REALPATH)
-  // If "realpath" is adopted by PETSc and
-  // "path" does not exist, then PETSc will print a misleading message.
-  // [0]PETSC ERROR: Error in external library
-  // [0]PETSC ERROR: realpath()
-  // [0]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.
-  // [0]PETSC ERROR: Petsc Release Version 3.13.3, unknown
-  // We here override the misleading message with a better one.
-  if (!::realpath(path.c_str(), dummy))
+  if (PetscGetFullPath(path.c_str(), dummy, sizeof(dummy)))
     mooseError("Failed to get real path for ", path);
-#endif
-  if (PetscGetRealPath(path.c_str(), dummy))
-    mooseError("Failed to get real path for ", path);
-
   return dummy;
 }
 
@@ -1225,9 +1208,11 @@ prettyCppType(const std::string & cpp_type)
   // On mac many of the std:: classes are inline namespaced with __1
   // On linux std::string can be inline namespaced with __cxx11
   std::string s = cpp_type;
+  // Remove all spaces surrounding a >
+  pcrecpp::RE("\\s(?=>)").GlobalReplace("", &s);
   pcrecpp::RE("std::__\\w+::").GlobalReplace("std::", &s);
   // It would be nice if std::string actually looked normal
-  pcrecpp::RE("\\s*std::basic_string<char, std::char_traits<char>, std::allocator<char> >\\s*")
+  pcrecpp::RE("\\s*std::basic_string<char, std::char_traits<char>, std::allocator<char>>\\s*")
       .GlobalReplace("std::string", &s);
   // It would be nice if std::vector looked normal
   pcrecpp::RE r("std::vector<([[:print:]]+),\\s?std::allocator<\\s?\\1\\s?>\\s?>");
@@ -1236,73 +1221,6 @@ prettyCppType(const std::string & cpp_type)
   r.GlobalReplace("std::vector<\\1>", &s);
   return s;
 }
-
-template <typename Consumers>
-std::deque<MaterialBase *>
-buildRequiredMaterials(const Consumers & mat_consumers,
-                       const std::vector<std::shared_ptr<MaterialBase>> & mats,
-                       const bool allow_stateful)
-{
-  std::deque<MaterialBase *> required_mats;
-
-  std::unordered_set<unsigned int> needed_mat_props;
-  for (const auto & consumer : mat_consumers)
-  {
-    const auto & mp_deps = consumer->getMatPropDependencies();
-    needed_mat_props.insert(mp_deps.begin(), mp_deps.end());
-  }
-
-  // A predicate of calling this function is that these materials come in already sorted by
-  // dependency with the front of the container having no other material dependencies and following
-  // materials potentially depending on the ones in front of them. So we can start at the back and
-  // iterate forward checking whether the current material supplies anything that is needed, and if
-  // not we discard it
-  for (auto it = mats.rbegin(); it != mats.rend(); ++it)
-  {
-    auto * const mat = it->get();
-    bool supplies_needed = false;
-
-    const auto & supplied_props = mat->getSuppliedPropIDs();
-
-    // Do O(N) with the small container
-    for (const auto supplied_prop : supplied_props)
-    {
-      if (needed_mat_props.count(supplied_prop))
-      {
-        supplies_needed = true;
-        break;
-      }
-    }
-
-    if (!supplies_needed)
-      continue;
-
-    if (!allow_stateful && mat->hasStatefulProperties())
-      mooseError("Someone called buildRequiredMaterials with allow_stateful = false but a material "
-                 "dependency ",
-                 mat->name(),
-                 " computes stateful properties.");
-
-    const auto & mp_deps = mat->getMatPropDependencies();
-    needed_mat_props.insert(mp_deps.begin(), mp_deps.end());
-    required_mats.push_front(mat);
-  }
-
-  return required_mats;
-}
-
-template std::deque<MaterialBase *>
-buildRequiredMaterials(const std::vector<MortarConstraintBase *> &,
-                       const std::vector<std::shared_ptr<MaterialBase>> &,
-                       bool);
-template std::deque<MaterialBase *>
-buildRequiredMaterials(const std::array<const MortarNodalAuxKernelTempl<Real> *, 1> &,
-                       const std::vector<std::shared_ptr<MaterialBase>> &,
-                       bool);
-template std::deque<MaterialBase *>
-buildRequiredMaterials(const std::array<const MortarNodalAuxKernelTempl<RealVectorValue> *, 1> &,
-                       const std::vector<std::shared_ptr<MaterialBase>> &,
-                       bool);
 } // MooseUtils namespace
 
 std::string
@@ -1379,4 +1297,15 @@ removeSubstring(std::string & main, const std::string & sub)
   std::string::size_type n = sub.length();
   for (std::string::size_type i = main.find(sub); i != std::string::npos; i = main.find(sub))
     main.erase(i, n);
+}
+
+std::string
+removeSubstring(const std::string & main, const std::string & sub)
+{
+  std::string copy_main = main;
+  std::string::size_type n = sub.length();
+  for (std::string::size_type i = copy_main.find(sub); i != std::string::npos;
+       i = copy_main.find(sub))
+    copy_main.erase(i, n);
+  return copy_main;
 }

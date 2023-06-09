@@ -88,6 +88,8 @@ CommonOutputAction::validParams()
   params.addParam<std::vector<Real>>("sync_times",
                                      std::vector<Real>(),
                                      "Times at which the output and solution is forced to occur");
+  params.addParam<Real>(
+      "minimum_time_interval", 0.0, "The minimum simulation time between output steps");
   params.addParam<bool>(
       "append_date", false, "When true the date and time are appended to the output filename.");
   params.addParam<std::string>("append_date_format",
@@ -128,6 +130,9 @@ CommonOutputAction::validParams()
   params.addParam<bool>("print_linear_residuals",
                         true,
                         "Enable printing of linear residuals to the screen (Console)");
+  params.addParam<bool>("print_nonlinear_residuals",
+                        true,
+                        "Enable printing of nonlinear residuals to the screen (Console)");
   params.addParam<bool>("print_nonlinear_converged_reason",
                         true,
                         "Enable/disable printing of the nonlinear solver convergence reason to the "
@@ -143,7 +148,7 @@ CommonOutputAction::validParams()
   return params;
 }
 
-CommonOutputAction::CommonOutputAction(InputParameters params)
+CommonOutputAction::CommonOutputAction(const InputParameters & params)
   : Action(params), _action_params(_action_factory.getValidParams("AddOutputAction"))
 {
 }
@@ -176,8 +181,6 @@ CommonOutputAction::act()
     // Only create a Console if screen output was not created
     if (getParam<bool>("console") && !hasConsole())
       create("Console");
-    else
-      _pars.set<bool>("console") = false;
 
     if (getParam<bool>("csv"))
       create("CSV");

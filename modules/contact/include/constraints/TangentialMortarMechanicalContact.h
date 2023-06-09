@@ -11,6 +11,8 @@
 
 #include "ADMortarLagrangeConstraint.h"
 
+class WeightedVelocitiesUserObject;
+
 class TangentialMortarMechanicalContact : public ADMortarLagrangeConstraint
 {
 public:
@@ -28,6 +30,6 @@ protected:
   /// there will be two tangent vectors.
   const MooseEnum _direction;
 
-  /// Nodal tangent vectors on the secondary faces (householder from normal vectors)
-  std::array<std::vector<Point>, 2> _nodal_tangents;
+  /// The weighted velocities user object which supplies the contact pressure tangential vectors
+  const WeightedVelocitiesUserObject & _weighted_velocities_uo;
 };

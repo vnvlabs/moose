@@ -100,30 +100,41 @@ YAMLFormatter::printParams(const std::string & prefix,
     std::string group_name = params.getGroupName(iter.first);
     if (!group_name.empty())
       oss << "'" << group_name << "'";
+    oss << "\n";
 
-    {
-      InputParameters::Parameter<MooseEnum> * enum_type =
-          dynamic_cast<InputParameters::Parameter<MooseEnum> *>(iter.second);
-      if (enum_type)
-        oss << "\n" << indent << "    options: " << enum_type->get().getRawNames();
-    }
-    {
-      InputParameters::Parameter<MultiMooseEnum> * enum_type =
-          dynamic_cast<InputParameters::Parameter<MultiMooseEnum> *>(iter.second);
-      if (enum_type)
-        oss << "\n" << indent << "    options: " << enum_type->get().getRawNames();
-    }
-    {
-      InputParameters::Parameter<std::vector<MooseEnum>> * enum_type =
-          dynamic_cast<InputParameters::Parameter<std::vector<MooseEnum>> *>(iter.second);
-      if (enum_type)
-        oss << "\n" << indent << "    options: " << (enum_type->get())[0].getRawNames();
-    }
+    if (params.have_parameter<MooseEnum>(name))
+      addEnumOptionsAndDocs(oss, params.get<MooseEnum>(name), indent);
+    if (params.have_parameter<MultiMooseEnum>(name))
+      addEnumOptionsAndDocs(oss, params.get<MultiMooseEnum>(name), indent);
+    if (params.have_parameter<ExecFlagEnum>(name))
+      addEnumOptionsAndDocs(oss, params.get<ExecFlagEnum>(name), indent);
+    if (params.have_parameter<std::vector<MooseEnum>>(name))
+      addEnumOptionsAndDocs(oss, params.get<std::vector<MooseEnum>>(name)[0], indent);
 
-    oss << "\n" << indent << "    description: |\n      " << indent << doc << std::endl;
+    oss << indent << "    description: |\n      " << indent << doc << std::endl;
   }
 
   return oss.str();
+}
+
+template <typename T>
+void
+YAMLFormatter::addEnumOptionsAndDocs(std::ostringstream & oss,
+                                     T & param,
+                                     const std::string & indent)
+{
+  oss << indent << "    options: " << param.getRawNames() << '\n';
+  const auto & docs = param.getItemDocumentation();
+  if (!docs.empty())
+  {
+    oss << indent << "    option_docs:\n";
+    for (const auto & doc : docs)
+    {
+      oss << indent << "    - name: " << doc.first.name() << "\n";
+      oss << indent << "      description: |\n";
+      oss << indent << "        " << doc.second << "\n";
+    }
+  }
 }
 
 std::string
@@ -161,13 +172,14 @@ YAMLFormatter::buildOutputString(
     std::ostringstream & output,
     const std::iterator_traits<InputParameters::iterator>::value_type & p)
 {
+  libMesh::Parameters::Value * val = MooseUtils::get(p.second);
+
   // Account for Point
-  InputParameters::Parameter<Point> * ptr0 =
-      dynamic_cast<InputParameters::Parameter<Point> *>(p.second);
+  InputParameters::Parameter<Point> * ptr0 = dynamic_cast<InputParameters::Parameter<Point> *>(val);
 
   // Account for RealVectorValues
   InputParameters::Parameter<RealVectorValue> * ptr1 =
-      dynamic_cast<InputParameters::Parameter<RealVectorValue> *>(p.second);
+      dynamic_cast<InputParameters::Parameter<RealVectorValue> *>(val);
 
   // Output the Point components
   if (ptr0)

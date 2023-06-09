@@ -15,6 +15,7 @@
 #include "MooseMesh.h"
 #include "MooseApp.h"
 #include "InputParameterWarehouse.h"
+#include "BlockRestrictable.h"
 
 #include "libmesh/variable.h"
 #include "libmesh/dof_map.h"
@@ -64,6 +65,10 @@ MooseVariableBase::validParams()
                         false,
                         "True to make this variable a array variable regardless of number of "
                         "components. If 'components' > 1, this will automatically be set to true.");
+  params.addParam<NonlinearSystemName>("nl_sys",
+                                       "nl0",
+                                       "If this variable is a nonlinear variable, this is the "
+                                       "nonlinear system to which it should be added.");
   params.addParamNamesToGroup("scaling eigen", "Advanced");
 
   params.addParam<bool>("use_dual", false, "True to use dual basis for Lagrange multipliers");
@@ -93,12 +98,14 @@ MooseVariableBase::MooseVariableBase(const InputParameters & parameters)
     _var_kind(getParam<Moose::VarKindType>("_var_kind")),
     _subproblem(_sys.subproblem()),
     _variable(_sys.system().variable(_var_num)),
-    _assembly(_subproblem.assembly(getParam<THREAD_ID>("_tid"))),
+    _assembly(_subproblem.assembly(getParam<THREAD_ID>("_tid"),
+                                   _var_kind == Moose::VAR_NONLINEAR ? _sys.number() : 0)),
     _dof_map(_sys.dofMap()),
     _mesh(_subproblem.mesh()),
     _tid(getParam<THREAD_ID>("tid")),
     _count(getParam<unsigned int>("components")),
-    _use_dual(getParam<bool>("use_dual"))
+    _use_dual(getParam<bool>("use_dual")),
+    _is_array(getParam<bool>("array"))
 {
   scalingFactor(isParamValid("scaling") ? getParam<std::vector<Real>>("scaling")
                                         : std::vector<Real>(_count, 1.));
@@ -109,10 +116,9 @@ MooseVariableBase::MooseVariableBase(const InputParameters & parameters)
     paramError("family", "finite volume (fv=true) variables must be have MONOMIAL family");
   if (getParam<bool>("fv") && _fe_type.order != 0)
     paramError("order", "finite volume (fv=true) variables currently support CONST order only");
-  bool is_array = getParam<bool>("array");
   if (_count > 1)
-    mooseAssert(is_array, "Must be true with component > 1");
-  if (is_array)
+    mooseAssert(_is_array, "Must be true with component > 1");
+  if (_is_array)
   {
     auto name0 = _sys.system().variable(_var_num).name();
     std::size_t found = name0.find_last_of("_");
@@ -180,7 +186,6 @@ MooseVariableBase::scalingFactor(const std::vector<Real> & factor)
 void
 MooseVariableBase::initialSetup()
 {
-#ifdef MOOSE_GLOBAL_AD_INDEXING
   // Currently the scaling vector is only used through AD residual computing objects
   if (_subproblem.haveADObjects() &&
       (_subproblem.automaticScaling() || (std::find_if(_scaling_factor.begin(),
@@ -190,5 +195,4 @@ MooseVariableBase::initialSetup()
                                                              element, 1.);
                                                        }) != _scaling_factor.end())))
     _sys.addScalingVector();
-#endif
 }

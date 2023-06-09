@@ -62,15 +62,15 @@
 [Functions]
   [ana_ppwater]
     type = ParsedFunction
-    vars = 'g B p0 rho0'
-    vals = '1 2 pp_water_top 1'
-    value = '-B*log(exp(-p0/B)+g*rho0*x/B)' # expected pp at base
+    symbol_names = 'g B p0 rho0'
+    symbol_values = '1 2 pp_water_top 1'
+    expression = '-B*log(exp(-p0/B)+g*rho0*x/B)' # expected pp at base
   []
   [ana_ppgas]
     type = ParsedFunction
-    vars = 'g B p0 rho0'
-    vals = '1 1 pp_gas_top 0.1'
-    value = '-B*log(exp(-p0/B)+g*rho0*x/B)' # expected pp at base
+    symbol_names = 'g B p0 rho0'
+    symbol_values = '1 1 pp_gas_top 0.1'
+    expression = '-B*log(exp(-p0/B)+g*rho0*x/B)' # expected pp at base
   []
 []
 
@@ -88,22 +88,20 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [simple_fluid0]
-      type = SimpleFluidProperties
-      bulk_modulus = 2
-      density0 = 1
-      viscosity = 1
-      thermal_expansion = 0
-    []
-    [simple_fluid1]
-      type = SimpleFluidProperties
-      bulk_modulus = 1
-      density0 = 0.1
-      viscosity = 0.5
-      thermal_expansion = 0
-    []
+[FluidProperties]
+  [simple_fluid0]
+    type = SimpleFluidProperties
+    bulk_modulus = 2
+    density0 = 1
+    viscosity = 1
+    thermal_expansion = 0
+  []
+  [simple_fluid1]
+    type = SimpleFluidProperties
+    bulk_modulus = 1
+    density0 = 0.1
+    viscosity = 0.5
+    thermal_expansion = 0
   []
 []
 

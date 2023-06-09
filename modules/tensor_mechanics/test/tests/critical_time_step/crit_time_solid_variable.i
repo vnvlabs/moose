@@ -33,7 +33,7 @@
 [Functions]
   [./prefac]
     type = ParsedFunction
-    value = '1+2*x'
+    expression = '1+2*x'
   [../]
 []
 
@@ -78,6 +78,5 @@
 []
 
 [Outputs]
-  exodus = true
   csv = true
 []

@@ -29,22 +29,18 @@ ComputeMortarFunctor::ComputeMortarFunctor(
     const AutomaticMortarGeneration & amg,
     SubProblem & subproblem,
     FEProblemBase & fe_problem,
-    bool displaced)
-  : MortarExecutorInterface(fe_problem),
-    _amg(amg),
+    bool displaced,
+    Assembly & assembly)
+  : _amg(amg),
     _subproblem(subproblem),
     _fe_problem(fe_problem),
     _displaced(displaced),
-    _assembly(_subproblem.assembly(0))
+    _assembly(assembly)
 {
   // Construct the mortar constraints we will later loop over
   for (auto mc : mortar_constraints)
     _mortar_constraints.push_back(mc.get());
-}
 
-void
-ComputeMortarFunctor::mortarSetup()
-{
   Moose::Mortar::setupMortarMaterials(_mortar_constraints,
                                       _fe_problem,
                                       _amg,
@@ -55,9 +51,14 @@ ComputeMortarFunctor::mortarSetup()
 }
 
 void
-ComputeMortarFunctor::operator()()
+ComputeMortarFunctor::operator()(const Moose::ComputeType compute_type,
+                                 const std::set<TagID> & vector_tag_ids,
+                                 const std::set<TagID> & /*matrix_tag_ids*/)
 {
+  libmesh_parallel_only(_fe_problem.comm());
+
   unsigned int num_cached = 0;
+  const auto & vector_tags = _fe_problem.getVectorTags(vector_tag_ids);
 
   const auto & secondary_elems_to_mortar_segments = _amg.secondariesToMortarSegments();
   typedef decltype(secondary_elems_to_mortar_segments.begin()) it_type;
@@ -67,55 +68,113 @@ ComputeMortarFunctor::operator()()
        it != secondary_elems_to_mortar_segments.end();
        ++it)
   {
-    auto * const secondary_elem = it->first;
-    mooseAssert(secondary_elem->active(),
-                "We loop over active elements when building the mortar segment mesh, so we golly "
-                "well hope this is active.");
+    auto * const secondary_elem = _subproblem.mesh().getMesh().query_elem_ptr(it->first);
 
-    if (secondary_elem->processor_id() == _subproblem.processor_id() && !it->second.empty())
+    if (secondary_elem && secondary_elem->processor_id() == _subproblem.processor_id() &&
+        !it->second.empty())
+    {
       // This is local and the mortar segment set isn't empty, so include
       iterators.push_back(it);
+      mooseAssert(secondary_elem->active(),
+                  "We loop over active elements when building the mortar segment mesh, so we golly "
+                  "well hope this is active.");
+    }
   }
 
-  auto act_functor = [this, &num_cached]()
+  auto act_functor = [this, &num_cached, compute_type, &vector_tags]()
   {
     ++num_cached;
-    if (!_fe_problem.currentlyComputingJacobian())
+
+    switch (compute_type)
     {
-      for (auto * const mc : _mortar_constraints)
-        mc->computeResidual();
+      case Moose::ComputeType::Residual:
+      {
+        for (auto * const mc : _mortar_constraints)
+        {
+          mc->setNormals();
+          mc->computeResidual();
+        }
 
-      _assembly.cacheResidual();
-      _assembly.cacheResidualNeighbor();
-      _assembly.cacheResidualLower();
+        _assembly.cacheResidual(Assembly::GlobalDataKey{}, vector_tags);
+        _assembly.cacheResidualNeighbor(Assembly::GlobalDataKey{}, vector_tags);
+        _assembly.cacheResidualLower(Assembly::GlobalDataKey{}, vector_tags);
 
-      if (num_cached % 20 == 0)
-        _assembly.addCachedResiduals();
-    }
-    else
-    {
-      for (auto * const mc : _mortar_constraints)
-        mc->computeJacobian();
+        if (num_cached % 20 == 0)
+          _assembly.addCachedResiduals(Assembly::GlobalDataKey{}, vector_tags);
 
-      _assembly.cacheJacobianMortar();
+        break;
+      }
 
-      if (num_cached % 20 == 0)
-        _assembly.addCachedJacobian();
+      case Moose::ComputeType::Jacobian:
+      {
+        for (auto * const mc : _mortar_constraints)
+        {
+          mc->setNormals();
+          mc->computeJacobian();
+        }
+
+        _assembly.cacheJacobianMortar(Assembly::GlobalDataKey{});
+
+        if (num_cached % 20 == 0)
+          _assembly.addCachedJacobian(Assembly::GlobalDataKey{});
+        break;
+      }
+
+      case Moose::ComputeType::ResidualAndJacobian:
+      {
+        for (auto * const mc : _mortar_constraints)
+        {
+          mc->setNormals();
+          mc->computeResidualAndJacobian();
+        }
+
+        _assembly.cacheResidual(Assembly::GlobalDataKey{}, vector_tags);
+        _assembly.cacheResidualNeighbor(Assembly::GlobalDataKey{}, vector_tags);
+        _assembly.cacheResidualLower(Assembly::GlobalDataKey{}, vector_tags);
+        _assembly.cacheJacobianMortar(Assembly::GlobalDataKey{});
+
+        if (num_cached % 20 == 0)
+        {
+          _assembly.addCachedResiduals(Assembly::GlobalDataKey{}, vector_tags);
+          _assembly.addCachedJacobian(Assembly::GlobalDataKey{});
+        }
+        break;
+      }
     }
   };
 
-  Moose::Mortar::loopOverMortarSegments(iterators,
-                                        _assembly,
-                                        _subproblem,
-                                        _fe_problem,
-                                        _amg,
-                                        _displaced,
-                                        _mortar_constraints,
-                                        0,
-                                        _secondary_ip_sub_to_mats,
-                                        _primary_ip_sub_to_mats,
-                                        _secondary_boundary_mats,
-                                        act_functor);
+  PARALLEL_TRY
+  {
+    try
+    {
+      Moose::Mortar::loopOverMortarSegments(iterators,
+                                            _assembly,
+                                            _subproblem,
+                                            _fe_problem,
+                                            _amg,
+                                            _displaced,
+                                            _mortar_constraints,
+                                            0,
+                                            _secondary_ip_sub_to_mats,
+                                            _primary_ip_sub_to_mats,
+                                            _secondary_boundary_mats,
+                                            act_functor,
+                                            /*reinit_mortar_user_objects=*/true);
+    }
+    catch (libMesh::LogicError & e)
+    {
+      _fe_problem.setException("We caught a libMesh::LogicError: " + std::string(e.what()));
+    }
+    catch (MooseException & e)
+    {
+      _fe_problem.setException(e.what());
+    }
+    catch (MetaPhysicL::LogicError & e)
+    {
+      moose::translateMetaPhysicLError(e);
+    }
+  }
+  PARALLEL_CATCH;
 
   // Call any post operations for our mortar constraints
   for (auto * const mc : _mortar_constraints)
@@ -129,8 +188,8 @@ ComputeMortarFunctor::operator()()
   }
 
   // Make sure any remaining cached residuals/Jacobians get added
-  if (!_fe_problem.currentlyComputingJacobian())
-    _assembly.addCachedResiduals();
-  else
-    _assembly.addCachedJacobian();
+  if (_assembly.computingResidual())
+    _assembly.addCachedResiduals(Assembly::GlobalDataKey{}, vector_tags);
+  if (_assembly.computingJacobian())
+    _assembly.addCachedJacobian(Assembly::GlobalDataKey{});
 }

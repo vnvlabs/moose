@@ -56,21 +56,19 @@ RefineBlockGenerator::generate()
   _input->subdomain_ids(mesh_blocks);
 
   for (std::size_t i = 0; i < block_ids.size(); ++i)
-    if (block_ids[i] == Moose::INVALID_BLOCK_ID || !mesh_blocks.count(block_ids[i]))
-    {
-      if (isParamValid("block"))
-        paramError("block",
-                   "The block '",
-                   getParam<std::vector<SubdomainName>>("block")[i],
-                   "' was not found within the mesh");
-      else
-        paramError("block_id",
-                   "The block '",
-                   getParam<SubdomainID>("block_id"),
-                   "' was not found within the mesh");
-    }
+    if (!MooseMeshUtils::hasSubdomainID(*_input, block_ids[i]))
+      paramError("block",
+                 "The block '",
+                 getParam<std::vector<SubdomainName>>("block")[i],
+                 "' was not found within the mesh");
+
   std::unique_ptr<MeshBase> mesh = std::move(_input);
   int max = *std::max_element(_refinement.begin(), _refinement.end());
+
+  if (max > 0 && !mesh->is_replicated() && !mesh->is_prepared())
+    // refinement requires that (or at least it asserts that) the mesh is either replicated or
+    // prepared
+    mesh->prepare_for_use();
 
   return recursive_refine(block_ids, mesh, _refinement, max);
 }

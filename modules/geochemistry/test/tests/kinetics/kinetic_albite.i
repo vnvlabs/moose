@@ -26,7 +26,7 @@
     multiply_by_mass = true
     area_quantity = 1000
     promoting_species_names = "H+"
-    promoting_species_indices = "1.0"
+    promoting_indices = "1.0"
   []
   [definition]
     type = GeochemicalModelDefinition
@@ -50,8 +50,8 @@
 [AuxKernels]
   [mole_change_albite]
     type = ParsedAux
-    args = moles_Albite
-    function = 'moles_Albite - 0.953387'
+    coupled_variables = moles_Albite
+    expression = 'moles_Albite - 0.953387'
     variable = mole_change_albite
   []
 []

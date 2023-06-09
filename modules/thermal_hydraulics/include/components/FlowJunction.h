@@ -9,19 +9,33 @@
 
 #pragma once
 
-#include "FlowConnection.h"
+#include "Component1DJunction.h"
 
 /**
  * Base class for flow junctions
  */
-class FlowJunction : public FlowConnection
+class FlowJunction : public Component1DJunction
 {
 public:
   FlowJunction(const InputParameters & params);
 
-protected:
-  virtual void setupMesh() override;
+  /**
+   * Gets the name of fluid properties used in all flow connections
+   *
+   * @return name of fluid properties used in all flow connections
+   */
+  const UserObjectName & getFluidPropertiesName() const;
 
+protected:
+  virtual void init() override;
+  virtual void check() const override;
+
+  /// Flow model ID
+  THM::FlowModelID _flow_model_id;
+  /// Flow model
+  std::shared_ptr<const FlowModel> _flow_model;
+  /// Fluid property user object name
+  UserObjectName _fp_name;
   /// Name of junction user object name, if any
   const std::string _junction_uo_name;
 

@@ -11,7 +11,7 @@
   []
 []
 
-[Modules/FluidProperties]
+[FluidProperties]
   [fp]
     type = StiffenedGasFluidProperties
     gamma = 2.35
@@ -31,7 +31,7 @@
 [Functions]
   [T_init]
     type = ParsedFunction
-    value = '1000*y+300+30*z'
+    expression = '1000*y+300+30*z'
   []
 []
 
@@ -127,8 +127,4 @@
   steady_state_detection = true
   steady_state_tolerance = 1e-08
   nl_abs_tol = 1e-8
-[]
-
-[Outputs]
-  exodus = true
 []

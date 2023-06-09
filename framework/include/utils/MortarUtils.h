@@ -7,9 +7,11 @@
 //* Licensed under LGPL 2.1, please see LICENSE for details
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
+#pragma once
+
 #include "Assembly.h"
 #include "FEProblemBase.h"
-#include "MooseUtils.h"
+#include "MaterialBase.h"
 #include "MaterialWarehouse.h"
 
 #include "libmesh/quadrature.h"
@@ -64,18 +66,20 @@ void projectQPoints3d(const Elem * msm_elem,
  */
 template <typename Iterators, typename Consumers, typename ActionFunctor>
 void
-loopOverMortarSegments(const Iterators & secondary_elems_to_mortar_segments,
-                       Assembly & assembly,
-                       SubProblem & subproblem,
-                       FEProblemBase & fe_problem,
-                       const AutomaticMortarGeneration & amg,
-                       const bool displaced,
-                       const Consumers & consumers,
-                       const THREAD_ID tid,
-                       std::map<SubdomainID, std::deque<MaterialBase *>> secondary_ip_sub_to_mats,
-                       std::map<SubdomainID, std::deque<MaterialBase *>> primary_ip_sub_to_mats,
-                       std::deque<MaterialBase *> secondary_boundary_mats,
-                       const ActionFunctor act)
+loopOverMortarSegments(
+    const Iterators & secondary_elems_to_mortar_segments,
+    Assembly & assembly,
+    SubProblem & subproblem,
+    FEProblemBase & fe_problem,
+    const AutomaticMortarGeneration & amg,
+    const bool displaced,
+    const Consumers & consumers,
+    const THREAD_ID tid,
+    const std::map<SubdomainID, std::deque<MaterialBase *>> & secondary_ip_sub_to_mats,
+    const std::map<SubdomainID, std::deque<MaterialBase *>> & primary_ip_sub_to_mats,
+    const std::deque<MaterialBase *> & secondary_boundary_mats,
+    const ActionFunctor act,
+    const bool reinit_mortar_user_objects)
 {
   const auto & primary_secondary_boundary_id_pair = amg.primarySecondaryBoundaryIDPair();
 
@@ -104,13 +108,13 @@ loopOverMortarSegments(const Iterators & secondary_elems_to_mortar_segments,
     const auto & mp_deps = consumer->getMatPropDependencies();
     needed_mat_props.insert(mp_deps.begin(), mp_deps.end());
   }
-  fe_problem.setActiveMaterialProperties(needed_mat_props, /*tid=*/0);
+  fe_problem.setActiveMaterialProperties(needed_mat_props, /*tid=*/tid);
 
   // Loop through secondary elements, accumulating quadrature points for all corresponding mortar
   // segments
   for (const auto elem_to_msm : secondary_elems_to_mortar_segments)
   {
-    const Elem * secondary_face_elem = elem_to_msm->first;
+    const Elem * secondary_face_elem = subproblem.mesh().getMesh().elem_ptr(elem_to_msm->first);
     // Set the secondary interior parent and side ids
     const Elem * secondary_ip = secondary_face_elem->interior_parent();
     unsigned int secondary_side_id = secondary_ip->which_side_am_i(secondary_face_elem);
@@ -294,6 +298,9 @@ loopOverMortarSegments(const Iterators & secondary_elems_to_mortar_segments,
       fe_problem.reinitMaterialsBoundary(
           secondary_boundary_id, /*tid=*/tid, /*swap_stateful=*/false, &secondary_boundary_mats);
 
+      if (reinit_mortar_user_objects)
+        fe_problem.reinitMortarUserObjects(primary_boundary_id, secondary_boundary_id, displaced);
+
       act();
 
     } // End loop over msm segments on secondary face elem
@@ -337,7 +344,7 @@ setupMortarMaterials(const Consumers & consumers,
     if (mat_warehouse[mat_data_type].hasActiveBlockObjects(sub_id, tid))
     {
       auto & sub_mats = mat_warehouse[mat_data_type].getActiveBlockObjects(sub_id, tid);
-      return MooseUtils::buildRequiredMaterials(consumers, sub_mats, /*allow_stateful=*/false);
+      return MaterialBase::buildRequiredMaterials(consumers, sub_mats, /*allow_stateful=*/false);
     }
     else
       return {};
@@ -362,7 +369,7 @@ setupMortarMaterials(const Consumers & consumers,
   {
     auto & boundary_mats = mat_warehouse.getActiveBoundaryObjects(secondary_boundary, tid);
     secondary_boundary_mats =
-        MooseUtils::buildRequiredMaterials(consumers, boundary_mats, /*allow_stateful=*/false);
+        MaterialBase::buildRequiredMaterials(consumers, boundary_mats, /*allow_stateful=*/false);
   }
 }
 }

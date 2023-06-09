@@ -27,12 +27,12 @@
 [Functions]
   [./exact_fn]
     type = ParsedFunction
-    value = t*t*t*((x*x)+(y*y))
+    expression = t*t*t*((x*x)+(y*y))
   [../]
 
   [./forcing_fn]
     type = ParsedFunction
-    value = 3*t*t*((x*x)+(y*y))-(4*t*t*t)
+    expression = 3*t*t*((x*x)+(y*y))-(4*t*t*t)
   [../]
 []
 
@@ -93,5 +93,4 @@
 [Outputs]
   execute_on = 'initial timestep_end'
   exodus = true
-  csv = true
 []

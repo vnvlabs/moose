@@ -43,15 +43,13 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [simple_fluid]
-      type = SimpleFluidProperties
-      bulk_modulus = 2e9
-      density0 = 1000
-      thermal_expansion = 0
-      viscosity = 1e-3
-    []
+[FluidProperties]
+  [simple_fluid]
+    type = SimpleFluidProperties
+    bulk_modulus = 2e9
+    density0 = 1000
+    thermal_expansion = 0
+    viscosity = 1e-3
   []
 []
 
@@ -122,8 +120,8 @@
 [AuxKernels]
   [pp]
     type = ParsedAux
-    function = '(md-6.9077552789821)*2.0E9'
-    args = 'md'
+    expression = '(md-6.9077552789821)*2.0E9'
+    coupled_variables = 'md'
     variable = pp
   []
 []

@@ -11,7 +11,7 @@
   closures = simple_closures
 []
 
-[Modules/FluidProperties]
+[FluidProperties]
   [eos]
     type = StiffenedGasFluidProperties
     gamma = 2.35
@@ -40,7 +40,7 @@
 [Functions]
   [T_init]
     type = ParsedFunction
-    value = '290 + sin((1 - z) * pi * 1.4)'
+    expression = '290 + sin((1 - z) * pi * 1.4)'
   []
 []
 

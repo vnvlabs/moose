@@ -18,6 +18,7 @@ import moosetree
 import uuid
 import json
 import time
+import itertools
 import pyhit
 
 import MooseDocs
@@ -183,14 +184,13 @@ class SQAExtension(command.CommandExtension):
                 break
 
         # Setup the SQAMooseAppReports to use the syntax from the running app
-        for reports in self.__reports.values():
-            for app_report in reports[2]:
-                app_report.app_syntax = app_syntax
-                app_report.exe_directory = exe_dir
-                app_report.exe_name = exe_name.rsplit('-', maxsplit=1)[0] if exe_name else None
-                if app_syntax is None:
-                    msg = 'Attempting to inject application syntax into SQAMooseAppReport, but the syntax does not exist.'
-                    LOG.warning(msg)
+        for app_report in itertools.chain.from_iterable(reports[2] for reports in self.__reports.values() if reports[2] is not None):
+            app_report.app_syntax = app_syntax
+            app_report.exe_directory = exe_dir
+            app_report.exe_name = exe_name.rsplit('-', maxsplit=1)[0] if exe_name else None
+            if app_syntax is None:
+                msg = 'Attempting to inject application syntax into SQAMooseAppReport, but the syntax does not exist.'
+                LOG.warning(msg)
 
         # Set default collection and add RunException tests to FAILURE_ANALYSIS collection
         d_type = self['default_collection']
@@ -318,12 +318,15 @@ class SQARequirementsCommand(command.CommandComponent):
 
     def createToken(self, parent, info, page, settings):
         category = settings['category']
+        collections = settings['collections']
         if category == '_empty_':
             return parent
 
         group_map = self.extension.get('requirement-groups', dict())
-        if len(self.extension.requirements(category)) == 0:
-            tokens.String(parent, content="No requirements of this type exist for this application.")
+
+        # Used in check for number of requirements in a given collection (functional, usability, etc.)
+        # while working through a given category (kernels, etc.)
+        num_collection_reqs = 0
 
         for group, requirements in self.extension.requirements(category).items():
             group = group_map.get(group, group.replace('_', ' ').title())
@@ -331,6 +334,12 @@ class SQARequirementsCommand(command.CommandComponent):
             SQARequirementMatrixHeading(matrix, category=category, string=str(group))
             for req in requirements:
                 self._addRequirement(matrix, info, page, req, requirements, category, settings)
+                if (collections is not None) and (req.collections is not None) and any(c in collections for c in req.collections):
+                    num_collection_reqs += 1
+
+        if num_collection_reqs == 0:
+            tokens.String(parent, content="No requirements of this type exist for this application, beyond those of its dependencies.")
+
         return parent
 
     def _addRequirement(self, parent, info, page, req, requirements, category, settings):
@@ -340,7 +349,7 @@ class SQARequirementsCommand(command.CommandComponent):
         # Skip add if ...
         if req.deprecated:
             return
-        if (collections is not None) and not any(c in collections for c in req.collections):
+        if (collections is not None) and (req.collections is not None) and not any(c in collections for c in req.collections):
             return
         if (types is not None) and not any(t in types for t in req.types or set()):
             return
@@ -1009,15 +1018,18 @@ class RenderSQAReport(components.RenderComponent):
 
 class RenderSQADocumentReport(RenderSQAReport):
     def createMaterialize(self, parent, token, page):
-        html.Tag(parent, 'h3', string='Necessary SQA Document Report(s)')
-        super().createMaterialize(parent, token, page)
+        if token['reports']:
+            html.Tag(parent, 'h3', string='Necessary SQA Document Report(s)')
+            super().createMaterialize(parent, token, page)
 
 class RenderSQARequirementReport(RenderSQAReport):
     def createMaterialize(self, parent, token, page):
-        html.Tag(parent, 'h3', string='Requirement Completion Report(s)')
-        super().createMaterialize(parent, token, page)
+        if token['reports']:
+            html.Tag(parent, 'h3', string='Requirement Completion Report(s)')
+            super().createMaterialize(parent, token, page)
 
 class RenderSQAMooseAppReport(RenderSQAReport):
     def createMaterialize(self, parent, token, page):
-        html.Tag(parent, 'h3', string='Application Design Page Report(s)')
-        super().createMaterialize(parent, token, page)
+        if token['reports']:
+            html.Tag(parent, 'h3', string='Application Design Page Report(s)')
+            super().createMaterialize(parent, token, page)

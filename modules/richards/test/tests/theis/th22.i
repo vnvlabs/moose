@@ -165,7 +165,7 @@
 [Functions]
   [./initial_pressure]
     type = ParsedFunction
-    value = 1E5
+    expression = 1E5
   [../]
 []
 
@@ -216,6 +216,5 @@
 [Outputs]
   execute_on = 'timestep_end'
   file_base = th22
-  exodus = true
   csv = true
 []

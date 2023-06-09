@@ -14,7 +14,7 @@
   automatic_scaling = true
 []
 
-[Modules/FluidProperties]
+[FluidProperties]
   [fp]
     type = StiffenedGasFluidProperties
     gamma = 1.43
@@ -113,6 +113,8 @@
 
   solve_type = 'newton'
   line_search = 'basic'
+  petsc_options_iname = '-pc_type'
+  petsc_options_value = ' lu'
   nl_rel_tol = 1e-6
   nl_abs_tol = 1e-3
   nl_max_its = 5

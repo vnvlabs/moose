@@ -53,8 +53,8 @@ ElementVariablesDifferenceMax::ElementVariablesDifferenceMax(const InputParamete
   : ElementVectorPostprocessor(parameters),
     _a(coupledValue("compare_a")),
     _b(coupledValue("compare_b")),
-    _a_value(declareVector(getVar("compare_a", 0)->name())),
-    _b_value(declareVector(getVar("compare_b", 0)->name())),
+    _a_value(declareVector(coupledName("compare_a"))),
+    _b_value(declareVector(coupledName("compare_b"))),
     _max_difference(declareVector("Difference")),
     _position_x(declareVector("X")),
     _position_y(declareVector("Y")),
@@ -112,6 +112,11 @@ void
 ElementVariablesDifferenceMax::initialize()
 {
   _all[MAXIMUM_DIFFERENCE] = 0.0;
+  _all[MAXIMUM_DIFFERENCE_A_VALUE] = 0.0;
+  _all[MAXIMUM_DIFFERENCE_B_VALUE] = 0.0;
+  _all[MAXIMUM_DIFFERENCE_X] = 0.0;
+  _all[MAXIMUM_DIFFERENCE_Y] = 0.0;
+  _all[MAXIMUM_DIFFERENCE_Z] = 0.0;
 }
 
 void

@@ -624,8 +624,7 @@ FluidPropertiesInterrogator::getSpecifiedSetMap(
                             std::inserter(extraneous_parameters, extraneous_parameters.end()));
         for (const auto & parameter : extraneous_parameters)
           if (isParamValid(parameter))
-            mooseError(name(),
-                       ": (",
+            mooseError("(",
                        parameter_set_name,
                        ") has been specified; ",
                        parameter,
@@ -641,7 +640,7 @@ FluidPropertiesInterrogator::getSpecifiedSetMap(
   if (!specified_a_set && throw_error_if_no_match)
   {
     std::stringstream ss;
-    ss << name() << ": For " << fp_type
+    ss << "For " << fp_type
        << " fluid properties, you must provide one of the following\n"
           "combinations of thermodynamic properties:\n";
     for (const auto & parameter_set_name : parameter_set_names)
@@ -701,7 +700,7 @@ FluidPropertiesInterrogator::outputStaticProperties(const InputParameters & para
   outputProperty("Specific volume", params.get<Real>("v"), "m^3/kg");
   outputProperty("Specific internal energy", params.get<Real>("e"), "J/kg");
   outputProperty("Specific enthalpy", params.get<Real>("h"), "J/kg");
-  outputProperty("Specific entropy", params.get<Real>("s"), "J/kg");
+  outputProperty("Specific entropy", params.get<Real>("s"), "J/(kg-K)");
   _console << std::endl;
   outputProperty("Sound speed", params.get<Real>("c"), "m/s");
   outputProperty("Dynamic viscosity", params.get<Real>("mu"), "Pa-s");
@@ -721,7 +720,7 @@ FluidPropertiesInterrogator::outputStagnationProperties(const InputParameters & 
   outputProperty("Specific volume", params.get<Real>("v0"), "m^3/kg");
   outputProperty("Specific internal energy", params.get<Real>("e0"), "J/kg");
   outputProperty("Specific enthalpy", params.get<Real>("h0"), "J/kg");
-  outputProperty("Specific entropy", params.get<Real>("s0"), "J/kg");
+  outputProperty("Specific entropy", params.get<Real>("s0"), "J/(kg-K)");
   _console << std::endl;
   outputProperty("Sound speed", params.get<Real>("c0"), "m/s");
   outputProperty("Dynamic viscosity", params.get<Real>("mu0"), "Pa-s");

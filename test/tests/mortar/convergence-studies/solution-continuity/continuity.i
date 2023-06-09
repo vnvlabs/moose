@@ -139,15 +139,15 @@
 [Functions]
   [./forcing_function]
     type = ParsedFunction
-    value = ''
+    expression = ''
   [../]
   [./exact_soln_primal]
     type = ParsedFunction
-    value = ''
+    expression = ''
   [../]
   [exact_soln_lambda]
     type = ParsedFunction
-    value = ''
+    expression = ''
   []
 []
 
@@ -184,7 +184,6 @@
 []
 
 [Outputs]
-  exodus = true
   csv = true
   [dofmap]
     type = DOFMap

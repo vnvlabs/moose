@@ -20,7 +20,6 @@
 InputParameters
 BlockRestrictable::validParams()
 {
-
   // Create InputParameters object that will be appended to the parameters for the inheriting object
   InputParameters params = emptyInputParameters();
 
@@ -164,6 +163,12 @@ BlockRestrictable::initializeBlockRestrictable(const MooseObject * moose_object)
       moose_object->paramError("block", msg.str());
     }
   }
+
+  // Get the mesh dimension for the blocks
+  if (blockRestricted())
+    _blk_dim = _blk_mesh->getBlocksMaxDimension(_blocks);
+  else
+    _blk_dim = _blk_mesh->dimension();
 }
 
 bool
@@ -207,7 +212,7 @@ BlockRestrictable::hasBlocks(const std::vector<SubdomainName> & names) const
 }
 
 bool
-BlockRestrictable::hasBlocks(const SubdomainID & id) const
+BlockRestrictable::hasBlocks(const SubdomainID id) const
 {
   if (_blk_ids.empty() || _blk_ids.find(Moose::ANY_BLOCK_ID) != _blk_ids.end())
     return true;

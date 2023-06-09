@@ -97,7 +97,7 @@ name = 'finite'
     scaling = 1e-7
   []
   [frictionless_normal_lm]
-    order = FIRST
+    order = ${order}
     block = 'frictionless_secondary_subdomain'
     use_dual = true
   []
@@ -121,6 +121,19 @@ name = 'finite'
   []
 []
 
+[UserObjects]
+  [weighted_gap_uo]
+    type = LMWeightedGapUserObject
+    primary_boundary = plank_right
+    secondary_boundary = block_left
+    primary_subdomain = frictionless_primary_subdomain
+    secondary_subdomain = frictionless_secondary_subdomain
+    lm_variable = frictionless_normal_lm
+    disp_x = disp_x
+    disp_y = disp_y
+  []
+[]
+
 [Constraints]
   [weighted_gap_lm]
     type = ComputeWeightedGapLMMechanicalContact
@@ -132,6 +145,7 @@ name = 'finite'
     disp_x = disp_x
     disp_y = disp_y
     use_displaced_mesh = true
+    weighted_gap_uo = weighted_gap_uo
   []
   [normal_x]
     type = NormalMortarMechanicalContact
@@ -144,6 +158,7 @@ name = 'finite'
     component = x
     use_displaced_mesh = true
     compute_lm_residuals = false
+    weighted_gap_uo = weighted_gap_uo
   []
   [normal_y]
     type = NormalMortarMechanicalContact
@@ -156,6 +171,7 @@ name = 'finite'
     component = y
     use_displaced_mesh = true
     compute_lm_residuals = false
+    weighted_gap_uo = weighted_gap_uo
   []
   [thermal_contact]
     type = GapConductanceConstraint
@@ -173,27 +189,27 @@ name = 'finite'
 
 [BCs]
   [left_temp]
-    type = DirichletBC
+    type = ADDirichletBC
     variable = temp
     boundary = 'plank_left'
     value = 400
   []
 
   [right_temp]
-    type = DirichletBC
+    type = ADDirichletBC
     variable = temp
     boundary = 'block_right'
     value = 300
   []
 
   [left_x]
-    type = DirichletBC
+    type = ADDirichletBC
     variable = disp_x
     boundary = plank_left
     value = 0.0
   []
   [left_y]
-    type = DirichletBC
+    type = ADDirichletBC
     variable = disp_y
     boundary = plank_bottom
     value = 0.0
@@ -246,19 +262,12 @@ name = 'finite'
   []
 []
 
-[Preconditioning]
-  [smp]
-    type = SMP
-    full = true
-  []
-[]
-
 [Executioner]
   type = Transient
-  solve_type = 'PJFNK'
+  solve_type = 'NEWTON'
   petsc_options = '-snes_converged_reason -ksp_converged_reason'
-  petsc_options_iname = '-pc_type -mat_mffd_err -pc_factor_shift_type -pc_factor_shift_amount -snes_max_it'
-  petsc_options_value = 'lu       1e-5          NONZERO               1e-15                   20'
+  petsc_options_iname = '-pc_type -pc_factor_shift_type -pc_factor_shift_amount -snes_max_it'
+  petsc_options_value = 'lu       NONZERO               1e-15                   20'
   end_time = 13.5
   dt = 0.1
   dtmin = 0.1
@@ -326,9 +335,7 @@ name = 'finite'
 []
 
 [Outputs]
-  exodus = true
   file_base = ${name}
-  checkpoint = true
   [comp]
     type = CSV
     show = 'contact avg_temp'

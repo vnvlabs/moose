@@ -8,7 +8,7 @@
   closures = simple_closures
 []
 
-[Modules/FluidProperties]
+[FluidProperties]
   [fp]
     type = StiffenedGasFluidProperties
     gamma = 2.35
@@ -37,7 +37,7 @@
 [Functions]
   [T0_fn]
     type = ParsedFunction
-    value = '290 + 20 * (y - 1)'
+    expression = '290 + 20 * (y - 1)'
   []
 []
 

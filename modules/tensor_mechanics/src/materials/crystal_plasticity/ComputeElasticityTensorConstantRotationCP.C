@@ -10,13 +10,16 @@
 #include "ComputeElasticityTensorConstantRotationCP.h"
 #include "RotationTensor.h"
 
-registerMooseObject("TensorMechanicsApp", ComputeElasticityTensorConstantRotationCP);
+registerMooseObjectDeprecated("TensorMechanicsApp",
+                              ComputeElasticityTensorConstantRotationCP,
+                              "11/15/2023 12:00");
 
 InputParameters
 ComputeElasticityTensorConstantRotationCP::validParams()
 {
   InputParameters params = ComputeElasticityTensor::validParams();
-  params.addClassDescription("Compute an elasticity tensor for crystal plasticity, formulated in "
+  params.addClassDescription("Deprecated Class: please use ComputeElasticityTensorCP instead. "
+                             "Compute an elasticity tensor for crystal plasticity, formulated in "
                              "the reference frame, with constant Euler angles.");
   return params;
 }
@@ -24,7 +27,7 @@ ComputeElasticityTensorConstantRotationCP::validParams()
 ComputeElasticityTensorConstantRotationCP::ComputeElasticityTensorConstantRotationCP(
     const InputParameters & parameters)
   : ComputeElasticityTensor(parameters),
-    _crysrot(declareProperty<RankTwoTensor>("crysrot")),
+    _crysrot(declareProperty<RankTwoTensor>(_base_name + "crysrot")),
     _Euler_angles_material_property(declareProperty<RealVectorValue>("Euler_angles")),
     _R(_Euler_angles),
     _crysrot_constant(_R.transpose())

@@ -10,6 +10,7 @@
 #include "gtest/gtest.h"
 #include "MathFVUtils.h"
 #include "FaceInfo.h"
+#include "ElemInfo.h"
 #include "UpwindLimiter.h"
 #include "AppFactory.h"
 #include "libmesh/elem.h"
@@ -33,14 +34,28 @@ TEST(LimitersTest, limitVector)
   auto app = AppFactory::createAppShared("MooseUnitApp", 1, (char **)argv);
   ReplicatedMesh mesh(app->comm(), /*dim=*/2);
   MeshTools::Generation::build_square(mesh, 2, 2);
-  auto * const elem = mesh.elem_ptr(0);
-  for (const auto s : elem->side_index_range())
-    if (elem->neighbor_ptr(s))
+  ElemInfo ei(mesh.elem_ptr(0));
+
+  dof_id_type counter = 0;
+  for (const auto s : ei.elem()->side_index_range())
+    if (ei.elem()->neighbor_ptr(s))
     {
-      auto * const neighbor = elem->neighbor_ptr(s);
-      FaceInfo fi(elem, s, neighbor);
+      FaceInfo fi(&ei, s, counter++);
+      ElemInfo ni(ei.elem()->neighbor_ptr(s));
+      fi.computeInternalCoefficients(&ni);
       auto result = interpolate(limiter, upwind, downwind, &grad, fi, true);
       for (const auto d : make_range(unsigned(LIBMESH_DIM)))
         EXPECT_EQ(result(d), 1);
     }
+}
+
+TEST(LimitersTest, limiterType)
+{
+  EXPECT_TRUE(limiterType(InterpMethod::Average) == LimiterType::CentralDifference);
+  EXPECT_TRUE(limiterType(InterpMethod::SkewCorrectedAverage) == LimiterType::CentralDifference);
+  EXPECT_TRUE(limiterType(InterpMethod::Upwind) == LimiterType::Upwind);
+  EXPECT_TRUE(limiterType(InterpMethod::VanLeer) == LimiterType::VanLeer);
+  EXPECT_TRUE(limiterType(InterpMethod::MinMod) == LimiterType::MinMod);
+  EXPECT_TRUE(limiterType(InterpMethod::SOU) == LimiterType::SOU);
+  EXPECT_TRUE(limiterType(InterpMethod::QUICK) == LimiterType::QUICK);
 }

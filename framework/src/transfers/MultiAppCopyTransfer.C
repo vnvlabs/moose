@@ -11,13 +11,17 @@
 #include "MultiAppCopyTransfer.h"
 #include "FEProblemBase.h"
 #include "MultiApp.h"
+#include "SystemBase.h"
+
+#include "libmesh/id_types.h"
+#include "libmesh/string_to_enum.h"
 
 registerMooseObject("MooseApp", MultiAppCopyTransfer);
 
 InputParameters
 MultiAppCopyTransfer::validParams()
 {
-  InputParameters params = MultiAppFieldTransfer::validParams();
+  InputParameters params = MultiAppDofCopyTransfer::validParams();
   params.addRequiredParam<std::vector<AuxVariableName>>(
       "variable", "The auxiliary variable to store the transferred values in.");
   params.addRequiredParam<std::vector<VariableName>>("source_variable",
@@ -29,35 +33,52 @@ MultiAppCopyTransfer::validParams()
 }
 
 MultiAppCopyTransfer::MultiAppCopyTransfer(const InputParameters & parameters)
-  : MultiAppFieldTransfer(parameters),
+  : MultiAppDofCopyTransfer(parameters),
     _from_var_names(getParam<std::vector<VariableName>>("source_variable")),
     _to_var_names(getParam<std::vector<AuxVariableName>>("variable"))
 {
-  /* Right now, most of transfers support one variable only */
-  _to_var_name = _to_var_names[0];
-  _from_var_name = _from_var_names[0];
+  /* Right now, most of derived transfers support one variable only */
+  _to_var_name = _to_var_names.size() ? _to_var_names[0] : "INVALID";
+  _from_var_name = _from_var_names.size() ? _from_var_names[0] : "INVALID";
 }
 
 void
 MultiAppCopyTransfer::execute()
 {
-  _console << "Beginning MultiAppCopyTransfer " << name() << std::endl;
+  TIME_SECTION("MultiAppCopyTransfer::execute()", 5, "Copies variables");
 
   if (_current_direction == TO_MULTIAPP)
   {
-    FEProblemBase & from_problem = _multi_app->problemBase();
-    for (unsigned int i = 0; i < _multi_app->numGlobalApps(); i++)
-      if (_multi_app->hasLocalApp(i))
-        transfer(_multi_app->appProblemBase(i), from_problem);
+    FEProblemBase & from_problem = getToMultiApp()->problemBase();
+    for (unsigned int i = 0; i < getToMultiApp()->numGlobalApps(); i++)
+      if (getToMultiApp()->hasLocalApp(i))
+        transfer(getToMultiApp()->appProblemBase(i), from_problem);
   }
 
   else if (_current_direction == FROM_MULTIAPP)
   {
-    FEProblemBase & to_problem = _multi_app->problemBase();
-    for (unsigned int i = 0; i < _multi_app->numGlobalApps(); i++)
-      if (_multi_app->hasLocalApp(i))
-        transfer(to_problem, _multi_app->appProblemBase(i));
+    FEProblemBase & to_problem = getFromMultiApp()->problemBase();
+    for (unsigned int i = 0; i < getFromMultiApp()->numGlobalApps(); i++)
+      if (getFromMultiApp()->hasLocalApp(i))
+        transfer(to_problem, getFromMultiApp()->appProblemBase(i));
   }
 
-  _console << "Finished MultiAppCopyTransfer " << name() << std::endl;
+  else if (_current_direction == BETWEEN_MULTIAPP)
+  {
+    int transfers_done = 0;
+    for (unsigned int i = 0; i < getFromMultiApp()->numGlobalApps(); i++)
+    {
+      if (getFromMultiApp()->hasLocalApp(i))
+      {
+        if (getToMultiApp()->hasLocalApp(i))
+        {
+          transfer(getToMultiApp()->appProblemBase(i), getFromMultiApp()->appProblemBase(i));
+          transfers_done++;
+        }
+      }
+    }
+    if (!transfers_done)
+      mooseError("BETWEEN_MULTIAPP transfer not supported if there is not at least one subapp "
+                 "per multiapp involved on each rank");
+  }
 }

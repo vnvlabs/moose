@@ -55,7 +55,7 @@
 [Functions]
   [pic]
     type = ParsedFunction
-    value = 1.1e5-x*1e3
+    expression = 1.1e5-x*1e3
   []
 []
 
@@ -131,15 +131,13 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [simple_fluid]
-      type = SimpleFluidProperties
-      bulk_modulus = 1e9
-      density0 = 1000
-      viscosity = 0.001
-      thermal_expansion = 0
-    []
+[FluidProperties]
+  [simple_fluid]
+    type = SimpleFluidProperties
+    bulk_modulus = 1e9
+    density0 = 1000
+    viscosity = 0.001
+    thermal_expansion = 0
   []
 []
 

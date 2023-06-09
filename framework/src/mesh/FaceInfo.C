@@ -16,53 +16,90 @@
 #include "libmesh/quadrature_gauss.h"
 #include "libmesh/remote_elem.h"
 
-FaceInfo::FaceInfo(const Elem * elem, unsigned int side, const Elem * neighbor)
-  : _processor_id(elem->processor_id()),
-    _id(std::make_pair(elem->id(), side)),
-    _elem(elem),
-    _neighbor(neighbor),
-    _elem_subdomain_id(elem->subdomain_id()),
+FaceInfo::FaceInfo(const ElemInfo * elem_info, unsigned int side, const dof_id_type id)
+  : _elem_info(elem_info),
+    _neighbor_info(nullptr),
+    _id(id),
+    _processor_id(_elem_info->elem()->processor_id()),
     _elem_side_id(side),
-    _elem_centroid(elem->vertex_average()),
-    _elem_volume(elem->volume()),
-    _face(const_cast<Elem *>(elem)->build_side_ptr(_elem_side_id)),
-    _face_area(_face->volume()),
-    _face_centroid(_face->vertex_average()),
-    // the neighbor info does not exist for domain boundaries. Additionally, we don't have any info
-    // if the neighbor is a RemoteElem. This can happen for ghosted elements on the edge of a
-    // stencil, for whom we have may have deleted some of their neighbors when running with a
-    // distributed mesh
-    _valid_neighbor(neighbor && neighbor != remote_elem),
-    _neighbor_subdomain_id(_valid_neighbor ? neighbor->subdomain_id() : Moose::INVALID_BLOCK_ID),
-    _neighbor_side_id(_valid_neighbor ? neighbor->which_neighbor_am_i(elem)
-                                      : std::numeric_limits<unsigned int>::max()),
-    _neighbor_centroid(_valid_neighbor ? neighbor->vertex_average()
-                                       : 2 * (_face_centroid - _elem_centroid) + _elem_centroid),
-    _neighbor_volume(_valid_neighbor ? neighbor->volume() : _elem_volume),
-    _gc((_neighbor_centroid - _face_centroid).norm() /
-        ((_neighbor_centroid - _face_centroid).norm() + (_elem_centroid - _face_centroid).norm())),
-    _d_cf(_neighbor_centroid - _elem_centroid),
-    _d_cf_mag(_d_cf.norm()),
-    _e_cf(_d_cf / _d_cf_mag)
+    _neighbor_side_id(libMesh::invalid_uint),
+    _gc(0.5)
 {
-  // compute an centroid face normal by using 1-point quadrature
-  unsigned int dim = elem->dim();
-  std::unique_ptr<FEBase> fe(FEBase::build(dim, FEType(elem->default_order())));
-  QGauss qface(dim - 1, CONSTANT);
-  fe->attach_quadrature_rule(&qface);
-  const std::vector<Point> & normals = fe->get_normals();
-  fe->reinit(elem, _elem_side_id);
-  mooseAssert(normals.size() == 1, "FaceInfo construction broken w.r.t. computing face normals");
-  _normal = normals[0];
+  // Compute face-related quantities
+  const std::unique_ptr<const Elem> face = _elem_info->elem()->build_side_ptr(_elem_side_id);
+  _face_area = face->volume();
+  _face_centroid = face->vertex_average();
 
-  _vertices.resize(_face->n_vertices());
-  for (const auto vertex_num : make_range(_face->n_vertices()))
-    _vertices[vertex_num] = _face->node_ptr(vertex_num);
+  // Compute the face-normals
+  unsigned int dim = _elem_info->elem()->dim();
+  const auto r_cf = _face_centroid - _elem_info->centroid();
 
-  // Compute the position of the intersection of e_CF and the surface
-  _r_intersection =
-      _elem_centroid + (((_face_centroid - _elem_centroid) * _normal) / (_e_cf * _normal)) * _e_cf;
+  // For 1D elements, this is simple
+  if (dim == 1)
+    _normal = r_cf / r_cf.norm();
+  // For 2D elements, this is equally simple, we just need to make sure that
+  // the normal points in the right direction.
+  else if (dim == 2)
+  {
+    Point side = face->node_ref(0) - face->node_ref(1);
+    _normal = Point(-side(1), side(0));
+    _normal /= _normal.norm();
+    if (_normal * r_cf < 0.0)
+      _normal *= -1.0;
+  }
+  // In 3D we need to use the vector product
+  else
+  {
+    Point side_1 = face->node_ref(0) - face->node_ref(1);
+    Point side_2 = face->node_ref(0) - face->node_ref(2);
+    _normal = side_1.cross(side_2);
+    _normal /= _normal.norm();
+    if (_normal * r_cf < 0.0)
+      _normal *= -1.0;
+  }
+}
 
-  // Interpolation coefficients for skewness correction
-  _gc_skewed = (_neighbor_centroid - _r_intersection).norm() / _d_cf_mag;
+void
+FaceInfo::computeInternalCoefficients(const ElemInfo * const neighbor_info)
+{
+  mooseAssert(neighbor_info,
+              "We need a neighbor if we want to compute interpolation coefficients!");
+  _neighbor_info = neighbor_info;
+  _neighbor_side_id = _neighbor_info->elem()->which_neighbor_am_i(_elem_info->elem());
+
+  // Setup quantities used for the approximation of the spatial derivatives
+  _d_cn = _neighbor_info->centroid() - _elem_info->centroid();
+  _d_cn_mag = _d_cn.norm();
+  _e_cn = _d_cn / _d_cn_mag;
+
+  Point r_intersection =
+      _elem_info->centroid() +
+      (((_face_centroid - _elem_info->centroid()) * _normal) / (_e_cn * _normal)) * _e_cn;
+
+  // For interpolation coefficients
+  _gc = (_neighbor_info->centroid() - r_intersection).norm() / _d_cn_mag;
+}
+
+void
+FaceInfo::computeBoundaryCoefficients()
+{
+  mooseAssert(!_neighbor_info, "This functions shall only be called on a boundary!");
+
+  // Setup quantities used for the approximation of the spatial derivatives
+  _d_cn = _face_centroid - _elem_info->centroid();
+  _d_cn_mag = _d_cn.norm();
+  _e_cn = _d_cn / _d_cn_mag;
+
+  // For interpolation coefficients
+  _gc = 1.0;
+}
+
+Point
+FaceInfo::skewnessCorrectionVector() const
+{
+  const Point r_intersection =
+      _elem_info->centroid() +
+      (((_face_centroid - _elem_info->centroid()) * _normal) / (_e_cn * _normal)) * _e_cn;
+
+  return _face_centroid - r_intersection;
 }

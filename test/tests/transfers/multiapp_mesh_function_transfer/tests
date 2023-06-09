@@ -1,6 +1,6 @@
 [Tests]
   issues = '#1836'
-  design = 'MultiAppMeshFunctionTransfer.md'
+  design = 'MultiAppShapeEvaluationTransfer.md'
 
   [transfer]
     requirement = "The system shall support the transfer of data using the finite element solution function:"
@@ -55,11 +55,11 @@
   []
 
   [errors]
-    requirement = "The system shall error if preforming a transfer of data using the finite element solution if:"
+    requirement = "The system shall error if performing a transfer of data using the finite element solution if:"
 
     [missed_point]
       type = 'RunException'
-      input = 'missing_master.i'
+      input = 'missing_parent.i'
       expect_err = 'Point not found'
 
       detail = "the evaluation point does not exist and"
@@ -72,7 +72,18 @@
       allow_warnings = true
       max_parallel = 1
 
-      detail = "if the execution settings do not match between the master and sub-applications."
+      detail = "if the execution settings do not match between the parent and sub-applications."
+    []
+
+    [mismatch_exec_on_sibling]
+      type = 'RunApp'
+      input = 'exec_on_mismatch.i'
+      cli_args = "MultiApps/active='sub_sibling_1 sub_sibling_2' Transfers/active=from_sub Transfers/from_sub/type=MultiAppCopyTransfer Transfers/from_sub/variable=sub_u Transfers/from_sub/from_multi_app=sub_sibling_1 Transfers/from_sub/to_multi_app=sub_sibling_2"
+      expect_out = 'MultiAppTransfer execute_on flags do not match'
+      allow_warnings = true
+      max_parallel = 1
+
+      detail = "if the execution settings do not match with any of two sibling sub-applications."
     []
   []
 []

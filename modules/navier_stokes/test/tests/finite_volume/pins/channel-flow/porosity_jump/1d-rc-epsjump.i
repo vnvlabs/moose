@@ -1,7 +1,7 @@
-mu=1.1
-rho=1.1
-advected_interp_method='upwind'
-velocity_interp_method='rc'
+mu = 1.1
+rho = 1.1
+advected_interp_method = 'upwind'
+velocity_interp_method = 'rc'
 
 [Mesh]
   [mesh]
@@ -69,7 +69,7 @@ velocity_interp_method='rc'
 [Functions]
   [smooth_jump]
     type = ParsedFunction
-    value = '1 - 0.5 * 1 / (1 + exp(-30*(x-1)))'
+    expression = '1 - 0.5 * 1 / (1 + exp(-30*(x-1)))'
   []
 []
 
@@ -125,8 +125,8 @@ velocity_interp_method='rc'
 [Executioner]
   type = Steady
   solve_type = 'NEWTON'
-  petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_pc_type -sub_pc_factor_shift_type'
-  petsc_options_value = 'asm      100                lu           NONZERO'
+  petsc_options_iname = '-pc_type -pc_factor_shift_type'
+  petsc_options_value = 'lu NONZERO'
   line_search = 'none'
 []
 

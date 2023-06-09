@@ -19,7 +19,7 @@ SideIntegralPostprocessor::validParams()
 }
 
 SideIntegralPostprocessor::SideIntegralPostprocessor(const InputParameters & parameters)
-  : SidePostprocessor(parameters), _qp(0), _integral_value(0)
+  : SidePostprocessor(parameters), _qp(0), _integral_value(0), _qp_integration(true)
 {
 }
 
@@ -38,7 +38,7 @@ SideIntegralPostprocessor::execute()
 Real
 SideIntegralPostprocessor::getValue()
 {
-  gatherSum(_integral_value);
+
   return _integral_value;
 }
 
@@ -53,7 +53,22 @@ Real
 SideIntegralPostprocessor::computeIntegral()
 {
   Real sum = 0;
-  for (_qp = 0; _qp < _qrule->n_points(); _qp++)
-    sum += _JxW[_qp] * _coord[_qp] * computeQpIntegral();
+  if (_qp_integration)
+    for (_qp = 0; _qp < _qrule->n_points(); _qp++)
+      sum += _JxW[_qp] * _coord[_qp] * computeQpIntegral();
+  else
+  {
+    // Finite volume functors integration is over FaceInfo, not quadrature points
+    getFaceInfos();
+
+    for (auto & fi : _face_infos)
+      sum += fi->faceArea() * fi->faceCoord() * computeFaceInfoIntegral(fi);
+  }
   return sum;
+}
+
+void
+SideIntegralPostprocessor::finalize()
+{
+  gatherSum(_integral_value);
 }

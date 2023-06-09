@@ -94,23 +94,23 @@ hot_temp=310
   [vel_x]
     type = ParsedAux
     variable = vel_x
-    function = 'u'
+    expression = 'u'
     execute_on = 'initial timestep_end'
-    args = 'u'
+    coupled_variables = 'u'
   []
   [vel_y]
     type = ParsedAux
     variable = vel_y
-    function = 'v'
+    expression = 'v'
     execute_on = 'initial timestep_end'
-    args = 'v'
+    coupled_variables = 'v'
   []
   [viz_T]
     type = ParsedAux
     variable = viz_T
-    function = 'T'
+    expression = 'T'
     execute_on = 'initial timestep_end'
-    args = 'T'
+    coupled_variables = 'T'
   []
   [rho_out]
     type = ADFunctorElementalAux
@@ -129,7 +129,7 @@ hot_temp=310
     rho = ${rho}
   []
   [mean_zero_pressure]
-    type = FVScalarLagrangeMultiplier
+    type = FVIntegralValueConstraint
     variable = pressure
     lambda = lambda
     phi0 = 1e5
@@ -234,11 +234,9 @@ hot_temp=310
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [fp]
-      type = IdealGasFluidProperties
-    []
+[FluidProperties]
+  [fp]
+    type = IdealGasFluidProperties
   []
 []
 
@@ -269,7 +267,7 @@ hot_temp=310
 [Functions]
   [lid_function]
     type = ParsedFunction
-    value = '4*x*(1-x)'
+    expression = '4*x*(1-x)'
   []
 []
 

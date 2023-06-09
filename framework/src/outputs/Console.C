@@ -54,8 +54,8 @@ Console::validParams()
                              pps_fit_mode,
                              "Specifies the wrapping mode for post-processor tables that are "
                              "printed to the screen (ENVIRONMENT: Read \"MOOSE_PPS_WIDTH\" for "
-                             "desired width, AUTO: Attempt to determine width automatically "
-                             "(serial only), <n>: Desired width");
+                             "desired width (if not set, defaults to AUTO), AUTO: Attempt to "
+                             "determine width automatically (serial only), <n>: Desired width");
 
   // Verbosity
   params.addParam<bool>("verbose", false, "Print detailed diagnostics on timestep calculation");
@@ -123,15 +123,20 @@ Console::validParams()
                                   "'execution', 'output')");
 
   // Advanced group
-  params.addParamNamesToGroup("max_rows verbose show_multiapp_name system_info", "Advanced");
+  params.addParamNamesToGroup("verbose show_multiapp_name system_info", "Advanced");
 
   // Performance log group
-  params.addParamNamesToGroup("perf_log solve_log perf_header", "Perf Log");
-  params.addParamNamesToGroup("libmesh_log", "Performance Log");
+  params.addParamNamesToGroup("perf_log solve_log perf_header libmesh_log", "Perf Log");
 
   // Variable norms group
   params.addParamNamesToGroup("outlier_variable_norms all_variable_norms outlier_multiplier",
-                              "Norms");
+                              "Variable and Residual Norms");
+
+  // Number formatting
+  params.addParamNamesToGroup("scientific_time time_precision", "Time output formatting");
+
+  // Table of postprocessor output formatting
+  params.addParamNamesToGroup("max_rows fit_mode", "Table formatting");
 
   /*
    * The following modifies the default behavior from base class parameters. Notice the extra flag
@@ -190,13 +195,18 @@ Console::Console(const InputParameters & parameters)
   mooseAssert(actions.size() <= 1, "Should not be more than one CommonOutputAction");
   const Action * common = actions.empty() ? nullptr : *actions.begin();
 
-  // Honor the 'print_linear_residuals' option, only if 'execute_on' has not been set by the user
   if (!parameters.isParamSetByUser("execute_on"))
   {
+    // Honor the 'print_linear_residuals' option, only if 'linear' has not been set in 'execute_on'
+    // by the user
     if (common && common->getParam<bool>("print_linear_residuals"))
       _execute_on.push_back("linear");
     else
       _execute_on.erase("linear");
+    if (common && common->getParam<bool>("print_nonlinear_residuals"))
+      _execute_on.push_back("nonlinear");
+    else
+      _execute_on.erase("nonlinear");
   }
 
   if (!_pars.isParamSetByUser("perf_log") && common && common->getParam<bool>("print_perf_log"))
@@ -262,10 +272,6 @@ Console::initialSetup()
   if (_app.getExecutioner()->isParamValid("verbose") &&
       _app.getExecutioner()->getParam<bool>("verbose"))
     _verbose = true;
-
-  // Display a message to indicate the application is running (useful for MultiApps)
-  if (_problem_ptr->hasMultiApps() || _app.multiAppLevel() > 0)
-    write(std::string("\nRunning App: ") + _app.name() + "\n");
 
   // If the user adds "final" to the execute on, append this to the postprocessors, scalars, etc.,
   // but only
@@ -613,6 +619,11 @@ Console::outputScalarVariables()
 void
 Console::outputSystemInformation()
 {
+  // skip system information output for sub-apps other than the zero-th of a MultiApp
+  // because they are using the same inputs and are most likely having the same information.
+  if (_app.multiAppNumber() > 0)
+    return;
+
   if (_system_info_flags.contains("framework"))
     _console << ConsoleUtils::outputFrameworkInformation(_app);
 
@@ -682,10 +693,13 @@ Console::write(std::string message, bool indent /*=true*/)
   if (_write_file)
     _file_output_stream << message;
 
-  bool this_message_ends_in_newline = message.empty() ? true : message.back() == '\n';
+  // The empty case gets the right behavior, even though the boolean is technically wrong
+  bool this_message_ends_in_newline = message.empty() ? true : (message.back() == '\n');
+  bool this_message_starts_with_newline = message.empty() ? true : (message.front() == '\n');
 
   // Apply MultiApp indenting
-  if (_last_message_ended_in_newline && indent && _app.multiAppLevel() > 0)
+  if ((this_message_starts_with_newline || _last_message_ended_in_newline) && indent &&
+      _app.multiAppLevel() > 0)
     MooseUtils::indentMessage(_app.name(), message);
 
   // Write message to the screen

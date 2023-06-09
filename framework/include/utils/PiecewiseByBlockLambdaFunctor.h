@@ -52,7 +52,11 @@ public:
 
   virtual ~PiecewiseByBlockLambdaFunctor() = default;
 
-  bool isExtrapolatedBoundaryFace(const FaceInfo & fi) const override;
+  bool isExtrapolatedBoundaryFace(const FaceInfo & fi,
+                                  const Elem * elem,
+                                  const Moose::StateArg & time) const override;
+
+  bool hasBlocks(SubdomainID id) const override;
 
   using typename Moose::FunctorBase<T>::FunctorType;
   using typename Moose::FunctorBase<T>::ValueType;
@@ -61,23 +65,25 @@ public:
   using typename Moose::FunctorBase<T>::FunctorReturnType;
 
 protected:
-  using ElemFn = std::function<T(const Moose::ElemArg &, const unsigned int &)>;
-  using ElemAndFaceFn = std::function<T(const Moose::ElemFromFaceArg &, const unsigned int &)>;
-  using FaceFn = std::function<T(const Moose::SingleSidedFaceArg &, const unsigned int &)>;
-  using ElemQpFn = std::function<T(const Moose::ElemQpArg &, const unsigned int &)>;
-  using ElemSideQpFn = std::function<T(const Moose::ElemSideQpArg &, const unsigned int &)>;
+  using ElemFn = std::function<T(const Moose::ElemArg &, const Moose::StateArg &)>;
+  using FaceFn = std::function<T(const Moose::FaceArg &, const Moose::StateArg &)>;
+  using ElemQpFn = std::function<T(const Moose::ElemQpArg &, const Moose::StateArg &)>;
+  using ElemSideQpFn = std::function<T(const Moose::ElemSideQpArg &, const Moose::StateArg &)>;
+  using ElemPointFn = std::function<T(const Moose::ElemPointArg &, const Moose::StateArg &)>;
 
-  ValueType evaluate(const Moose::ElemArg & elem_arg, unsigned int state) const override;
-  ValueType evaluate(const Moose::ElemFromFaceArg & elem_from_face,
-                     unsigned int state) const override;
-  ValueType evaluate(const Moose::FaceArg & face, unsigned int state) const override;
-  ValueType evaluate(const Moose::SingleSidedFaceArg & face, unsigned int state) const override;
-  ValueType evaluate(const Moose::ElemQpArg & elem_qp, unsigned int state) const override;
-  ValueType evaluate(const Moose::ElemSideQpArg & elem_side_qp, unsigned int state) const override;
+  ValueType evaluate(const Moose::ElemArg & elem_arg, const Moose::StateArg & time) const override;
+  ValueType evaluate(const Moose::FaceArg & face, const Moose::StateArg & time) const override;
+  ValueType evaluate(const Moose::ElemQpArg & elem_qp, const Moose::StateArg & time) const override;
+  ValueType evaluate(const Moose::ElemSideQpArg & elem_side_qp,
+                     const Moose::StateArg & time) const override;
+  ValueType evaluate(const Moose::ElemPointArg & elem_point,
+                     const Moose::StateArg & time) const override;
 
   using Moose::FunctorBase<T>::evaluateGradient;
-  GradientType evaluateGradient(const Moose::ElemArg & elem_arg, unsigned int) const override;
-  GradientType evaluateGradient(const Moose::FaceArg & face_arg, unsigned int) const override;
+  GradientType evaluateGradient(const Moose::ElemArg & elem_arg,
+                                const Moose::StateArg &) const override;
+  GradientType evaluateGradient(const Moose::FaceArg & face_arg,
+                                const Moose::StateArg &) const override;
 
 private:
   /**
@@ -90,10 +96,6 @@ private:
   /// implementer wants to return for a given element argument)
   std::unordered_map<SubdomainID, ElemFn> _elem_functor;
 
-  /// Functors that return the value on the requested element that will perform any necessary
-  /// ghosting operations if this object is not technically defined on the requested subdomain
-  std::unordered_map<SubdomainID, ElemAndFaceFn> _elem_from_face_functor;
-
   /// Functors that return the property value on the requested side of the face (e.g. the
   /// infinitesimal + or - side of the face)
   std::unordered_map<SubdomainID, FaceFn> _face_functor;
@@ -104,8 +106,8 @@ private:
   /// Functors that will evaluate elements at side quadrature points
   std::unordered_map<SubdomainID, ElemSideQpFn> _elem_side_qp_functor;
 
-  /// The name of this object
-  std::string _name;
+  /// Functors that return evaluations at an arbitrary physical point in an element
+  std::unordered_map<SubdomainID, ElemPointFn> _elem_point_functor;
 
   /// The mesh that this functor operates on
   const MooseMesh & _mesh;
@@ -119,7 +121,7 @@ PiecewiseByBlockLambdaFunctor<T>::PiecewiseByBlockLambdaFunctor(
     const std::set<ExecFlagType> & clearance_schedule,
     const MooseMesh & mesh,
     const std::set<SubdomainID> & block_ids)
-  : Moose::FunctorBase<T>(clearance_schedule), _name(name), _mesh(mesh)
+  : Moose::FunctorBase<T>(name, clearance_schedule), _mesh(mesh)
 {
   setFunctor(mesh, block_ids, my_lammy);
 }
@@ -140,14 +142,14 @@ PiecewiseByBlockLambdaFunctor<T>::setFunctor(const MooseMesh & mesh,
     auto pr = _elem_functor.emplace(block_id, my_lammy);
     if (!pr.second)
       mooseError("No insertion for the functor material property '",
-                 _name,
+                 this->functorName(),
                  "' for block id ",
                  block_id,
                  ". Another material must already declare this property on that block.");
-    _elem_from_face_functor.emplace(block_id, my_lammy);
     _face_functor.emplace(block_id, my_lammy);
     _elem_qp_functor.emplace(block_id, my_lammy);
     _elem_side_qp_functor.emplace(block_id, my_lammy);
+    _elem_point_functor.emplace(block_id, my_lammy);
   };
 
   for (const auto block_id : block_ids)
@@ -165,13 +167,35 @@ PiecewiseByBlockLambdaFunctor<T>::setFunctor(const MooseMesh & mesh,
 
 template <typename T>
 bool
-PiecewiseByBlockLambdaFunctor<T>::isExtrapolatedBoundaryFace(const FaceInfo & fi) const
+PiecewiseByBlockLambdaFunctor<T>::isExtrapolatedBoundaryFace(const FaceInfo & fi,
+                                                             const Elem *,
+                                                             const Moose::StateArg &) const
 {
   if (!fi.neighborPtr())
     return true;
 
-  return (_elem_functor.count(fi.elem().subdomain_id()) +
-          _elem_functor.count(fi.neighbor().subdomain_id())) == 1;
+  const bool defined_on_elem = _elem_functor.count(fi.elem().subdomain_id());
+  const bool defined_on_neighbor = _elem_functor.count(fi.neighbor().subdomain_id());
+  const bool extrapolated = (defined_on_elem + defined_on_neighbor) == 1;
+
+  mooseAssert(defined_on_elem || defined_on_neighbor,
+              "This shouldn't be called if we aren't defined on either side.");
+  return extrapolated;
+}
+
+template <typename T>
+bool
+PiecewiseByBlockLambdaFunctor<T>::hasBlocks(const SubdomainID id) const
+{
+  // If any of the maps has a functor for that block, it has the block
+  const bool has_blocks = _elem_functor.count(id);
+  mooseAssert(has_blocks == _face_functor.count(id),
+              "All functor sets should agree on whether we have this sub id");
+  mooseAssert(has_blocks == _elem_qp_functor.count(id),
+              "All functor sets should agree on whether we have this sub id");
+  mooseAssert(has_blocks == _elem_side_qp_functor.count(id),
+              "All functor sets should agree on whether we have this sub id");
+  return has_blocks;
 }
 
 template <typename T>
@@ -181,7 +205,7 @@ PiecewiseByBlockLambdaFunctor<T>::subdomainErrorMessage(const SubdomainID sub_id
   mooseError("The provided subdomain ID ",
              std::to_string(sub_id),
              " doesn't exist in the map for lambda functor '",
-             _name,
+             this->functorName(),
              "'! This is likely because you did not provide a functor material "
              "definition on that subdomain");
 }
@@ -189,7 +213,7 @@ PiecewiseByBlockLambdaFunctor<T>::subdomainErrorMessage(const SubdomainID sub_id
 template <typename T>
 typename PiecewiseByBlockLambdaFunctor<T>::ValueType
 PiecewiseByBlockLambdaFunctor<T>::evaluate(const Moose::ElemArg & elem_arg,
-                                           unsigned int state) const
+                                           const Moose::StateArg & time) const
 {
   const Elem * const elem = elem_arg.elem;
   mooseAssert(elem && elem != libMesh::remote_elem,
@@ -198,109 +222,84 @@ PiecewiseByBlockLambdaFunctor<T>::evaluate(const Moose::ElemArg & elem_arg,
   if (it == _elem_functor.end())
     subdomainErrorMessage(elem->subdomain_id());
 
-  return it->second(elem_arg, state);
+  return it->second(elem_arg, time);
 }
 
 template <typename T>
 typename PiecewiseByBlockLambdaFunctor<T>::ValueType
-PiecewiseByBlockLambdaFunctor<T>::evaluate(const Moose::ElemFromFaceArg & elem_from_face,
-                                           unsigned int state) const
-{
-  mooseAssert((elem_from_face.elem && elem_from_face.elem != libMesh::remote_elem) ||
-                  elem_from_face.fi,
-              "The element must be non-null and non-remote or the face must be non-null in functor "
-              "material properties");
-  auto it = _elem_from_face_functor.find(elem_from_face.sub_id);
-  if (it == _elem_from_face_functor.end())
-    subdomainErrorMessage(elem_from_face.sub_id);
-
-  return it->second(elem_from_face, state);
-}
-
-template <typename T>
-typename PiecewiseByBlockLambdaFunctor<T>::ValueType
-PiecewiseByBlockLambdaFunctor<T>::evaluate(const Moose::SingleSidedFaceArg & face,
-                                           unsigned int state) const
-{
-  auto it = _face_functor.find(face.sub_id);
-  if (it == _face_functor.end())
-    subdomainErrorMessage(face.sub_id);
-
-  return it->second(face, state);
-}
-
-template <typename T>
-typename PiecewiseByBlockLambdaFunctor<T>::ValueType
-PiecewiseByBlockLambdaFunctor<T>::evaluate(const Moose::FaceArg & face, unsigned int state) const
+PiecewiseByBlockLambdaFunctor<T>::evaluate(const Moose::FaceArg & face,
+                                           const Moose::StateArg & time) const
 {
   using namespace Moose::FV;
 
-  mooseAssert(face.fi,
-              "We must have a non-null face_info in order to prepare our ElemFromFace tuples");
-  static const typename libMesh::TensorTools::IncrementRank<T>::type example_gradient(0);
-
-  switch (face.limiter_type)
+  if (face.face_side)
   {
-    case LimiterType::CentralDifference:
-    case LimiterType::Upwind:
-    {
-      const auto elem_from_face = face.elemFromFace();
-      const auto neighbor_from_face = face.neighborFromFace();
-      const auto & upwind_elem = face.elem_is_upwind ? elem_from_face : neighbor_from_face;
-      const auto & downwind_elem = face.elem_is_upwind ? neighbor_from_face : elem_from_face;
-      auto limiter_obj =
-          Limiter<typename LimiterValueType<T>::value_type>::build(face.limiter_type);
-      return interpolate(*limiter_obj,
-                         evaluate(upwind_elem, state),
-                         evaluate(downwind_elem, state),
-                         &example_gradient,
-                         *face.fi,
-                         face.elem_is_upwind);
-    }
+    const auto sub_id = face.face_side->subdomain_id();
+    auto it = _face_functor.find(sub_id);
+    if (it == _face_functor.end())
+      subdomainErrorMessage(sub_id);
 
-    default:
-      mooseError("Unsupported limiter type in PiecewiseByBlockLambdaFunctor::evaluate(FaceArg)");
+    return it->second(face, time);
   }
+
+  mooseAssert(this->isInternalFace(*face.fi),
+              "If we did not have a face side, then we must be an internal face");
+  return interpolate(*this, face, time);
 }
 
 template <typename T>
 typename PiecewiseByBlockLambdaFunctor<T>::ValueType
 PiecewiseByBlockLambdaFunctor<T>::evaluate(const Moose::ElemQpArg & elem_qp,
-                                           unsigned int state) const
+                                           const Moose::StateArg & time) const
 {
   const auto sub_id = std::get<0>(elem_qp)->subdomain_id();
   auto it = _elem_qp_functor.find(sub_id);
   if (it == _elem_qp_functor.end())
     subdomainErrorMessage(sub_id);
 
-  return it->second(elem_qp, state);
+  return it->second(elem_qp, time);
 }
 
 template <typename T>
 typename PiecewiseByBlockLambdaFunctor<T>::ValueType
 PiecewiseByBlockLambdaFunctor<T>::evaluate(const Moose::ElemSideQpArg & elem_side_qp,
-                                           unsigned int state) const
+                                           const Moose::StateArg & time) const
 {
   const auto sub_id = std::get<0>(elem_side_qp)->subdomain_id();
   auto it = _elem_side_qp_functor.find(sub_id);
   if (it == _elem_side_qp_functor.end())
     subdomainErrorMessage(sub_id);
 
-  return it->second(elem_side_qp, state);
+  return it->second(elem_side_qp, time);
+}
+
+template <typename T>
+typename PiecewiseByBlockLambdaFunctor<T>::ValueType
+PiecewiseByBlockLambdaFunctor<T>::evaluate(const Moose::ElemPointArg & elem_point_arg,
+                                           const Moose::StateArg & time) const
+{
+  const Elem * const elem = elem_point_arg.elem;
+  mooseAssert(elem && elem != libMesh::remote_elem,
+              "The element must be non-null and non-remote in functor material properties");
+  auto it = _elem_point_functor.find(elem->subdomain_id());
+  if (it == _elem_point_functor.end())
+    subdomainErrorMessage(elem->subdomain_id());
+
+  return it->second(elem_point_arg, time);
 }
 
 template <typename T>
 typename PiecewiseByBlockLambdaFunctor<T>::GradientType
 PiecewiseByBlockLambdaFunctor<T>::evaluateGradient(const Moose::ElemArg & elem_arg,
-                                                   unsigned int) const
+                                                   const Moose::StateArg & time) const
 {
-  return Moose::FV::greenGaussGradient(elem_arg, *this, true, _mesh);
+  return Moose::FV::greenGaussGradient(elem_arg, time, *this, true, _mesh);
 }
 
 template <typename T>
 typename PiecewiseByBlockLambdaFunctor<T>::GradientType
 PiecewiseByBlockLambdaFunctor<T>::evaluateGradient(const Moose::FaceArg & face_arg,
-                                                   unsigned int) const
+                                                   const Moose::StateArg & time) const
 {
-  return Moose::FV::greenGaussGradient(face_arg, *this, true, _mesh);
+  return Moose::FV::greenGaussGradient(face_arg, time, *this, true, _mesh);
 }

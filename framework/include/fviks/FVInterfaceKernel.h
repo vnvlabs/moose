@@ -25,7 +25,9 @@
 #include "TaggingInterface.h"
 #include "NeighborCoupleableMooseVariableDependencyIntermediateInterface.h"
 #include "TwoMaterialPropertyInterface.h"
-#include "FunctorInterface.h"
+#include "ADFunctorInterface.h"
+#include "FVFaceResidualObject.h"
+#include "FaceArgInterface.h"
 
 #include <set>
 
@@ -54,7 +56,9 @@ class FVInterfaceKernel : public MooseObject,
                           public TaggingInterface,
                           public NeighborCoupleableMooseVariableDependencyIntermediateInterface,
                           public TwoMaterialPropertyInterface,
-                          public FunctorInterface
+                          public ADFunctorInterface,
+                          public FVFaceResidualObject,
+                          public FaceArgProducerInterface
 {
 public:
   /**
@@ -71,15 +75,11 @@ public:
    */
   const SubProblem & subProblem() const { return _subproblem; }
 
-  /**
-   * Compute the residual on the supplied face
-   */
-  virtual void computeResidual(const FaceInfo & fi);
+  void computeResidual(const FaceInfo & fi) override;
+  void computeJacobian(const FaceInfo & fi) override;
+  void computeResidualAndJacobian(const FaceInfo & fi) override;
 
-  /**
-   * Compute the jacobian on the supplied face
-   */
-  virtual void computeJacobian(const FaceInfo & fi);
+  bool hasFaceSide(const FaceInfo & fi, bool fi_elem_side) const override;
 
 protected:
   /**
@@ -133,24 +133,40 @@ protected:
   /**
    * Process the provided residual given \p var_num and whether this is on the neighbor side
    */
-  void processResidual(Real resid, unsigned int var_num, bool neighbor);
+  void addResidual(Real resid, unsigned int var_num, bool neighbor);
 
+  using TaggingInterface::addJacobian;
   /**
    * Process the derivatives for the provided residual and dof index
    */
-  void processDerivatives(const ADReal & resid, dof_id_type dof_index);
+  void addJacobian(const ADReal & resid, dof_id_type dof_index, Real scaling_factor);
 
   /**
-   * @return A structure that contains information about the face info element, face info, skewness
-   * correction and element subdomain id for use with functors
+   * @return A structure that contains information about the face info element and skewness
+   * correction for use with functors
    */
-  Moose::ElemFromFaceArg elemFromFace(bool correct_skewness = false) const;
+  Moose::ElemArg elemArg(bool correct_skewness = false) const;
 
   /**
-   * @return A structure that contains information about the face info neighbor, the face info,
-   * skewness correction and the face info neighbor subdomain id for use with functors
+   * @return A structure that contains information about the face info neighbor and skewness
+   * correction for use with functors
    */
-  Moose::ElemFromFaceArg neighborFromFace(bool correct_skenewss = false) const;
+  Moose::ElemArg neighborArg(bool correct_skenewss = false) const;
+
+  /**
+   * Determine the single sided face argument when evaluating a functor on a face.
+   * This is used to perform evaluations of material properties with the actual face values of
+   * their dependences, rather than interpolate the material property to the boundary.
+   * @param fi the FaceInfo for this face
+   * @param limiter_type the limiter type, to be specified if more than the default average
+   *        interpolation is required for the parameters of the functor
+   * @param correct_skewness whether to perform skew correction at the face
+   */
+  Moose::FaceArg singleSidedFaceArg(
+      const MooseVariableFV<Real> & variable,
+      const FaceInfo * fi = nullptr,
+      Moose::FV::LimiterType limiter_type = Moose::FV::LimiterType::CentralDifference,
+      bool correct_skewness = false) const;
 
   /// To be consistent with FE interfaces we introduce this quadrature point member. However, for FV
   /// calculations there should every only be one qudrature point and it should be located at the
@@ -176,12 +192,13 @@ protected:
   /// The SubProblem
   SubProblem & _subproblem;
 
+  /// the system object
+  SystemBase & _sys;
+
   /// The Assembly object
   Assembly & _assembly;
 
 private:
-  SystemBase & _sys;
-
   MooseVariableFV<Real> & _var1;
   MooseVariableFV<Real> & _var2;
 

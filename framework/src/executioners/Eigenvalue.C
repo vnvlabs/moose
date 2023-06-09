@@ -69,6 +69,13 @@ Eigenvalue::validParams()
                         "If true, we will set an initial eigen vector in moose, otherwise EPS "
                         "solver will initial eigen vector");
 
+  params.addParamNamesToGroup("matrix_free precond_matrix_free constant_matrices "
+                              "precond_matrix_includes_eigen",
+                              "Matrix and Matrix-Free");
+  params.addParamNamesToGroup("initial_eigenvalue auto_initialization",
+                              "Eigenvector and eigenvalue initialization");
+  params.addParamNamesToGroup("normalization normal_factor", "Solution normalization");
+
   // If Newton and Inverse Power is combined in SLEPc side
   params.addPrivateParam<bool>("_newton_inverse_power", false);
 
@@ -143,12 +150,6 @@ Eigenvalue::Eigenvalue(const InputParameters & parameters)
 void
 Eigenvalue::init()
 {
-  if (_app.isRecovering())
-  {
-    _console << "\nCannot recover eigenvalue solves!\nExiting...\n" << std::endl;
-    return;
-  }
-
   if (isParamValid("normalization"))
   {
     const auto & normpp = getParam<PostprocessorName>("normalization");
@@ -217,7 +218,10 @@ Eigenvalue::execute()
   // Recovering makes sense for only transient simulations since the solution from
   // the previous time steps is required.
   if (_app.isRecovering())
+  {
+    _console << "\nCannot recover eigenvalue solves!\nExiting...\n" << std::endl;
     return;
+  }
 
   // Outputs initial conditions set by users
   // It is consistent with Steady

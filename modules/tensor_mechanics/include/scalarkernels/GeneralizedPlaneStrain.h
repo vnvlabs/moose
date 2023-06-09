@@ -14,7 +14,7 @@
 #include <set>
 
 // Forward Declarations
-class GeneralizedPlaneStrainUserObject;
+class GeneralizedPlaneStrainUOInterface;
 
 class GeneralizedPlaneStrain : public ScalarKernel
 {
@@ -23,16 +23,14 @@ public:
 
   GeneralizedPlaneStrain(const InputParameters & parameters);
 
-  virtual void reinit(){};
-  virtual void computeResidual();
-  virtual void computeJacobian();
+  virtual void reinit() override {}
+  virtual void computeResidual() override;
+  virtual void computeJacobian() override;
 
-  const GeneralizedPlaneStrainUserObject & _gps;
+protected:
+  virtual Real computeQpResidual() override { mooseError("unused"); }
+  virtual Real computeQpJacobian() override { mooseError("unused"); }
+
+  const GeneralizedPlaneStrainUOInterface & _gps;
   const unsigned int _scalar_var_id;
-
-  /// The reference vector tag ID
-  std::set<TagID> _ref_tag_id;
-
-  /// The non-reference vector tag IDs
-  std::set<TagID> _non_ref_tags;
 };

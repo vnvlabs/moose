@@ -176,7 +176,7 @@ petscSetupDM(NonlinearSystemBase & nl)
 {
   PetscErrorCode ierr;
   PetscBool ismoose;
-  DM dm = PETSC_NULL;
+  DM dm = LIBMESH_PETSC_NULLPTR;
 
   // Initialize the part of the DM package that's packaged with Moose; in the PETSc source tree this
   // call would be in DMInitializePackage()
@@ -229,7 +229,7 @@ addPetscOptionsFromCommandline()
 #if PETSC_VERSION_LESS_THAN(3, 7, 0)
     PetscOptionsInsert(&argc, &args, NULL);
 #else
-    PetscOptionsInsert(PETSC_NULL, &argc, &args, NULL);
+    PetscOptionsInsert(LIBMESH_PETSC_NULLPTR, &argc, &args, NULL);
 #endif
   }
 }
@@ -243,7 +243,7 @@ petscSetOptions(FEProblemBase & problem)
 #if PETSC_VERSION_LESS_THAN(3, 7, 0)
   PetscOptionsClear();
 #else
-  PetscOptionsClear(PETSC_NULL);
+  PetscOptionsClear(LIBMESH_PETSC_NULLPTR);
 #endif
 
   setSolverOptions(problem.solverParams());
@@ -285,7 +285,7 @@ petscNonlinearConverged(SNES snes,
                         void * ctx)
 {
   FEProblemBase & problem = *static_cast<FEProblemBase *>(ctx);
-  NonlinearSystemBase & system = problem.getNonlinearSystemBase();
+  NonlinearSystemBase & system = problem.currentNonlinearSystem();
 
   // Let's be nice and always check PETSc error codes.
   PetscErrorCode ierr = 0;
@@ -366,7 +366,11 @@ petscNonlinearConverged(SNES snes,
                                         std::numeric_limits<Real>::max());
 
   if (msg.length() > 0)
+#if !PETSC_VERSION_LESS_THAN(3, 17, 0)
+    PetscInfo(snes, "%s", msg.c_str());
+#else
     PetscInfo(snes, msg.c_str());
+#endif
 
   switch (moose_reason)
   {
@@ -493,27 +497,31 @@ petscSetKSPDefaults(FEProblemBase & problem, KSP ksp)
 void
 petscSetDefaults(FEProblemBase & problem)
 {
-  // dig out PETSc solver
-  NonlinearSystemBase & nl = problem.getNonlinearSystemBase();
-  PetscNonlinearSolver<Number> * petsc_solver =
-      dynamic_cast<PetscNonlinearSolver<Number> *>(nl.nonlinearSolver());
-  SNES snes = petsc_solver->snes();
-  KSP ksp;
-  SNESGetKSP(snes, &ksp);
-
-  SNESSetMaxLinearSolveFailures(snes, 1000000);
-
-  // In 3.0.0, the context pointer must actually be used, and the
-  // final argument to KSPSetConvergenceTest() is a pointer to a
-  // routine for destroying said private data context.  In this case,
-  // we use the default context provided by PETSc in addition to
-  // a few other tests.
+  for (auto nl_index : make_range(problem.numNonlinearSystems()))
   {
-    auto ierr = SNESSetConvergenceTest(snes, petscNonlinearConverged, &problem, PETSC_NULL);
-    CHKERRABORT(nl.comm().get(), ierr);
-  }
+    // dig out PETSc solver
+    NonlinearSystemBase & nl = problem.getNonlinearSystemBase(nl_index);
+    PetscNonlinearSolver<Number> * petsc_solver =
+        dynamic_cast<PetscNonlinearSolver<Number> *>(nl.nonlinearSolver());
+    SNES snes = petsc_solver->snes();
+    KSP ksp;
+    SNESGetKSP(snes, &ksp);
 
-  petscSetKSPDefaults(problem, ksp);
+    SNESSetMaxLinearSolveFailures(snes, 1000000);
+
+    // In 3.0.0, the context pointer must actually be used, and the
+    // final argument to KSPSetConvergenceTest() is a pointer to a
+    // routine for destroying said private data context.  In this case,
+    // we use the default context provided by PETSc in addition to
+    // a few other tests.
+    {
+      auto ierr =
+          SNESSetConvergenceTest(snes, petscNonlinearConverged, &problem, LIBMESH_PETSC_NULLPTR);
+      CHKERRABORT(nl.comm().get(), ierr);
+    }
+
+    petscSetKSPDefaults(problem, ksp);
+  }
 }
 
 void
@@ -536,20 +544,21 @@ storePetscOptions(FEProblemBase & fe_problem, const InputParameters & params)
           Moose::stringToEnum<Moose::LineSearchType>(line_search);
       fe_problem.solverParams()._line_search = enum_line_search;
       if (enum_line_search == LS_CONTACT || enum_line_search == LS_PROJECT)
-      {
-        NonlinearImplicitSystem * nl_system =
-            dynamic_cast<NonlinearImplicitSystem *>(&fe_problem.getNonlinearSystemBase().system());
-        if (!nl_system)
-          mooseError("You've requested a line search but you must be solving an EigenProblem. "
-                     "These two things are not consistent.");
-        PetscNonlinearSolver<Real> * petsc_nonlinear_solver =
-            dynamic_cast<PetscNonlinearSolver<Real> *>(nl_system->nonlinear_solver.get());
-        if (!petsc_nonlinear_solver)
-          mooseError("Currently the MOOSE line searches all use Petsc, so you "
-                     "must use Petsc as your non-linear solver.");
-        petsc_nonlinear_solver->linesearch_object =
-            std::make_unique<ComputeLineSearchObjectWrapper>(fe_problem);
-      }
+        for (auto nl_index : make_range(fe_problem.numNonlinearSystems()))
+        {
+          NonlinearImplicitSystem * nl_system = dynamic_cast<NonlinearImplicitSystem *>(
+              &fe_problem.getNonlinearSystemBase(nl_index).system());
+          if (!nl_system)
+            mooseError("You've requested a line search but you must be solving an EigenProblem. "
+                       "These two things are not consistent.");
+          PetscNonlinearSolver<Real> * petsc_nonlinear_solver =
+              dynamic_cast<PetscNonlinearSolver<Real> *>(nl_system->nonlinear_solver.get());
+          if (!petsc_nonlinear_solver)
+            mooseError("Currently the MOOSE line searches all use Petsc, so you "
+                       "must use Petsc as your non-linear solver.");
+          petsc_nonlinear_solver->linesearch_object =
+              std::make_unique<ComputeLineSearchObjectWrapper>(fe_problem);
+        }
     }
   }
 
@@ -658,9 +667,15 @@ storePetscOptions(FEProblemBase & fe_problem, const InputParameters & params)
 
         // MPIAIJ for PETSc 3.12.0: -matptap_via
         // MAIJ for PETSc 3.12.0: -matmaijptap_via
-        // MPIAIJ for PETSc 3.13 or higher: -matptap_via, -matproduct_ptap_via
-        // MAIJ for PETSc 3.13 or higher: -matproduct_ptap_via
-#if !PETSC_VERSION_LESS_THAN(3, 13, 0)
+        // MPIAIJ for PETSc 3.13 to 3.16: -matptap_via, -matproduct_ptap_via
+        // MAIJ for PETSc 3.13 to 3.16: -matproduct_ptap_via
+        // MPIAIJ for PETSc 3.17 and higher: -matptap_via, -mat_product_algorithm
+        // MAIJ for PETSc 3.17 and higher: -mat_product_algorithm
+#if !PETSC_VERSION_LESS_THAN(3, 17, 0)
+      if (hmg_found && (option.first == "-matptap_via" || option.first == "-matmaijptap_via" ||
+                        option.first == "-matproduct_ptap_via"))
+        new_options.emplace_back("-mat_product_algorithm", option.second);
+#elif !PETSC_VERSION_LESS_THAN(3, 13, 0)
       if (hmg_found && (option.first == "-matptap_via" || option.first == "-matmaijptap_via"))
         new_options.emplace_back("-matproduct_ptap_via", option.second);
 #else
@@ -672,7 +687,7 @@ storePetscOptions(FEProblemBase & fe_problem, const InputParameters & params)
 #endif
 
       if (option.first == "-matptap_via" || option.first == "-matmaijptap_via" ||
-          option.first == "-matproduct_ptap_via")
+          option.first == "-matproduct_ptap_via" || option.first == "-mat_product_algorithm")
         matptap_found = true;
 
       // For 3D problems, we need to set this 0.7
@@ -739,7 +754,9 @@ storePetscOptions(FEProblemBase & fe_problem, const InputParameters & params)
   // Let us switch to use new algorithm
   if (hmg_found && !matptap_found)
   {
-#if !PETSC_VERSION_LESS_THAN(3, 13, 0)
+#if !PETSC_VERSION_LESS_THAN(3, 17, 0)
+    po.pairs.emplace_back("-mat_product_algorithm", "allatonce");
+#elif !PETSC_VERSION_LESS_THAN(3, 13, 0)
     po.pairs.emplace_back("-matproduct_ptap_via", "allatonce");
 #else
     po.pairs.emplace_back("-matptap_via", "allatonce");
@@ -808,6 +825,10 @@ getPetscValidParams()
   params.addParam<std::vector<std::string>>(
       "petsc_options_value",
       "Values of PETSc name/value pairs (must correspond with \"petsc_options_iname\"");
+  params.addParamNamesToGroup("solve_type petsc_options petsc_options_iname petsc_options_value "
+                              "mffd_type",
+                              "PETSc");
+
   return params;
 }
 
@@ -867,11 +888,12 @@ setSinglePetscOption(const std::string & name, const std::string & value)
   PetscErrorCode ierr;
 
 #if PETSC_VERSION_LESS_THAN(3, 7, 0)
-  ierr = PetscOptionsSetValue(name.c_str(), value == "" ? PETSC_NULL : value.c_str());
+  ierr = PetscOptionsSetValue(name.c_str(), value == "" ? LIBMESH_PETSC_NULLPTR : value.c_str());
 #else
   // PETSc 3.7.0 and later version.  First argument is the options
   // database to use, NULL indicates the default global database.
-  ierr = PetscOptionsSetValue(PETSC_NULL, name.c_str(), value == "" ? PETSC_NULL : value.c_str());
+  ierr = PetscOptionsSetValue(
+      LIBMESH_PETSC_NULLPTR, name.c_str(), value == "" ? LIBMESH_PETSC_NULLPTR : value.c_str());
 #endif
 
   // Not convenient to use the usual error checking macro, because we

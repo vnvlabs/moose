@@ -1,10 +1,14 @@
 [Mesh]
-  type = GeneratedMesh # Can generate simple lines, rectangles and rectangular prisms
-  dim = 2              # Dimension of the mesh
-  nx = 100             # Number of elements in the x direction
-  ny = 10              # Number of elements in the y direction
-  xmax = 0.304         # Length of test chamber
-  ymax = 0.0257        # Test chamber radius
+  [gmg]
+    type = GeneratedMeshGenerator # Can generate simple lines, rectangles and rectangular prisms
+    dim = 2                       # Dimension of the mesh
+    nx = 100                      # Number of elements in the x direction
+    ny = 10                       # Number of elements in the y direction
+    xmax = 0.304                  # Length of test chamber
+    ymax = 0.0257                 # Test chamber radius
+  []
+  coord_type = RZ                 # Axisymmetric RZ
+  rz_coord_axis = X               # Which axis the symmetry is around
 []
 
 [Variables]
@@ -37,8 +41,6 @@
 
 [Problem]
   type = FEProblem  # This is the "normal" type of Finite Element Problem in MOOSE
-  coord_type = RZ   # Axisymmetric RZ
-  rz_coord_axis = X # Which axis the symmetry is around
 []
 
 [Executioner]

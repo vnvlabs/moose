@@ -8,6 +8,7 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "SideIntegralVariablePostprocessor.h"
+#include "MathFVUtils.h"
 
 #include "metaphysicl/raw_type.h"
 
@@ -18,7 +19,7 @@ SideIntegralVariablePostprocessor::validParams()
 {
   InputParameters params = SideIntegralPostprocessor::validParams();
   params.addRequiredCoupledVar("variable",
-                               "The name of the variable that this boundary condition applies to");
+                               "The name of the variable which this postprocessor integrates");
   params.addClassDescription("Computes a surface integral of the specified variable");
   return params;
 }
@@ -36,17 +37,25 @@ SideIntegralVariablePostprocessor::SideIntegralVariablePostprocessor(
     _fv(_fv_variable)
 {
   addMooseVariableDependency(&mooseVariableField());
+
+  _qp_integration = !_fv;
+}
+
+Real
+SideIntegralVariablePostprocessor::computeFaceInfoIntegral(const FaceInfo * const fi)
+{
+  return MetaPhysicL::raw_value((*_fv_variable)(makeCDFace(*fi), determineState()));
 }
 
 Real
 SideIntegralVariablePostprocessor::computeQpIntegral()
 {
-  if (_fv)
-  {
-    const FaceInfo * const fi = _mesh.faceInfo(_current_elem, _current_side);
-    mooseAssert(fi, "We should have an fi");
-    return MetaPhysicL::raw_value(_fv_variable->getBoundaryFaceValue(*fi));
-  }
-  else
-    return _u[_qp];
+  return _u[_qp];
+}
+
+bool
+SideIntegralVariablePostprocessor::hasFaceSide(const FaceInfo & fi, const bool fi_elem_side) const
+{
+  mooseAssert(_fv_variable, "Must be non-null");
+  return _fv_variable->hasFaceSide(fi, fi_elem_side);
 }

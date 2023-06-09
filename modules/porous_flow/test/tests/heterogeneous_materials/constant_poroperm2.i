@@ -238,39 +238,39 @@
 [Functions]
   [permxx]
     type = ParsedFunction
-    value = '(x*x)*1e-11'
+    expression = '(x*x)*1e-11'
   []
   [permxy]
     type = ParsedFunction
-    value = '(x*y)*1e-11'
+    expression = '(x*y)*1e-11'
   []
   [permxz]
     type = ParsedFunction
-    value = '(x*z)*1e-11'
+    expression = '(x*z)*1e-11'
   []
   [permyx]
     type = ParsedFunction
-    value = '(y*x)*1e-11'
+    expression = '(y*x)*1e-11'
   []
   [permyy]
     type = ParsedFunction
-    value = '(y*y)*1e-11'
+    expression = '(y*y)*1e-11'
   []
   [permyz]
     type = ParsedFunction
-    value = '(y*z)*1e-11'
+    expression = '(y*z)*1e-11'
   []
   [permzx]
     type = ParsedFunction
-    value = '(z*x)*1e-11'
+    expression = '(z*x)*1e-11'
   []
   [permzy]
     type = ParsedFunction
-    value = '(z*y)*1e-11'
+    expression = '(z*y)*1e-11'
   []
   [permzz]
     type = ParsedFunction
-    value = '(z*z)*1e-11'
+    expression = '(z*z)*1e-11'
   []
 []
 
@@ -294,16 +294,14 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [simple_fluid]
-      type = SimpleFluidProperties
-      bulk_modulus = 2e9
-      density0 = 1000
-      viscosity = 1e-3
-      thermal_expansion = 0
-      cv = 2
-    []
+[FluidProperties]
+  [simple_fluid]
+    type = SimpleFluidProperties
+    bulk_modulus = 2e9
+    density0 = 1000
+    viscosity = 1e-3
+    thermal_expansion = 0
+    cv = 2
   []
 []
 

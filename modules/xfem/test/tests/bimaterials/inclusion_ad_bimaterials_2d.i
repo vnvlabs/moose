@@ -50,7 +50,7 @@
 [Functions]
   [./ls_func]
     type = ParsedFunction
-    value = 'sqrt((y-2.5)*(y-2.5) + (x-2.5)*(x-2.5)) - 1.5'
+    expression = 'sqrt((y-2.5)*(y-2.5) + (x-2.5)*(x-2.5)) - 1.5'
   [../]
 []
 
@@ -246,7 +246,6 @@
   exodus = true
   file_base = inclusion_bimaterials_2d_out
   execute_on = timestep_end
-  csv = true
   [./console]
     type = Console
     output_linear = true

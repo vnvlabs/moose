@@ -68,6 +68,7 @@ MaterialDerivativeTestKernelBase<T>::validParams()
   params.addRequiredParam<MaterialPropertyName>(
       "material_property", "Name of material property for which derivatives are to be tested.");
   params.addRequiredCoupledVar("args", "List of variables the material property depends on");
+  params.deprecateCoupledVar("args", "coupled_variables", "02/07/2024");
   params.addParam<std::vector<SymbolName>>(
       "derivative",
       "Select derivative to test derivatives of (leave empty for checking "

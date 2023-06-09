@@ -38,14 +38,15 @@ public:
       const AutomaticMortarGeneration & amg,
       SubProblem & subproblem,
       FEProblemBase & fe_problem,
-      bool displaced);
+      bool displaced,
+      Assembly & assembly);
 
   /**
    * Loops over the mortar segment mesh and computes the residual/Jacobian
    */
-  void operator()();
-
-  void mortarSetup() override;
+  void operator()(Moose::ComputeType compute_type,
+                  const std::set<TagID> & vector_tag_ids,
+                  const std::set<TagID> & matrix_tag_ids);
 
 private:
   /// The mortar constraints to loop over when on each element. These must be

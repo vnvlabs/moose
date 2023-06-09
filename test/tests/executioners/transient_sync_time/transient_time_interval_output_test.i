@@ -15,13 +15,13 @@
 [Functions]
   [./bc_func]
     type = ParsedFunction
-    value = sin(pi*0.1*x*t)
+    expression = sin(pi*0.1*x*t)
   [../]
 
   # Laplacian of the function above
   [./interior_func]
     type = ParsedFunction
-    value = 0.01*pi*pi*t*t*sin(0.1*pi*x*t)
+    expression = 0.01*pi*pi*t*t*sin(0.1*pi*x*t)
   [../]
 []
 
@@ -61,7 +61,6 @@
   execute_on = 'timestep_end'
   file_base = out_tio
   interval = 3
-  csv = true
   [./exodus]
     type = Exodus
     execute_on = 'final timestep_end'

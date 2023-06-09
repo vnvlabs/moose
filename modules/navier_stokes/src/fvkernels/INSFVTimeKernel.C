@@ -16,21 +16,21 @@
 InputParameters
 INSFVTimeKernel::validParams()
 {
-  auto params = FVTimeKernel::validParams();
+  auto params = FVFunctorTimeKernel::validParams();
   params += INSFVMomentumResidualObject::validParams();
   return params;
 }
 
 INSFVTimeKernel::INSFVTimeKernel(const InputParameters & params)
-  : FVTimeKernel(params), INSFVMomentumResidualObject(*this)
+  : FVFunctorTimeKernel(params), INSFVMomentumResidualObject(*this)
 {
 }
 
 void
-INSFVTimeKernel::processResidual(const ADReal & residual, const dof_id_type dof_index)
+INSFVTimeKernel::addResidualAndJacobian(const ADReal & residual, const dof_id_type dof_index)
 {
-  if (_subproblem.currentlyComputingJacobian())
-    _assembly.processDerivatives(residual, dof_index, _matrix_tags);
-  else
-    _assembly.processResidual(residual.value(), dof_index, _vector_tags);
+  addResidualsAndJacobian(_assembly,
+                          std::array<ADReal, 1>{{residual}},
+                          std::array<dof_id_type, 1>{{dof_index}},
+                          _var.scalingFactor());
 }

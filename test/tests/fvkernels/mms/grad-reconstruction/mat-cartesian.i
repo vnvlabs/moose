@@ -16,9 +16,7 @@ diff=1.1
 
 [Variables]
   [v]
-    family = MONOMIAL
-    order = CONSTANT
-    fv = true
+    type = MooseVariableFVReal
     initial_condition = 1
   []
 []
@@ -68,13 +66,13 @@ diff=1.1
 [Functions]
   [exact]
     type = ParsedFunction
-    value = 'sin(x)*cos(y)'
+    expression = 'sin(x)*cos(y)'
   []
   [forcing]
     type = ParsedFunction
-    value = '-2*a*sin(x)*sin(y) + a*cos(x)*cos(y) + 2*diff*sin(x)*cos(y) + sin(x)*cos(y)'
-    vars = 'a diff'
-    vals = '${a} ${diff}'
+    expression = '-2*a*sin(x)*sin(y) + a*cos(x)*cos(y) + 2*diff*sin(x)*cos(y) + sin(x)*cos(y)'
+    symbol_names = 'a diff'
+    symbol_values = '${a} ${diff}'
   []
 []
 

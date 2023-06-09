@@ -8,6 +8,7 @@
 #* https://www.gnu.org/licenses/lgpl-2.1.html
 import sys
 from TestHarness.JobDAG import JobDAG
+from TestHarness.StatusSystem import StatusSystem
 from FactorySystem.MooseObject import MooseObject
 import os, traceback
 from time import sleep
@@ -133,6 +134,10 @@ class Scheduler(MooseObject):
         """ return all the jobs the scheduler was tasked to perform work for """
         return self.__scheduled_jobs
 
+    def retrieveDAGs(self):
+        """ return all the dags containing the jobs the scueduler was tasked to perform work for """
+        return self.__dag_bank
+
     def schedulerError(self):
         """ boolean if the scheduler prematurely exited """
         return self.__error_state and not self.maxFailures()
@@ -140,7 +145,8 @@ class Scheduler(MooseObject):
     def maxFailures(self):
         """ Boolean for hitting max failures """
         return ((self.options.valgrind_mode and self.__failures >= self.options.valgrind_max_fails)
-                or self.__failures >= self.options.max_fails)
+                or self.__failures >= self.options.max_fails
+                and not self.options.pbs)
 
     def run(self, job):
         """ Call derived run method """
@@ -337,7 +343,14 @@ class Scheduler(MooseObject):
 
                     # this job will be reported as 'RUNNING'
                     elif clock() - self.last_reported_time >= self.min_report_time:
-                        job.addCaveats('FINISHED')
+                        # prevent 'finished' caveat with options expecting to take lengthy amounts of time
+                        if (not self.options.sep_files
+                           and not self.options.ok_files
+                           and not self.options.fail_files
+                           and not self.options.pbs
+                           and not self.options.heavy_tests
+                           and not self.options.valgrind_mode):
+                            job.addCaveats('FINISHED')
 
                         with self.activity_lock:
                             self.jobs_reported.add(job)
@@ -405,7 +418,16 @@ class Scheduler(MooseObject):
 
                 job.report_timer.start()
                 timeout_timer.start()
-                self.run(job) # Hand execution over to derived scheduler
+
+                # We have a try here because we want to explicitly catch things like
+                # python errors in _only_ the Job; exceptions that happen in the Tester
+                # from within the Job will get caught within the Tester
+                try:
+                    self.run(job) # Hand execution over to derived scheduler
+                except Exception:
+                    with j_lock:
+                        job.setStatus(StatusSystem().error, 'JOB EXCEPTION')
+                        job.setOutput('Encountered an exception while running Job: %s' % (traceback.format_exc()))
                 timeout_timer.cancel()
 
                 # Recover worker count before attempting to queue more jobs
@@ -417,7 +439,7 @@ class Scheduler(MooseObject):
 
                 # All done
                 with j_lock:
-                    job.setStatus(job.finished)
+                    job.setStatus(StatusSystem().finished)
 
                 with self.activity_lock:
                     self.__active_jobs.remove(job)

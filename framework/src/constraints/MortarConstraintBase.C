@@ -37,7 +37,27 @@ MortarConstraintBase::validParams()
                                       obj_params.get<SubdomainName>("secondary_subdomain");
                                   rm_params.set<SubdomainName>("primary_subdomain") =
                                       obj_params.get<SubdomainName>("primary_subdomain");
+                                  rm_params.set<bool>("ghost_higher_d_neighbors") =
+                                      obj_params.get<bool>("ghost_higher_d_neighbors");
                                 });
+
+  // If the LM is ever a Lagrange variable, we will attempt to obtain its dof indices from the
+  // process that owns the node. However, in order for the dof indices to get set for the Lagrange
+  // variable, the process that owns the node needs to have local copies of any lower-d elements
+  // that have the connected node. Note that the geometric ghosting done here is different than that
+  // done by the AugmentSparsityOnInterface RM, even when ghost_point_neighbors is true. The latter
+  // ghosts equal-manifold lower-dimensional secondary element point neighbors and their interface
+  // couplings. This ghosts lower-dimensional point neighbors of higher-dimensional elements.
+  // Neither is guaranteed to be a superset of the other. For instance ghosting of lower-d point
+  // neighbors (AugmentSparsityOnInterface with ghost_point_neighbors = true) is only guaranteed to
+  // ghost those lower-d point neighbors on *processes that own lower-d elements*. And you may have
+  // a process that only owns higher-dimensionsional elements
+  //
+  // Note that in my experience it is only important for the higher-d lower-d point neighbors to be
+  // ghosted when forming sparsity patterns and so I'm putting this here instead of at the
+  // MortarConsumerInterface level
+  params.addRelationshipManager("GhostHigherDLowerDPointNeighbors",
+                                Moose::RelationshipManagerType::GEOMETRIC);
 
   params.addParam<VariableName>("secondary_variable", "Primal variable on secondary surface.");
   params.addParam<VariableName>(
@@ -61,6 +81,15 @@ MortarConstraintBase::validParams()
       "While DEFAULT quadrature order is typically sufficiently accurate, exact integration of "
       "QUAD mortar faces requires SECOND order quadrature for FIRST variables and FOURTH order "
       "quadrature for SECOND order variables.");
+  params.addParam<bool>(
+      "use_petrov_galerkin",
+      false,
+      "Whether to use the Petrov-Galerkin approach for the mortar-based constraints. If set to "
+      "true, we use the standard basis as the test function and dual basis as "
+      "the shape function for the interpolation of the Lagrange multiplier variable.");
+  params.addCoupledVar("aux_lm",
+                       "Auxiliary Lagrange multiplier variable that is utilized together with the "
+                       "Petrov-Galerkin approach.");
   return params;
 }
 
@@ -80,11 +109,11 @@ MortarConstraintBase::MortarConstraintBase(const InputParameters & parameters)
              : nullptr),
     _secondary_var(
         isParamValid("secondary_variable")
-            ? _subproblem.getStandardVariable(_tid, parameters.getMooseType("secondary_variable"))
-            : _subproblem.getStandardVariable(_tid, parameters.getMooseType("primary_variable"))),
+            ? _sys.getActualFieldVariable<Real>(_tid, parameters.getMooseType("secondary_variable"))
+            : _sys.getActualFieldVariable<Real>(_tid, parameters.getMooseType("primary_variable"))),
     _primary_var(
         isParamValid("primary_variable")
-            ? _subproblem.getStandardVariable(_tid, parameters.getMooseType("primary_variable"))
+            ? _sys.getActualFieldVariable<Real>(_tid, parameters.getMooseType("primary_variable"))
             : _secondary_var),
 
     _compute_primal_residuals(getParam<bool>("compute_primal_residuals")),
@@ -95,16 +124,35 @@ MortarConstraintBase::MortarConstraintBase(const InputParameters & parameters)
     _tangents(_assembly.tangents()),
     _coord(_assembly.mortarCoordTransformation()),
     _q_point(_assembly.qPointsMortar()),
-    _test(_var ? _var->phiLower() : _test_dummy),
+    _use_petrov_galerkin(getParam<bool>("use_petrov_galerkin")),
+    _aux_lm_var(isCoupled("aux_lm") ? getVar("aux_lm", 0) : nullptr),
+    _test(_var
+              ? ((_use_petrov_galerkin && _aux_lm_var) ? _aux_lm_var->phiLower() : _var->phiLower())
+              : _test_dummy),
     _test_secondary(_secondary_var.phiFace()),
     _test_primary(_primary_var.phiFaceNeighbor()),
     _grad_test_secondary(_secondary_var.gradPhiFace()),
     _grad_test_primary(_primary_var.gradPhiFaceNeighbor()),
-    _lower_primary_elem(_assembly.neighborLowerDElem()),
+    _interior_secondary_elem(_assembly.elem()),
+    _interior_primary_elem(_assembly.neighbor()),
     _displaced(getParam<bool>("use_displaced_mesh"))
 {
   if (_use_dual)
     _assembly.activateDual();
+
+  if (_use_petrov_galerkin && (!_use_dual))
+    paramError("use_petrov_galerkin",
+               "We need to set `use_dual = true` while using the Petrov-Galerkin approach");
+
+  if (_use_petrov_galerkin && ((!isParamValid("aux_lm")) || _aux_lm_var == nullptr))
+    paramError("use_petrov_galerkin",
+               "We need to specify an auxiliary variable `aux_lm` while using the Petrov-Galerkin "
+               "approach");
+
+  if (_use_petrov_galerkin && _aux_lm_var->useDual())
+    paramError("aux_lm",
+               "Auxiliary LM variable needs to use standard shape function, i.e., set `use_dual = "
+               "false`.");
 
   // Note parameter is discretization order, we then convert to quadrature order
   const MooseEnum p_order = getParam<MooseEnum>("quadrature");
@@ -114,12 +162,17 @@ MortarConstraintBase::MortarConstraintBase(const InputParameters & parameters)
     Order q_order = static_cast<Order>(2 * Utility::string_to_enum<Order>(p_order) + 1);
     _assembly.setMortarQRule(q_order);
   }
+
+  if (_var)
+    addMooseVariableDependency(_var);
+  addMooseVariableDependency(&_secondary_var);
+  addMooseVariableDependency(&_primary_var);
 }
 
 void
 MortarConstraintBase::computeResidual()
 {
-  setNormals();
+  precalculateResidual();
 
   if (_compute_primal_residuals)
   {
@@ -138,7 +191,7 @@ MortarConstraintBase::computeResidual()
 void
 MortarConstraintBase::computeJacobian()
 {
-  setNormals();
+  precalculateResidual();
 
   if (_compute_primal_residuals)
   {
@@ -165,11 +218,6 @@ MortarConstraintBase::zeroInactiveLMDofs(const std::unordered_set<const Node *> 
   const auto sn = _sys.number();
   const auto vn = _var->number();
 
-  if (_subproblem.currentlyComputingJacobian())
-    prepareMatrixTagLower(_assembly, vn, vn, Moose::ConstraintJacobianType::LowerLower);
-  else
-    prepareVectorTagLower(_assembly, vn);
-
   // If variable is nodal, zero DoFs based on inactive LM nodes
   if (_var->isNodal())
   {
@@ -180,12 +228,17 @@ MortarConstraintBase::zeroInactiveLMDofs(const std::unordered_set<const Node *> 
         continue;
 
       const auto dof_index = node->dof_number(sn, vn, 0);
-      if (_subproblem.currentlyComputingJacobian())
-        _assembly.cacheJacobian(dof_index, dof_index, 1., _matrix_tags);
-      else
+      // No scaling; this is not physics
+      if (_assembly.computingJacobian())
+        addJacobianElement(
+            _assembly, /*element_value=*/1, dof_index, dof_index, /*scaling_factor=*/1);
+      if (_assembly.computingResidual())
       {
-        Real lm_value = _var->getNodalValue(*node);
-        _assembly.cacheResidual(dof_index, lm_value, _vector_tags);
+        const Real lm_value = _var->getNodalValue(*node);
+        addResiduals(_assembly,
+                     std::array<Real, 1>{{lm_value}},
+                     std::array<dof_id_type, 1>{{dof_index}},
+                     /*scaling_factor=*/1);
       }
     }
   }
@@ -199,13 +252,17 @@ MortarConstraintBase::zeroInactiveLMDofs(const std::unordered_set<const Node *> 
       for (const auto comp : make_range(n_comp))
       {
         const auto dof_index = el->dof_number(sn, vn, comp);
-        // Insert to system
-        if (_subproblem.currentlyComputingJacobian())
-          _assembly.cacheJacobian(dof_index, dof_index, 1., _matrix_tags);
-        else
+        // No scaling; this is not physics
+        if (_assembly.computingJacobian())
+          addJacobianElement(
+              _assembly, /*element_value=*/1, dof_index, dof_index, /*scaling_factor=*/1);
+        if (_assembly.computingResidual())
         {
           const Real lm_value = _var->getElementalValue(el, comp);
-          _assembly.cacheResidual(dof_index, lm_value, _vector_tags);
+          addResiduals(_assembly,
+                       std::array<Real, 1>{{lm_value}},
+                       std::array<dof_id_type, 1>{{dof_index}},
+                       /*scaling_factor=*/1);
         }
       }
     }

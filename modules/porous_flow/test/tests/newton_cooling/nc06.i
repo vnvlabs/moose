@@ -63,17 +63,15 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [simple_fluid]
-      type = SimpleFluidProperties
-      bulk_modulus = 1e6
-      density0 = 1000
-      thermal_expansion = 0
-      viscosity = 1e-3
-      cv = 1e6
-      porepressure_coefficient = 0
-    []
+[FluidProperties]
+  [simple_fluid]
+    type = SimpleFluidProperties
+    bulk_modulus = 1e6
+    density0 = 1000
+    thermal_expansion = 0
+    viscosity = 1e-3
+    cv = 1e6
+    porepressure_coefficient = 0
   []
 []
 
@@ -183,7 +181,6 @@
 [Outputs]
   file_base = nc06
   execute_on = timestep_end
-  exodus = true
   [along_line]
     type = CSV
     execute_vector_postprocessors_on = timestep_end

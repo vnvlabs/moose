@@ -10,6 +10,8 @@
 #pragma once
 
 #include "SyntaxTree.h"
+#include "InputParameters.h"
+
 #include <sstream>
 #include <iterator>
 
@@ -35,6 +37,8 @@ public:
                                   short depth,
                                   const std::string & search_string,
                                   bool & found) override;
+  template <typename T>
+  void addEnumOptionsAndDocs(std::ostringstream & oss, T & param, const std::string & indent);
 
 protected:
   bool _dump_mode;

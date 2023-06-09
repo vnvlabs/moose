@@ -2,7 +2,6 @@
 
 !template! item key=minimum_requirements
 !include sqa/minimum_requirements.md
-- Many flavors of modern Linux and the two most recent versions of Mac OS X
 !template-end!
 
 !template! item key=system-purpose
@@ -18,8 +17,9 @@
 !template-end!
 
 !template! item key=pre-test
+!! pre-test-begin
 Ideally all testing should be performed on a clean test machine following
-one of the supported configurations setup by the test system engineer. Testing
+one of the supported configurations set up by the test system engineer. Testing
 may be performed on local workstations and cluster systems containing supported
 operating systems.
 
@@ -35,6 +35,7 @@ git submodule foreach 'git clean -xfd'
 All tests must pass in accordance with the type of test being performed. This list
 can be found in the [Software Test Plan](sqa/framework_stp.md).
 
+!! pre-test-finish
 !template-end!
 
 !template item key=functional-requirements

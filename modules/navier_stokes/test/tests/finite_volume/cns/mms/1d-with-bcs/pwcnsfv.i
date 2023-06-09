@@ -31,11 +31,9 @@ cp=${fparse gamma*R_specific/(gamma-1)}
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [fp]
-      type = IdealGasFluidProperties
-    []
+[FluidProperties]
+  [fp]
+    type = IdealGasFluidProperties
   []
 []
 
@@ -187,27 +185,27 @@ cp=${fparse gamma*R_specific/(gamma-1)}
 [Functions]
   [forcing_rho]
     type = ParsedFunction
-    value = '-3.45300378856215*sin(1.1*x)'
+    expression = '-3.45300378856215*sin(1.1*x)'
   []
   [forcing_rho_ud]
-    type = ADParsedFunction
-    value = '-0.9*(10.6975765229419*cos(1.2*x)/cos(x) - 0.697576522941849*cos(1.1*x)^2/cos(x)^2)*sin(x) + 0.9*(10.6975765229419*sin(x)*cos(1.2*x)/cos(x)^2 - 1.3951530458837*sin(x)*cos(1.1*x)^2/cos(x)^3 + 1.53466835047207*sin(1.1*x)*cos(1.1*x)/cos(x)^2 - 12.8370918275302*sin(1.2*x)/cos(x))*cos(x) + 3.13909435323832*sin(x)*cos(1.1*x)^2/cos(x)^2 - 6.9060075771243*sin(1.1*x)*cos(1.1*x)/cos(x)'
+    type = ParsedFunction
+    expression = '-0.9*(10.6975765229419*cos(1.2*x)/cos(x) - 0.697576522941849*cos(1.1*x)^2/cos(x)^2)*sin(x) + 0.9*(10.6975765229419*sin(x)*cos(1.2*x)/cos(x)^2 - 1.3951530458837*sin(x)*cos(1.1*x)^2/cos(x)^3 + 1.53466835047207*sin(1.1*x)*cos(1.1*x)/cos(x)^2 - 12.8370918275302*sin(1.2*x)/cos(x))*cos(x) + 3.13909435323832*sin(x)*cos(1.1*x)^2/cos(x)^2 - 6.9060075771243*sin(1.1*x)*cos(1.1*x)/cos(x)'
   []
   [exact_T]
     type = ParsedFunction
-    value = '0.0106975765229418*cos(1.2*x)/cos(x) - 0.000697576522941848*cos(1.1*x)^2/cos(x)^2'
+    expression = '0.0106975765229418*cos(1.2*x)/cos(x) - 0.000697576522941848*cos(1.1*x)^2/cos(x)^2'
   []
   [exact_p]
     type = ParsedFunction
-    value = '3.48788261470924*(3.06706896551724*cos(1.2*x)/cos(x) - 0.2*cos(1.1*x)^2/cos(x)^2)*cos(x)'
+    expression = '3.48788261470924*(3.06706896551724*cos(1.2*x)/cos(x) - 0.2*cos(1.1*x)^2/cos(x)^2)*cos(x)'
   []
   [exact_sup_vel_x]
     type = ParsedFunction
-    value = '0.9*cos(1.1*x)/cos(x)'
+    expression = '0.9*cos(1.1*x)/cos(x)'
   []
   [eps]
     type = ParsedFunction
-    value = '0.9'
+    expression = '0.9'
   []
 []
 
@@ -240,16 +238,16 @@ cp=${fparse gamma*R_specific/(gamma-1)}
     execute_on = 'timestep_end'
   []
   [L2pressure]
-    type = ElementL2Error
-    variable = pressure
-    function = exact_p
+    type = ElementL2FunctorError
+    approximate = pressure
+    exact = exact_p
     outputs = 'console csv'
     execute_on = 'timestep_end'
   []
   [L2sup_vel_x]
-    variable = sup_vel_x
-    function = exact_sup_vel_x
-    type = ElementL2Error
+    approximate = sup_vel_x
+    exact = exact_sup_vel_x
+    type = ElementL2FunctorError
     outputs = 'console csv'
     execute_on = 'timestep_end'
   []

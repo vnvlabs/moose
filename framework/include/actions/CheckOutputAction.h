@@ -24,7 +24,7 @@ public:
    */
   static InputParameters validParams();
 
-  CheckOutputAction(InputParameters params);
+  CheckOutputAction(const InputParameters & params);
 
   virtual void act() override;
 
@@ -36,7 +36,7 @@ private:
   void checkVariableOutput(const std::string & task);
 
   /**
-   * Preforms a set of checks on each of the Material objects that the "outputs" parameters has
+   * Performs a set of checks on each of the Material objects that the "outputs" parameters has
    * valid values
    */
   void checkMaterialOutput();

@@ -40,7 +40,7 @@
 [Functions]
   [moving_circle]
     type = ParsedFunction
-    value = '(x-t)^2+(y)^2-0.5^2'
+    expression = '(x-t)^2+(y)^2-0.5^2'
   []
 []
 
@@ -54,7 +54,7 @@
     type = FunctionAux
     variable = phi
     function = moving_circle
-    execute_on = 'INITIAL TIMESTEP_BEGIN TIMESTEP_END'
+    execute_on = 'INITIAL TIMESTEP_BEGIN'
   []
 []
 

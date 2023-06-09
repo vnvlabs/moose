@@ -6,7 +6,7 @@
   snes_test_err = 1e-1
 []
 
-[Modules/FluidProperties]
+[FluidProperties]
   [fp_1phase]
     type = LinearTestFluidProperties
   []
@@ -43,6 +43,6 @@
     type = MaterialDerivativeTestKernel
     variable = beta
     material_property = mu
-    args = 'beta arhoA arhouA arhoEA'
+    coupled_variables = 'beta arhoA arhouA arhoEA'
   []
 []

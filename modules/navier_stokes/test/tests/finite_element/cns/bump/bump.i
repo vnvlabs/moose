@@ -34,15 +34,15 @@
   # file = SmoothBump_quad_ref5_Q2.msh # 12804 elems, 49665 nodes
 []
 
-[Modules]
-  [FluidProperties]
-    [ideal_gas]
-      type = IdealGasFluidProperties
-      gamma = 1.4
-      molar_mass = 0.02897024320557491
-    []
+[FluidProperties]
+  [ideal_gas]
+    type = IdealGasFluidProperties
+    gamma = 1.4
+    molar_mass = 0.02897024320557491
   []
+[]
 
+[Modules]
   [CompressibleNavierStokes]
     # steady-state or transient
     equation_type = transient
@@ -144,15 +144,15 @@
   [rhoe]
     variable = rhoe
     type = ParsedAux
-    function = 'rho_et'
-    args = 'rho_et'
+    expression = 'rho_et'
+    coupled_variables = 'rho_et'
     execute_on = 'initial timestep_end'
   []
   [enthalpy]
     variable = enthalpy
     type = ParsedAux
-    function = 'ht'
-    args = 'ht'
+    expression = 'ht'
+    coupled_variables = 'ht'
     execute_on = 'initial timestep_end'
   []
 []

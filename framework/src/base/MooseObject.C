@@ -44,7 +44,6 @@ MooseObject::validParams()
   params.addPrivateParam<SubProblem *>("_subproblem", nullptr);
   params.addPrivateParam<SystemBase *>("_sys", nullptr);
   params.addPrivateParam<SystemBase *>("_nl_sys", nullptr);
-  params.addPrivateParam<AuxiliarySystem *>("_aux_sys", nullptr);
   params.addPrivateParam<Transient *>("_executioner", nullptr);
   params.addPrivateParam<THREAD_ID>("_tid");
   params.addPrivateParam<bool>("_residual_object", false);
@@ -54,6 +53,7 @@ MooseObject::validParams()
 MooseObject::MooseObject(const InputParameters & parameters)
   : ConsoleStreamInterface(*parameters.getCheckedPointerParam<MooseApp *>("_moose_app")),
     ParallelObject(*parameters.getCheckedPointerParam<MooseApp *>("_moose_app")),
+    DataFileInterface<MooseObject>(*this),
     _pars(parameters),
     _app(*getCheckedPointerParam<MooseApp *>("_moose_app")),
     _type(getParam<std::string>("_type")),

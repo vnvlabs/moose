@@ -84,17 +84,19 @@ a=1.1
 [Functions]
   [exact]
     type = ParsedFunction
-    value = 'cos(x)'
+    expression = 'cos(x)'
   []
   [forcing]
     type = ParsedFunction
-    value = '-${a} * sin(x)'
+    expression = '-${a} * sin(x)'
   []
 []
 
 [Executioner]
   type = Steady
   solve_type = 'NEWTON'
+  petsc_options_iname = '-pc_type -pc_factor_shift_type -pc_factor_mat_solver_type'
+  petsc_options_value = 'lu       NONZERO               mumps'
 []
 
 [Outputs]

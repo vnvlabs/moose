@@ -37,30 +37,28 @@ ADKernelGradTempl<T>::computeResidual()
 
   precalculateResidual();
   const unsigned int n_test = _grad_test.size();
+  std::vector<Real> residuals(n_test);
 
   if (_use_displaced_mesh)
     for (_qp = 0; _qp < _qrule->n_points(); _qp++)
     {
       const auto value = precomputeQpResidual() * _ad_JxW[_qp] * _ad_coord[_qp];
       for (_i = 0; _i < n_test; _i++) // target for auto vectorization
-        _local_re(_i) += raw_value(MathUtils::dotProduct(value, _grad_test[_i][_qp]));
+        residuals[_i] += raw_value(MathUtils::dotProduct(value, _grad_test[_i][_qp]));
     }
   else
     for (_qp = 0; _qp < _qrule->n_points(); _qp++)
     {
       const auto value = precomputeQpResidual() * _JxW[_qp] * _coord[_qp];
       for (_i = 0; _i < n_test; _i++) // target for auto vectorization
-        _local_re(_i) += raw_value(MathUtils::dotProduct(value, _regular_grad_test[_i][_qp]));
+        residuals[_i] += raw_value(MathUtils::dotProduct(value, _regular_grad_test[_i][_qp]));
     }
 
-  accumulateTaggedLocalResidual();
+  this->addResiduals(_assembly, residuals, _var.dofIndices(), _var.scalingFactor());
 
   if (_has_save_in)
-  {
-    Threads::spin_mutex::scoped_lock lock(Threads::spin_mtx);
     for (unsigned int i = 0; i < _save_in.size(); i++)
-      _save_in[i]->sys().solution().add_vector(_local_re, _save_in[i]->dofIndices());
-  }
+      _save_in[i]->sys().solution().add_vector(residuals.data(), _save_in[i]->dofIndices());
 }
 
 template <typename T>
@@ -87,6 +85,14 @@ ADKernelGradTempl<T>::computeResidualsForJacobian()
       for (_i = 0; _i < _grad_test.size(); _i++)
         _residuals[_i] += MathUtils::dotProduct(value, _regular_grad_test[_i][_qp]);
     }
+}
+
+template <typename T>
+void
+ADKernelGradTempl<T>::computeResidualAndJacobian()
+{
+  computeResidualsForJacobian();
+  this->addResidualsAndJacobian(_assembly, _residuals, _var.dofIndices(), _var.scalingFactor());
 }
 
 template <typename T>

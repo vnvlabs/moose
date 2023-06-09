@@ -14,11 +14,11 @@
   # ODEs
   [./exact_x_fn]
     type = ParsedFunction
-    value = (-1/3)*exp(-t)+(4/3)*exp(5*t)
+    expression = (-1/3)*exp(-t)+(4/3)*exp(5*t)
   [../]
   [./exact_y_fn]
     type = ParsedFunction
-    value = (2/3)*exp(-t)+(4/3)*exp(5*t)
+    expression = (2/3)*exp(-t)+(4/3)*exp(5*t)
   [../]
 []
 
@@ -93,14 +93,14 @@
 []
 
 [Postprocessors]
-  # to print the values of x, y into a file so we can plot it
-  [./x]
+ # to print the values of x, y into a file so we can plot it
+  [./x_pp]
     type = ScalarVariable
     variable = x
     execute_on = timestep_end
   [../]
 
-  [./y]
+  [./y_pp]
     type = ScalarVariable
     variable = y
     execute_on = timestep_end

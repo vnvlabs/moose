@@ -19,6 +19,7 @@ MaskedBodyForce::validParams()
   params.addClassDescription("Kernel that defines a body force modified by a material mask");
   params.addParam<MaterialPropertyName>("mask", "Material property defining the mask");
   params.addCoupledVar("args", "Vector of nonlinear variable arguments this object depends on");
+  params.deprecateCoupledVar("args", "coupled_variables", "02/27/2024");
   return params;
 }
 

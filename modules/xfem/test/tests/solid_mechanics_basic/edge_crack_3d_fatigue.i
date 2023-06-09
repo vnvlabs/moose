@@ -28,14 +28,14 @@
   [./cut_mesh]
     type = CrackMeshCut3DUserObject
     mesh_file = mesh_edge_crack.xda
-    growth_dir_method = 'function'
+    growth_dir_method = FUNCTION
     size_control = 1
     n_step_growth = 1
-    growth_speed_method = 'fatigue'
-    function_x = growth_func_x
-    function_y = growth_func_y
-    function_z = growth_func_z
-    function_v = growth_func_v
+    growth_rate_method = FATIGUE
+    growth_direction_x = growth_func_x
+    growth_direction_y = growth_func_y
+    growth_direction_z = growth_func_z
+    growth_rate = growth_func_v
     crack_front_nodes = '7 6 5 4'
   [../]
 []
@@ -43,21 +43,21 @@
 [Functions]
   [./growth_func_x]
     type = ParsedFunction
-    value = 1
+    expression = 1
   [../]
   [./growth_func_y]
     type = ParsedFunction
-    value = 0
+    expression = 0
   [../]
   [./growth_func_z]
     type = ParsedFunction
-    value = 0
+    expression = 0
   [../]
   [./growth_func_v]
     type = ParsedFunction
-    vars = 'dN'
-    vals = 'fatigue'
-    value = dN
+    symbol_names = 'dN'
+    symbol_values = 'fatigue'
+    expression = dN
   [../]
 []
 

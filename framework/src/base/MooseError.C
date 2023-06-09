@@ -38,19 +38,21 @@ mooseMsgFmt(const std::string & msg, const std::string & title, const std::strin
   return oss.str();
 }
 
-static Threads::spin_mutex moose_err_lock;
+std::string
+mooseMsgFmt(const std::string & msg, const std::string & color)
+{
+  std::ostringstream oss;
+  oss << "\n" << color << "\n" << msg << COLOR_DEFAULT << "\n";
+  return oss.str();
+}
 
 [[noreturn]] void
 mooseErrorRaw(std::string msg, const std::string prefix)
 {
-  msg = mooseMsgFmt(msg, "*** ERROR ***", COLOR_RED);
-
   if (Moose::_throw_on_error)
-  {
-    if (!prefix.empty())
-      MooseUtils::indentMessage(prefix, msg);
     throw std::runtime_error(msg);
-  }
+
+  msg = mooseMsgFmt(msg, "*** ERROR ***", COLOR_RED);
 
   std::ostringstream oss;
   oss << msg << "\n";
@@ -62,7 +64,7 @@ mooseErrorRaw(std::string msg, const std::string prefix)
   if (!prefix.empty())
     MooseUtils::indentMessage(prefix, msg);
   {
-    Threads::spin_mutex::scoped_lock lock(moose_err_lock);
+    Threads::spin_mutex::scoped_lock lock(moose_stream_lock);
     Moose::err << msg << std::flush;
   }
 
@@ -74,12 +76,13 @@ mooseErrorRaw(std::string msg, const std::string prefix)
   if (!prefix.empty())
     MooseUtils::indentMessage(prefix, msg);
 
-  Threads::spin_mutex::scoped_lock lock(moose_err_lock);
+  {
+    Threads::spin_mutex::scoped_lock lock(moose_stream_lock);
+    Moose::err << msg << std::flush;
 
-  Moose::err << msg << std::flush;
-
-  if (libMesh::global_n_processors() > 1)
-    libMesh::write_traceout();
+    if (libMesh::global_n_processors() > 1)
+      libMesh::write_traceout();
+  }
 
   MOOSE_ABORT;
 }
@@ -90,4 +93,17 @@ mooseStreamAll(std::ostringstream &)
 }
 
 } // namespace internal
+
+void
+translateMetaPhysicLError(const MetaPhysicL::LogicError &)
+{
+  mooseError(
+      "We caught a MetaPhysicL error in while performing element or face loops. This is "
+      "potentially due to AD not having a sufficiently large derivative container size. To "
+      "increase the AD container size, you can run configure in the MOOSE root directory with the "
+      "'--with-derivative-size=<n>' option and then recompile. Other causes of MetaPhysicL logic "
+      "errors include evaluating functions where they are not defined or differentiable like sqrt "
+      "(which gets called for vector norm functions) or log with arguments <= 0");
+}
+
 } // namespace moose

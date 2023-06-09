@@ -131,19 +131,48 @@ public:
   std::shared_ptr<ClosuresBase> getClosures(const std::string & name) const;
 
   /**
-   * Called by a component to announce a variable
-   * @param nl True is nonlinear variable is being added
-   * @param name The name of the variable
-   * @param type Type of the variable
-   * @param subdomain_id Subdomain of the variable
-   * @param scaling_factor Scaling factor for the variable
+   * Queues a variable of type MooseVariableScalar to be added to the nonlinear or aux system.
+   *
+   * @param[in] nl   True if this is a nonlinear (solution) variable
+   * @param[in] name   Name of the variable
+   * @param[in] fe_type   FEType of the variable
+   * @param[in] scaling_factor   Scaling factor for the variable
    */
-  void addSimVariable(bool nl, const VariableName & name, FEType type, Real scaling_factor = 1.);
+  void
+  addSimVariable(bool nl, const VariableName & name, FEType fe_type, Real scaling_factor = 1.0);
+
+  /**
+   * Queues a variable of type MooseVariable to be added to the nonlinear or aux system.
+   *
+   * @param[in] nl   True if this is a nonlinear (solution) variable
+   * @param[in] name   Name of the variable
+   * @param[in] fe_type   FEType of the variable
+   * @param[in] subdomain_names   List of subdomain names to add the variable to
+   * @param[in] scaling_factor   Scaling factor for the variable
+   */
   void addSimVariable(bool nl,
                       const VariableName & name,
-                      FEType type,
+                      FEType fe_type,
                       const std::vector<SubdomainName> & subdomain_names,
-                      Real scaling_factor = 1.);
+                      Real scaling_factor = 1.0);
+
+  /**
+   * Queues a generic variable to be added to the nonlinear or aux system.
+   *
+   * @param[in] nl   True if this is a nonlinear (solution) variable
+   * @param[in] var_type   Type (class) of the variable
+   * @param[in] name   Name of the variable
+   * @param[in] params   Input parameters for the variable
+   */
+  void addSimVariable(bool nl,
+                      const std::string & var_type,
+                      const VariableName & name,
+                      const InputParameters & params);
+
+  /**
+   * Reports an error if the variable name is too long
+   */
+  void checkVariableNameLength(const std::string & name) const;
 
   void addConstantIC(const VariableName & var_name,
                      Real value,
@@ -188,9 +217,9 @@ public:
   virtual void addVariables();
 
   /**
-   * Add components based physics
+   * Add component MOOSE objects
    */
-  virtual void addComponentPhysics();
+  virtual void addMooseObjects();
 
   /**
    * Perform mesh setup actions such as setting up the coordinate system(s) and
@@ -201,7 +230,7 @@ public:
   /**
    * Get the ThermalHydraulicsApp
    */
-  ThermalHydraulicsApp & getApp() { return _app; }
+  ThermalHydraulicsApp & getApp() { return _thm_app; }
 
   /**
    * Check the integrity of the simulation
@@ -251,7 +280,7 @@ public:
     ControlData<T> * data = nullptr;
     if (_control_data.find(name) == _control_data.end())
     {
-      data = new ControlData<T>(_app, name);
+      data = new ControlData<T>(_thm_app, name);
       _control_data[name] = data;
     }
     else
@@ -292,7 +321,7 @@ public:
    *
    * @return true if initial conditions are specified from a file
    */
-  bool hasInitialConditionsFromFile();
+  bool hasInitialConditionsFromFile() const;
 
   Logger & log() { return _log; }
 
@@ -322,24 +351,38 @@ public:
    */
   void setVectorValuedVelocity(bool vector_velocity) { _output_vector_velocity = vector_velocity; }
 
+  /**
+   * Add additional relationship managers to run the simulation
+   */
+  void addRelationshipManagers();
+
 protected:
+  /**
+   * Variable information
+   */
   struct VariableInfo
   {
-    bool _nl; ///< true if the variable is non-linear
-    FEType _type;
-    std::set<SubdomainName> _subdomain;
-    Real _scaling_factor;
+    /// True if the variable is a nonlinear (solution) variable; otherwise, aux
+    bool _nl;
+    /// Type (class) of the variable
+    std::string _var_type;
+    /// Input parameters
+    InputParameters _params;
+
+    VariableInfo() : _params(emptyInputParameters()) {}
   };
-  THMMesh & _mesh;
+
+  /// THM mesh
+  THMMesh & _thm_mesh;
 
   /// Pointer to FEProblem representing this simulation
   FEProblemBase & _fe_problem;
 
   /// The application this is associated with
-  ThermalHydraulicsApp & _app;
+  ThermalHydraulicsApp & _thm_app;
 
   /// The Factory associated with the MooseApp
-  Factory & _factory;
+  Factory & _thm_factory;
 
   /// List of components in this simulation
   std::vector<std::shared_ptr<Component>> _components;
@@ -369,7 +412,7 @@ protected:
   std::map<std::string, ICInfo> _ics;
 
   /// "Global" of this simulation
-  const InputParameters & _pars;
+  const InputParameters & _thm_pars;
 
   /// finite element type for the flow in the simulation
   FEType _flow_fe_type;

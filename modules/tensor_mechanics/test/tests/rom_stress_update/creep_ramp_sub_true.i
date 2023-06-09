@@ -108,9 +108,8 @@
 [Functions]
   [shear_function]
     type = ParsedFunction
-    value = 'timeToDoubleInHours := 10;
-            if(t<=28*60*60, 15.0e6, '
-            '15.0e6*(t-28*3600)/3600/timeToDoubleInHours+15.0e6)'
+    expression = 'timeToDoubleInHours := 10;
+            if(t<=28*60*60, 15.0e6, 15.0e6*(t-28*3600)/3600/timeToDoubleInHours+15.0e6)'
   []
 []
 
@@ -139,15 +138,19 @@
     initial_wall_dislocation_density = 4.4e11
     # outputs = all
 
-    use_substep = true
+    use_substepping = ERROR_BASED
     substep_strain_tolerance = 1.0e-5
-    use_substep_integration_error = true
 
-    stress_input_window_failure = WARN
-    cell_input_window_failure = ERROR
-    wall_input_window_failure = ERROR
-    temperature_input_window_failure = ERROR
-    environment_input_window_failure = ERROR #This is the phase fraction, below
+    stress_input_window_low_failure = WARN
+    stress_input_window_high_failure = ERROR
+    cell_input_window_high_failure = ERROR
+    cell_input_window_low_failure = ERROR
+    wall_input_window_low_failure = ERROR
+    wall_input_window_high_failure = ERROR
+    temperature_input_window_high_failure = ERROR
+    temperature_input_window_low_failure = ERROR
+    environment_input_window_high_failure = ERROR
+    environment_input_window_low_failure = ERROR
   []
 []
 
@@ -205,5 +208,4 @@
 
 [Outputs]
   csv = true
-  exodus = true
 []

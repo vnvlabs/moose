@@ -12,6 +12,8 @@
 #include "InputParameters.h"
 #include "MooseMeshUtils.h"
 #include "CastUniquePointer.h"
+#include "MooseApp.h"
+#include "MeshGeneratorSystem.h"
 
 #include "libmesh/mesh_generation.h"
 #include "libmesh/mesh.h"
@@ -51,9 +53,6 @@ SideSetsFromNormalsGenerator::SideSetsFromNormalsGenerator(const InputParameters
         declareMeshProperty<std::map<BoundaryID, RealVectorValue>>("boundary_normals")),
     _tolerance(getParam<Real>("tolerance"))
 {
-  if (typeid(_input).name() == typeid(std::unique_ptr<DistributedMesh>).name())
-    mooseError("GenerateAllSideSetsByNormals only works with ReplicatedMesh.");
-
   // Get the BoundaryIDs from the mesh
   _boundary_names = getParam<std::vector<BoundaryName>>("new_boundary");
 
@@ -73,6 +72,9 @@ std::unique_ptr<MeshBase>
 SideSetsFromNormalsGenerator::generate()
 {
   std::unique_ptr<MeshBase> mesh = std::move(_input);
+  if (!_fixed_normal && !mesh->is_replicated())
+    mooseError("SideSetsFromNormalsGenerator is not implemented for distributed meshes when "
+               "fixed_normal = false");
 
   std::vector<BoundaryID> boundary_ids =
       MooseMeshUtils::getBoundaryIDs(*mesh, _boundary_names, true);
@@ -108,5 +110,8 @@ SideSetsFromNormalsGenerator::generate()
     _boundary_to_normal_map[boundary_ids[i]] = _normals[i];
   }
 
+  // This is a terrible hack that we'll want to remove once BMBBG isn't terrible
+  if (!_app.getMeshGeneratorSystem().hasBreakMeshByBlockGenerator())
+    mesh->set_isnt_prepared();
   return dynamic_pointer_cast<MeshBase>(mesh);
 }

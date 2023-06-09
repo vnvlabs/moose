@@ -8,7 +8,6 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "INSFVBodyForce.h"
-#include "Function.h"
 
 registerMooseObject("NavierStokesApp", INSFVBodyForce);
 
@@ -38,5 +37,5 @@ INSFVBodyForce::INSFVBodyForce(const InputParameters & parameters)
 ADReal
 INSFVBodyForce::computeQpResidual()
 {
-  return -_scale * _postprocessor * _functor(makeElemArg(_current_elem));
+  return -_scale * _postprocessor * _functor(makeElemArg(_current_elem), determineState());
 }

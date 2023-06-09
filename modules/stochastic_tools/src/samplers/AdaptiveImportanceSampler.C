@@ -30,8 +30,14 @@ AdaptiveImportanceSampler::validParams()
   params.addRequiredParam<Real>("output_limit", "Limiting values of the VPPs");
   params.addRequiredParam<std::vector<Real>>(
       "initial_values", "Initial input values to get the importance sampler started");
-  params.addRequiredParam<int>("num_samples_train",
-                               "Number of samples to learn the importance distribution");
+  params.addRequiredRangeCheckedParam<int>(
+      "num_samples_train",
+      "num_samples_train>0",
+      "Number of samples to learn the importance distribution");
+  params.addRequiredRangeCheckedParam<int>(
+      "num_importance_sampling_steps",
+      "num_importance_sampling_steps>0",
+      "Number of importance sampling steps (after the importance distribution has been trained)");
   params.addRequiredParam<Real>(
       "std_factor", "Factor to be multiplied to the standard deviation of the importance samples");
   params.addParam<bool>("use_absolute_value", false, "Use absolute value of the sub app output");
@@ -49,9 +55,11 @@ AdaptiveImportanceSampler::AdaptiveImportanceSampler(const InputParameters & par
     _initial_values(getParam<std::vector<Real>>("initial_values")),
     _output_limit(getParam<Real>("output_limit")),
     _num_samples_train(getParam<int>("num_samples_train")),
+    _num_importance_sampling_steps(getParam<int>("num_importance_sampling_steps")),
     _std_factor(getParam<Real>("std_factor")),
     _use_absolute_value(getParam<bool>("use_absolute_value")),
     _num_random_seeds(getParam<unsigned int>("num_random_seeds")),
+    _is_sampling_completed(false),
     _step(getCheckedPointerParam<FEProblemBase *>("_fe_problem_base")->timeStep()),
     _inputs(getReporterValue<std::vector<std::vector<Real>>>("inputs_reporter"))
 {
@@ -95,34 +103,15 @@ AdaptiveImportanceSampler::AdaptiveImportanceSampler(const InputParameters & par
   setNumberOfRandomSeeds(_num_random_seeds);
 }
 
-const std::vector<Real> &
-AdaptiveImportanceSampler::getInitialValues() const
-{
-  return _initial_values;
-}
-
-const int &
-AdaptiveImportanceSampler::getNumSamplesTrain() const
-{
-  return _num_samples_train;
-}
-
-const bool &
-AdaptiveImportanceSampler::getUseAbsoluteValue() const
-{
-  return _use_absolute_value;
-}
-
-const Real &
-AdaptiveImportanceSampler::getOutputLimit() const
-{
-  return _output_limit;
-}
-
 Real
 AdaptiveImportanceSampler::computeSample(dof_id_type /*row_index*/, dof_id_type col_index)
 {
   const bool sample = _step > 1 && col_index == 0 && _check_step != _step;
+
+  if (sample && _is_sampling_completed)
+    mooseError("Internal bug: the adaptive sampling is supposed to be completed but another sample "
+               "has been requested.");
+
   if (_step <= _num_samples_train)
   {
     /* This is the importance distribution training step. Markov Chains are set up
@@ -134,11 +123,11 @@ AdaptiveImportanceSampler::computeSample(dof_id_type /*row_index*/, dof_id_type 
     if (sample)
     {
       for (dof_id_type j = 0; j < _distributions.size(); ++j)
-        _prev_value[j] = Normal::quantile(_distributions[j]->cdf(_inputs[j][0]), 0, 1);
+        _prev_value[j] = Normal::quantile(_distributions[j]->cdf(_inputs[j][0]), 0.0, 1.0);
       Real acceptance_ratio = 0.0;
       for (dof_id_type i = 0; i < _distributions.size(); ++i)
-        acceptance_ratio += std::log(Normal::pdf(_prev_value[i], 0, 1)) -
-                            std::log(Normal::pdf(_inputs_sto[i].back(), 0, 1));
+        acceptance_ratio += std::log(Normal::pdf(_prev_value[i], 0.0, 1.0)) -
+                            std::log(Normal::pdf(_inputs_sto[i].back(), 0.0, 1.0));
       if (acceptance_ratio > std::log(getRand(_step)))
       {
         for (dof_id_type i = 0; i < _distributions.size(); ++i)
@@ -149,9 +138,9 @@ AdaptiveImportanceSampler::computeSample(dof_id_type /*row_index*/, dof_id_type 
         for (dof_id_type i = 0; i < _distributions.size(); ++i)
           _inputs_sto[i].push_back(_inputs_sto[i].back());
       }
+      for (dof_id_type i = 0; i < _distributions.size(); ++i)
+        _prev_value[i] = Normal::quantile(getRand(_step), _inputs_sto[i].back(), _proposal_std[i]);
     }
-    _prev_value[col_index] =
-        Normal::quantile(getRand(_step), _inputs_sto[col_index].back(), _proposal_std[col_index]);
   }
   else if (sample)
   {
@@ -167,8 +156,12 @@ AdaptiveImportanceSampler::computeSample(dof_id_type /*row_index*/, dof_id_type 
       }
       _prev_value[i] = (Normal::quantile(getRand(_step), _mean_sto[i], _std_factor * _std_sto[i]));
     }
+
+    // check if we have performed all the importance sampling steps
+    if (_step >= _num_samples_train + _num_importance_sampling_steps)
+      _is_sampling_completed = true;
   }
 
   _check_step = _step;
-  return _distributions[col_index]->quantile(Normal::cdf(_prev_value[col_index], 0, 1));
+  return _distributions[col_index]->quantile(Normal::cdf(_prev_value[col_index], 0.0, 1.0));
 }

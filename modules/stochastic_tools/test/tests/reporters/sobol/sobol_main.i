@@ -41,14 +41,14 @@
 []
 
 [Controls/param]
-  type = MultiAppCommandLineControl
+  type = MultiAppSamplerControl
   multi_app = sub
   param_names = 'x0 x1 x2 x3 x4 x5'
 []
 
 [Transfers/data]
   type = SamplerReporterTransfer
-  multi_app = sub
+  from_multi_app = sub
   from_reporter = 'const/gf const/gfa const/gf_vec'
   stochastic_reporter = storage
 []
@@ -71,6 +71,5 @@
   execute_on = FINAL
   [out]
     type = JSON
-    execute_system_information_on = NONE
   []
 []

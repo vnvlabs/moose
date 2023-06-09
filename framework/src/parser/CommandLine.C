@@ -95,6 +95,15 @@ CommandLine::initForMultiApp(const std::string & subapp_full_name)
       });
   _argv.erase(new_end, _argv.end());
 
+  // If there is an argument meant for a nested subapp, we will want to remove
+  // the leading app name
+  for (auto & arg : _argv)
+  {
+    auto pos = arg.find(":", 0);
+    if (pos != std::string::npos && arg.find(":", pos + 1) != std::string::npos)
+      arg = subapp_full_name + "_" + arg.substr(pos + 1, arg.length() - pos - 1);
+  }
+
   // Clear hit CLI arguments, these will be populated after the sub-application is created
   _hiti.clear();
   _used_hiti.clear();
@@ -115,9 +124,8 @@ CommandLine::addCommandLineOptionsFromParams(InputParameters & params)
       syntax = params.getSyntax(orig_name);
     cli_opt.cli_syntax = syntax;
     cli_opt.required = false;
-    InputParameters::Parameter<bool> * bool_type =
-        dynamic_cast<InputParameters::Parameter<bool> *>(it.second);
-    if (bool_type)
+
+    if (params.have_parameter<bool>(orig_name))
       cli_opt.argument_type = CommandLine::NONE;
     else
       cli_opt.argument_type = CommandLine::REQUIRED;
@@ -135,44 +143,37 @@ CommandLine::populateInputParams(InputParameters & params)
 
     if (search(orig_name))
     {
-      auto * string_type = dynamic_cast<InputParameters::Parameter<std::string> *>(it.second);
-      if (string_type)
+      if (params.have_parameter<std::string>(orig_name))
       {
         search(orig_name, params.set<std::string>(orig_name));
         continue;
       }
 
-      auto * string_vector_type =
-          dynamic_cast<InputParameters::Parameter<std::vector<std::string>> *>(it.second);
-      if (string_vector_type)
+      if (params.have_parameter<std::vector<std::string>>(orig_name))
       {
         search(orig_name, params.set<std::vector<std::string>>(orig_name));
         continue;
       }
 
-      auto * real_type = dynamic_cast<InputParameters::Parameter<Real> *>(it.second);
-      if (real_type)
+      if (params.have_parameter<Real>(orig_name))
       {
         search(orig_name, params.set<Real>(orig_name));
         continue;
       }
 
-      auto * uint_type = dynamic_cast<InputParameters::Parameter<unsigned int> *>(it.second);
-      if (uint_type)
+      if (params.have_parameter<unsigned int>(orig_name))
       {
         search(orig_name, params.set<unsigned int>(orig_name));
         continue;
       }
 
-      auto * int_type = dynamic_cast<InputParameters::Parameter<int> *>(it.second);
-      if (int_type)
+      if (params.have_parameter<int>(orig_name))
       {
         search(orig_name, params.set<int>(orig_name));
         continue;
       }
 
-      auto * bool_type = dynamic_cast<InputParameters::Parameter<bool> *>(it.second);
-      if (bool_type)
+      if (params.have_parameter<bool>(orig_name))
       {
         search(orig_name, params.set<bool>(orig_name));
         continue;
@@ -247,14 +248,19 @@ CommandLine::search(const std::string & option_name)
   mooseError("Unrecognized option name: ", option_name);
 }
 
-void
-CommandLine::printUsage() const
+std::string
+CommandLine::getExecutableName() const
 {
   // Grab the first item out of argv
   std::string command(_args[0]);
   command.substr(command.find_last_of("/\\") + 1);
+  return command;
+}
 
-  Moose::out << "Usage: " << command << " [<options>]\n\n"
+void
+CommandLine::printUsage() const
+{
+  Moose::out << "Usage: " << getExecutableName() << " [<options>]\n\n"
              << "Options:\n"
              << std::left;
 

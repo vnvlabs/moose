@@ -25,7 +25,18 @@ public:
   virtual void addMooseObjects() override;
 
 protected:
+  virtual void addNumericalFluxUserObject();
+  virtual void addRDGAdvectionDGKernels();
   void addRDGMooseObjects();
+
+  /// Slope reconstruction type for rDG
+  const MooseEnum _rdg_slope_reconstruction;
+
+  /// Numerical flux user object name
+  const UserObjectName _numerical_flux_name;
+
+  /// Scaling factors for each solution variable (rhoA, rhouA, rhoEA)
+  const std::vector<Real> _scaling_factors;
 
 public:
   static const std::string DENSITY;

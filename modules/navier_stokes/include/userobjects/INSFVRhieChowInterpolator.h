@@ -16,6 +16,10 @@
 #include "MooseTypes.h"
 #include "CellCenteredMapFunctor.h"
 #include "VectorComponentFunctor.h"
+#include "FaceArgInterface.h"
+#include "INSFVPressureVariable.h"
+#include "ADFunctorInterface.h"
+
 #include "libmesh/vector_value.h"
 #include "libmesh/id_types.h"
 #include "libmesh/stored_range.h"
@@ -41,7 +45,9 @@ class MeshBase;
  */
 class INSFVRhieChowInterpolator : public GeneralUserObject,
                                   public TaggingInterface,
-                                  public BlockRestrictable
+                                  public BlockRestrictable,
+                                  public FaceArgProducerInterface,
+                                  public ADFunctorInterface
 {
 public:
   static InputParameters validParams();
@@ -57,22 +63,45 @@ public:
 
   /**
    * Retrieve a face velocity
-   * @param m The velocity interpolation method. This is either RhieChow or Average. RhieChow is
-   * recommended as it avoids checkboards in the pressure field
+   * @param m The velocity interpolation method. This is either Rhie-Chow or Average. Rhie-Chow is
+   * recommended as it avoids checkerboards in the pressure field
    * @param fi The face that we wish to retrieve the velocity for
+   * @param time The time at which to evaluate the velocity
    * @param tid The thread ID
    * @return The face velocity
    */
-  VectorValue<ADReal>
-  getVelocity(Moose::FV::InterpMethod m, const FaceInfo & fi, THREAD_ID tid) const;
+  VectorValue<ADReal> getVelocity(Moose::FV::InterpMethod m,
+                                  const FaceInfo & fi,
+                                  const Moose::StateArg & time,
+                                  THREAD_ID tid) const;
+
+  /// Return the interpolation method used for velocity
+  Moose::FV::InterpMethod velocityInterpolationMethod() const { return _velocity_interp_method; }
 
   void initialSetup() override;
-  void residualSetup() override;
   void meshChanged() override;
 
   void initialize() override final;
-  void execute() override final;
+  void execute() override;
   void finalize() override final;
+
+  /**
+   * makes sure coefficient data gets communicated on both sides of a given boundary
+   */
+  void ghostADataOnBoundary(const BoundaryID boundary_id);
+
+  bool hasFaceSide(const FaceInfo & fi, const bool fi_elem_side) const override;
+
+  /**
+   * @return The pressure variable corresponding to the provided thread ID
+   */
+  const INSFVPressureVariable & pressure(THREAD_ID tid) const;
+
+  /**
+   * Whether to pull all 'a' coefficient data from the owning process for all nonlocal elements we
+   * have access to (e.g. all of our nonlocal elements we have pointers to)
+   */
+  void pullAllNonlocal() { _pull_all_nonlocal = true; }
 
 protected:
   /**
@@ -141,19 +170,17 @@ protected:
    */
   ///@{
   /// The x-component of 'a'
-  VectorComponentFunctor<ADReal> _ax;
+  Moose::VectorComponentFunctor<ADReal> _ax;
 
   /// The y-component of 'a'
-  VectorComponentFunctor<ADReal> _ay;
+  Moose::VectorComponentFunctor<ADReal> _ay;
 
   /// The z-component of 'a'
-  VectorComponentFunctor<ADReal> _az;
+  Moose::VectorComponentFunctor<ADReal> _az;
   ///@}
 
-  /// Whether we have performed our initial setup. Ordinarily we would do this in initialSetup but
-  /// there are wonky things that happen in other objects initialSetup that affect us, like how
-  /// Exodus output gathers all elements to 0 on distributed mesh
-  bool _initial_setup_done = false;
+  /// The number of the nonlinear system in which the monolithic momentum and continuity equations are located
+  const unsigned int _nl_sys_number;
 
 private:
   /**
@@ -196,6 +223,9 @@ private:
   /// application solving precursor advection, and another application has computed the fluid flow
   /// field
   bool _a_data_provided;
+
+  /// Whether we want to pull all nonlocal 'a' coefficient data
+  bool _pull_all_nonlocal;
 };
 
 inline const Moose::FunctorBase<ADReal> & INSFVRhieChowInterpolator::epsilon(THREAD_ID) const
@@ -214,4 +244,11 @@ INSFVRhieChowInterpolator::addToA(const Elem * const elem,
     _elements_to_push_pull.insert(elem);
 
   _a[elem->id()](component) += value;
+}
+
+inline const INSFVPressureVariable &
+INSFVRhieChowInterpolator::pressure(const THREAD_ID tid) const
+{
+  mooseAssert(tid < _ps.size(), "Attempt to access out-of-bounds in pressure variable container");
+  return *static_cast<INSFVPressureVariable *>(_ps[tid]);
 }

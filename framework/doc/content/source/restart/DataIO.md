@@ -6,7 +6,7 @@ recalculated during a restore operation. These methods enable MOOSE's checkpoint
 several key capabilities in the MOOSE framework including:
 
 - Checkpointing -> the ability to terminate an application and restart it where you left off (useful for batch cluster systems).
-- Picard Iteration -> The ability to converge a "tighty" coupled multiApp simulation.
+- Picard Iteration -> The ability to converge a "tightly" coupled multiApp simulation.
 - Restart -> the ability to save stateful data for a [restart](restart_recover.md optional=True) type simulation when using checkpoint format
 
 ## What is stateful data?
@@ -36,7 +36,7 @@ The declareRestartableData method is used to tell MOOSE that you would like to s
 object. This method is templated and declared here:
 
 !listing framework/include/restart/Restartable.h
-  re=([^\n]+\n)*[^\n]+declareRestartableData[^,\n]*;
+  re=([^\n]+\n)*[^\n]+declareRestartableData[^\n]*;
 
 This method is templated, so MOOSE will return a reference to the type that you request and manage the data storage for you. For
 all built-in types and combinations of containers and built-in types. This is all that needs to be done. If your type or
@@ -60,7 +60,7 @@ The declarations for the two methods that may need to be specialized for your ap
 
 Typically, the serialization routine can be
 defined in terms of serializing the individual fields in your custom type. For example. If you had a class `Foo` that contained a
-few plain old data types, you'd just define the load and store terms interms of the combination of those POD types in order.
+few plain old data types, you'd just define the load and store terms in terms of the combination of those POD types in order.
 
 ```language=c++
 class Foo

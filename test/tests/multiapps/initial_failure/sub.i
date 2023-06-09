@@ -35,13 +35,9 @@
 [Problem]
   type = FailingProblem
   # time_step is set to two if there is no AMR by Steady at the end of its execute.
-  fail_step = 1
+  fail_steps = '1'
 []
 
 [Executioner]
   type = Steady
-[]
-
-[Outputs]
-  exodus = true
 []

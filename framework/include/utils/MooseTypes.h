@@ -11,11 +11,13 @@
 
 #include "Moose.h"
 #include "ADReal.h"
+#include "ChainedReal.h"
+#include "ChainedADReal.h"
 #include "ADRankTwoTensorForward.h"
 #include "ADRankThreeTensorForward.h"
 #include "ADRankFourTensorForward.h"
-#include "ChainedReal.h"
-#include "ChainedADReal.h"
+#include "ADSymmetricRankTwoTensorForward.h"
+#include "ADSymmetricRankFourTensorForward.h"
 
 #include "libmesh/libmesh.h"
 #include "libmesh/id_types.h"
@@ -23,6 +25,8 @@
 #include "libmesh/petsc_macro.h"
 #include "libmesh/boundary_info.h"
 #include "libmesh/parameters.h"
+#include "libmesh/dense_vector.h"
+#include "libmesh/int_range.h"
 
 // BOOST include
 #include "bitmask_operators.h"
@@ -31,6 +35,8 @@
 #include "Eigen/Core"
 #include "libmesh/restore_warnings.h"
 #include "libmesh/tensor_tools.h"
+
+#include "metaphysicl/ct_types.h"
 
 #include <string>
 #include <vector>
@@ -121,15 +127,23 @@ template <typename>
 class ADMaterialProperty;
 class InputParameters;
 
+enum class MaterialPropState
+{
+  CURRENT = 0x1,
+  OLD = 0x2,
+  OLDER = 0x4
+};
+using MaterialPropStateInt = std::underlying_type<MaterialPropState>::type;
+
 namespace libMesh
 {
 template <typename>
 class VectorValue;
 typedef VectorValue<Real> RealVectorValue;
-typedef Eigen::Matrix<Real, LIBMESH_DIM, 1> RealDIMValue;
+typedef Eigen::Matrix<Real, Moose::dim, 1> RealDIMValue;
 typedef Eigen::Matrix<Real, Eigen::Dynamic, 1> RealEigenVector;
-typedef Eigen::Matrix<Real, Eigen::Dynamic, LIBMESH_DIM> RealVectorArrayValue;
-typedef Eigen::Matrix<Real, Eigen::Dynamic, LIBMESH_DIM * LIBMESH_DIM> RealTensorArrayValue;
+typedef Eigen::Matrix<Real, Eigen::Dynamic, Moose::dim> RealVectorArrayValue;
+typedef Eigen::Matrix<Real, Eigen::Dynamic, Moose::dim * Moose::dim> RealTensorArrayValue;
 typedef Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic> RealEigenMatrix;
 template <typename>
 class TypeVector;
@@ -151,21 +165,30 @@ namespace TensorTools
 template <>
 struct IncrementRank<Eigen::Matrix<Real, Eigen::Dynamic, 1>>
 {
-  typedef Eigen::Matrix<Real, Eigen::Dynamic, LIBMESH_DIM> type;
+  typedef Eigen::Matrix<Real, Eigen::Dynamic, Moose::dim> type;
 };
 
 template <>
-struct IncrementRank<Eigen::Matrix<Real, Eigen::Dynamic, LIBMESH_DIM>>
+struct IncrementRank<Eigen::Matrix<Real, Eigen::Dynamic, Moose::dim>>
 {
-  typedef Eigen::Matrix<Real, Eigen::Dynamic, LIBMESH_DIM * LIBMESH_DIM> type;
+  typedef Eigen::Matrix<Real, Eigen::Dynamic, Moose::dim * Moose::dim> type;
 };
 
 template <>
-struct DecrementRank<Eigen::Matrix<Real, Eigen::Dynamic, LIBMESH_DIM>>
+struct DecrementRank<Eigen::Matrix<Real, Eigen::Dynamic, Moose::dim>>
 {
   typedef Eigen::Matrix<Real, Eigen::Dynamic, 1> type;
 };
 }
+}
+
+namespace MetaPhysicL
+{
+template <typename U>
+struct ReplaceAlgebraicType<libMesh::RealEigenVector, U>
+{
+  typedef U type;
+};
 }
 
 /**
@@ -182,6 +205,7 @@ typedef unsigned int THREAD_ID;
 typedef unsigned int TagID;
 typedef unsigned int TagTypeID;
 typedef unsigned int PerfID;
+typedef unsigned int InvalidSolutionID;
 using RestartableDataMapName = std::string; // see MooseApp.h
 
 typedef StoredRange<std::vector<dof_id_type>::iterator, dof_id_type> NodeIdRange;
@@ -197,16 +221,23 @@ namespace Moose
 /// up with some overkill complex mechanism for dynamically resizing them.
 /// Eventually, we may need or implement that more sophisticated mechanism and
 /// will no longer need this.
-const size_t constMaxQpsPerElem = 216;
+constexpr std::size_t constMaxQpsPerElem = 216;
 
 // These are used by MooseVariableData and MooseVariableDataFV
-enum SolutionState
+enum SolutionState : int
 {
-  Current,
-  Old,
-  Older,
-  PreviousNL
+  Current = 0,
+  Old = 1,
+  Older = 2,
+  PreviousNL = -1
 };
+
+enum class SolutionIterationType : unsigned short
+{
+  Time = 0,
+  Nonlinear
+};
+
 // These are used by MooseVariableData and MooseVariableDataFV
 enum GeometryType
 {
@@ -363,6 +394,18 @@ struct ADType<RankFourTensor>
 {
   typedef ADRankFourTensor type;
 };
+
+template <>
+struct ADType<SymmetricRankTwoTensor>
+{
+  typedef ADSymmetricRankTwoTensor type;
+};
+template <>
+struct ADType<SymmetricRankFourTensor>
+{
+  typedef ADSymmetricRankFourTensor type;
+};
+
 template <template <typename> class W>
 struct ADType<W<Real>>
 {
@@ -388,6 +431,73 @@ struct ADType<VariableSecond>
 {
   typedef ADVariableSecond type;
 };
+
+template <>
+struct ADType<ADReal>
+{
+  typedef ADReal type;
+};
+template <>
+struct ADType<ChainedADReal>
+{
+  typedef ChainedADReal type;
+};
+template <>
+struct ADType<ADRankTwoTensor>
+{
+  typedef ADRankTwoTensor type;
+};
+template <>
+struct ADType<ADRankThreeTensor>
+{
+  typedef ADRankThreeTensor type;
+};
+template <>
+struct ADType<ADRankFourTensor>
+{
+  typedef ADRankFourTensor type;
+};
+
+template <>
+struct ADType<ADSymmetricRankTwoTensor>
+{
+  typedef ADSymmetricRankTwoTensor type;
+};
+template <>
+struct ADType<ADSymmetricRankFourTensor>
+{
+  typedef ADSymmetricRankFourTensor type;
+};
+
+template <template <typename> class W>
+struct ADType<W<ADReal>>
+{
+  typedef W<ADReal> type;
+};
+
+template <>
+struct ADType<ADVariableValue>
+{
+  typedef ADVariableValue type;
+};
+template <>
+struct ADType<ADVariableGradient>
+{
+  typedef ADVariableGradient type;
+};
+template <>
+struct ADType<ADVariableSecond>
+{
+  typedef ADVariableSecond type;
+};
+
+/**
+ * This is a helper variable template for cases when we want to use a default compile-time
+ * error with constexpr-based if conditions. The templating delays the triggering
+ * of the static assertion until the template is instantiated.
+ */
+template <class T>
+constexpr std::false_type always_false{};
 
 } // namespace Moose
 
@@ -460,14 +570,12 @@ template <bool is_ad>
 using GenericVariableGradient = typename Moose::GenericType<VariableGradient, is_ad>;
 template <bool is_ad>
 using GenericVariableSecond = typename Moose::GenericType<VariableSecond, is_ad>;
-
-// Should be removed with #19439
-#define defineLegacyParams(ObjectType)                                                             \
-  static_assert(false,                                                                             \
-                "defineLegacyParams is no longer supported as legacy input parameter "             \
-                "construction is no longer supported; see "                                        \
-                "mooseframework.org/newsletter/2021_11.html#legacy-input-parameter-deprecation "   \
-                "for more information");
+template <bool is_ad>
+using GenericDenseVector =
+    typename std::conditional<is_ad, DenseVector<ADReal>, DenseVector<Real>>::type;
+template <bool is_ad>
+using GenericDenseMatrix =
+    typename std::conditional<is_ad, DenseMatrix<ADReal>, DenseMatrix<Real>>::type;
 
 namespace Moose
 {
@@ -575,6 +683,16 @@ enum class MortarType : unsigned int
 };
 
 /**
+ * The type of nonlinear computation being performed
+ */
+enum class ComputeType
+{
+  Residual,
+  Jacobian,
+  ResidualAndJacobian
+};
+
+/**
  * The filter type applied to a particular piece of "restartable" data. These filters
  * will be applied during deserialization to include or exclude data as appropriate.
  */
@@ -596,9 +714,9 @@ enum ConstraintJacobianType
   PrimaryLower
 };
 
-enum CoordinateSystemType
+enum CoordinateSystemType : int
 {
-  COORD_XYZ,
+  COORD_XYZ = 0,
   COORD_RZ,
   COORD_RSPHERICAL
 };
@@ -779,6 +897,7 @@ typedef std::function<void(const InputParameters &, InputParameters &)>
     RelationshipManagerInputParameterCallback;
 
 std::string stringify(const Moose::RelationshipManagerType & t);
+std::string stringify(const Moose::TimeIntegratorType & t);
 } // namespace Moose
 
 namespace libMesh
@@ -900,8 +1019,17 @@ DerivativeStringClass(ExtraElementIDName);
 /// Name of a Reporter Value, second argument to ReporterName (see Reporter.h)
 DerivativeStringClass(ReporterValueName);
 
+/// Name of a Positions object
+DerivativeStringClass(PositionsName);
+
 /// Name of an Executor.  Used for inputs to Executors
 DerivativeStringClass(ExecutorName);
+
+/// ParsedFunction/ParsedMaterial etc. FParser expression
+DerivativeStringClass(ParsedFunctionExpression);
+
+/// System name support of multiple nonlinear systems on the same mesh
+DerivativeStringClass(NonlinearSystemName);
 
 namespace Moose
 {
@@ -910,3 +1038,10 @@ extern const TagName OLD_SOLUTION_TAG;
 extern const TagName OLDER_SOLUTION_TAG;
 extern const TagName PREVIOUS_NL_SOLUTION_TAG;
 }
+
+/// macros for adding Tensor index enums locally
+#define usingTensorIndices(...)                                                                    \
+  enum                                                                                             \
+  {                                                                                                \
+    __VA_ARGS__                                                                                    \
+  }

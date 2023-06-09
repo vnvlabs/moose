@@ -8,11 +8,11 @@ Content:
     - modules/navier_stokes/doc/content
     - modules/ray_tracing/doc/content
     - modules/rdg/doc/content
+    - modules/solid_properties/doc/content
     - infrastructure:
         root_dir: modules/doc/content
         content:
           - application_usage/command_line_usage.md
-          - media/inl_blue.png
 
 Renderer:
     type: MooseDocs.base.MaterializeRenderer
@@ -43,6 +43,7 @@ Extensions:
             - modules/navier_stokes/include
             - modules/ray_tracing/include
             - modules/rdg/include
+            - modules/solid_properties/include
     MooseDocs.extensions.common:
         shortcuts:
             framework: !include framework/doc/globals.yml
@@ -57,8 +58,18 @@ Extensions:
     MooseDocs.extensions.template:
         active: True
         args:
-            project-name: Thermal Hydraulics Module
-            project-name-abbrev: THM
-            bin-opt: thermal_hydraulics-opt
-            bin-dbg: thermal_hydraulics-dbg
-    MooseDocs.extensions.sqa: disable
+            thm-bin-opt: thermal_hydraulics-opt
+            thm-bin-dbg: thermal_hydraulics-dbg
+    MooseDocs.extensions.sqa:
+        active: True
+        reports: !include modules/thermal_hydraulics/doc/sqa_reports.yml
+        categories:
+            framework: !include framework/doc/sqa_framework.yml
+            thermal_hydraulics: !include modules/thermal_hydraulics/doc/sqa_thermal_hydraulics.yml
+            fluid_properties: !include modules/fluid_properties/doc/sqa_fluid_properties.yml
+            heat_conduction: !include modules/heat_conduction/doc/sqa_heat_conduction.yml
+            misc: !include modules/misc/doc/sqa_misc.yml
+            navier_stokes: !include modules/navier_stokes/doc/sqa_navier_stokes.yml
+            ray_tracing: !include modules/ray_tracing/doc/sqa_ray_tracing.yml
+            rdg: !include modules/rdg/doc/sqa_rdg.yml
+            solid_properties: !include modules/solid_properties/doc/sqa_solid_properties.yml

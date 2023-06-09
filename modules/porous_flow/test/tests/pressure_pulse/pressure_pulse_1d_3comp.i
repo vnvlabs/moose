@@ -73,15 +73,13 @@
   []
 []
 
-[Modules]
-  [FluidProperties]
-    [simple_fluid]
-      type = SimpleFluidProperties
-      bulk_modulus = 2e9
-      density0 = 1000
-      thermal_expansion = 0
-      viscosity = 1e-3
-    []
+[FluidProperties]
+  [simple_fluid]
+    type = SimpleFluidProperties
+    bulk_modulus = 2e9
+    density0 = 1000
+    thermal_expansion = 0
+    viscosity = 1e-3
   []
 []
 
@@ -228,6 +226,5 @@
 [Outputs]
   file_base = pressure_pulse_1d_3comp
   print_linear_residuals = true
-  exodus = true
   csv = true
 []

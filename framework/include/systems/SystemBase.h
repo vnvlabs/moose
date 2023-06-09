@@ -104,7 +104,7 @@ public:
    * Gets the number of this system
    * @return The number of this system
    */
-  virtual unsigned int number() const;
+  unsigned int number() const;
   virtual MooseMesh & mesh() { return _mesh; }
   virtual const MooseMesh & mesh() const { return _mesh; }
   virtual SubProblem & subproblem() { return _subproblem; }
@@ -198,7 +198,7 @@ public:
   /**
    * Initializes the solution state.
    */
-  void initSolutionState();
+  virtual void initSolutionState();
 
   /**
    * Get a state of the solution (0 = current, 1 = old, 2 = older, etc).
@@ -206,22 +206,30 @@ public:
    * If the state does not exist, it will be initialized in addition to any newer
    * states before it that have not been initialized.
    */
-  NumericVector<Number> & solutionState(const unsigned int state);
+  virtual NumericVector<Number> &
+  solutionState(const unsigned int state,
+                Moose::SolutionIterationType iteration_type = Moose::SolutionIterationType::Time);
 
   /**
    * Get a state of the solution (0 = current, 1 = old, 2 = older, etc).
    */
-  const NumericVector<Number> & solutionState(const unsigned int state) const;
+  virtual const NumericVector<Number> & solutionState(
+      const unsigned int state,
+      Moose::SolutionIterationType iteration_type = Moose::SolutionIterationType::Time) const;
 
   /**
    * Registers that the solution state \p state is needed.
    */
-  void needSolutionState(const unsigned int state);
+  virtual void needSolutionState(
+      const unsigned int state,
+      Moose::SolutionIterationType iteration_type = Moose::SolutionIterationType::Time);
 
   /**
    * Whether or not the system has the solution state (0 = current, 1 = old, 2 = older, etc).
    */
-  bool hasSolutionState(const unsigned int state) const { return _solution_states.size() > state; }
+  virtual bool hasSolutionState(
+      const unsigned int state,
+      Moose::SolutionIterationType iteration_type = Moose::SolutionIterationType::Time) const;
 
   virtual Number & duDotDu() { return _du_dot_du; }
   virtual Number & duDotDotDu() { return _du_dotdot_du; }
@@ -861,12 +869,10 @@ public:
   /// Whether or not there are variables to be restarted from an Exodus mesh file
   bool hasVarCopy() const { return _var_to_copy.size() > 0; }
 
-#ifdef MOOSE_GLOBAL_AD_INDEXING
   /**
    * Add the scaling factor vector to the system
    */
   void addScalingVector();
-#endif
 
   /**
    * Whether or not the solution states have been initialized via initSolutionState()
@@ -879,6 +885,7 @@ public:
   /// Setup Functions
   virtual void initialSetup();
   virtual void timestepSetup();
+  virtual void customSetup(const ExecFlagType & exec_type);
   virtual void subdomainSetup();
   virtual void residualSetup();
   virtual void jacobianSetup();
@@ -887,6 +894,21 @@ public:
    * Clear all dof indices from moose variables
    */
   void clearAllDofIndices();
+
+  /**
+   * Set the active vector tags for the variables
+   */
+  void setActiveVariableCoupleableVectorTags(const std::set<TagID> & vtags, THREAD_ID tid);
+
+  /**
+   * Set the active vector tags for the scalar variables
+   */
+  void setActiveScalarVariableCoupleableVectorTags(const std::set<TagID> & vtags, THREAD_ID tid);
+
+  /**
+   * @return the type of variables this system holds, e.g. nonlinear or auxiliary
+   */
+  Moose::VarKindType varKind() const { return _var_kind; }
 
 protected:
   /**
@@ -948,9 +970,6 @@ protected:
   /// Map variable number to its pointer
   std::vector<std::vector<MooseVariableFieldBase *>> _numbered_vars;
 
-  /// Storage for MooseVariable objects
-  MooseObjectWarehouseBase<MooseVariableBase> _variable_warehouse;
-
   /// Whether to automatically scale the variables
   bool _automatic_scaling;
 
@@ -964,13 +983,21 @@ private:
   /**
    * Gets the vector name used for an old (not current) solution state.
    */
-  TagName oldSolutionStateVectorName(const unsigned int) const;
+  TagName oldSolutionStateVectorName(const unsigned int,
+                                     Moose::SolutionIterationType iteration_type) const;
 
   /// The solution states (0 = current, 1 = old, 2 = older, etc)
-  std::vector<NumericVector<Number> *> _solution_states;
+  std::array<std::vector<NumericVector<Number> *>, 2> _solution_states;
   /// The saved solution states (0 = current, 1 = old, 2 = older, etc)
   std::vector<NumericVector<Number> *> _saved_solution_states;
 };
+
+inline bool
+SystemBase::hasSolutionState(const unsigned int state,
+                             const Moose::SolutionIterationType iteration_type) const
+{
+  return _solution_states[static_cast<unsigned short>(iteration_type)].size() > state;
+}
 
 #define PARALLEL_TRY
 
