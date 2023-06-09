@@ -7,7 +7,7 @@
 [Variables]
   [diffused]
     order = FIRST
-    family = LAG
+    family = LAGRANGE
   []
 []
 
