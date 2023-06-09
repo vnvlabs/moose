@@ -9,7 +9,7 @@ RUN cd ${SOFTWARE_DIR}/moose/framework\
     && ${VNV_MATCHER} --package MOOSE\
                       --fix-omp \
   		              --cache vnv.__cache__\
-    		          --output src/utils/vnv_MOOSE.c \
+    		          --output src/utils/vnv_MOOSE.C \
                       compile_commands.json \
     && make
 
