@@ -1,7 +1,11 @@
 import uuid
-
+import sys
 from flask import Blueprint
 from flask import render_template, url_for, request
+import os
+
+moose_dir = os.getenv('MOOSE_DIR', os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(moose_dir,"python"))
 
 from .moose import *
 
@@ -22,6 +26,7 @@ blueprint = Blueprint(
     static_folder="static",
     url_prefix="/" + TEMPLATE_NAME
 )
+
 
 
 @blueprint.route("/hive/autocomplete", methods=["GET"])

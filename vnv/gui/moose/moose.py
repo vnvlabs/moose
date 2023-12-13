@@ -2,7 +2,7 @@ import os
 import re
 import subprocess
 import json
-import app.moose.pyhit as pyhit 
+import pyhit as pyhit
 from flask import render_template, make_response, jsonify
 
 def find_moose_executable(loc, **kwargs):
