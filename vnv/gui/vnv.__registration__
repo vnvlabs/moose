@@ -8,4 +8,7 @@
         "link" : "https://rnet-tech.com"
     },
     "exclude_parents" : true
+    "blueprints" : {
+        "moose" : "moose"
+    }
 }
