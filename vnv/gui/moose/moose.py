@@ -4,6 +4,7 @@ import subprocess
 import json
 import pyhit as pyhit
 from flask import render_template, make_response, jsonify
+import uuid 
 
 def find_moose_executable(loc, **kwargs):
     """
