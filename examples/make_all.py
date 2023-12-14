@@ -1,4 +1,8 @@
 import os
+import sys
+
+direct = sys.argv[1]
+command = " ".join(sys.argv[1:])
 
 def run_make_vnv(directory):
     try:
@@ -11,7 +15,7 @@ def run_make_vnv(directory):
         os.chdir("..")  # Change back to the original working directory
 
 def run_make_vnv_in_all_directories():
-    current_directory = os.getcwd()
+    current_directory = direct
     subdirectories = [d for d in os.listdir(current_directory) if os.path.isdir(d)]
 
     for directory in subdirectories:
