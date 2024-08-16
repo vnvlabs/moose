@@ -15,12 +15,30 @@
 
 VnVExampleApp::VnVExampleApp(ExampleApp *app) {
     
-    /**
-      * @title Building the Example Application Object.
-      *
-      * description: todo
-      *
-      **/
+   /** Constructing the Example Application
+     * ------------------------------------
+     * 
+     * This text is a VnV placeholder. It plots a random graph. This should be
+     * updated with a description of what is happening inside this injection point
+     * and/or test. 
+     * 
+     * .. vnv-chart::
+     * 
+     *    {
+     *       "type" : "line",
+     *       "data" : {
+     *          "labels" : {{as_json(rand_nums(`100`))}},
+     *          "datasets" : [{
+     *             "label": "Random Data",
+     *             "backgroundColor": "rgb(57, 105, 160)",
+     *             "borderColor": "rgb(57, 105, 160)",
+     *             "data": {{as_json(rand_nums(`100`))}}
+     *           }]
+     *       }
+     *       
+     *    }
+     * 
+     **/ 
     INJECTION_LOOP_BEGIN(VNV_APP_NAME, VWORLD, BuildExampleApp, VNV_CALLBACK {
        
     }, app);
@@ -48,11 +66,30 @@ void
 ExampleApp::registerAll(Factory & f, ActionFactory & af, Syntax & /*s*/)
 {
 
-  /**
-   * @title Registering Factories
+ /** Registering Moose Actions
+   * --------------------------
    * 
-   * Moose will now register all the factories to the Example Application. 
-  */
+   * This text is a VnV placeholder. It plots a random graph. This should be
+   * updated with a description of what is happening inside this injection point
+   * and/or test. 
+   * 
+   * .. vnv-chart::
+   * 
+   *    {
+   *       "type" : "line",
+   *       "data" : {
+   *          "labels" : {{as_json(rand_nums(`100`))}},
+   *          "datasets" : [{
+   *             "label": "Random Data",
+   *             "backgroundColor": "rgb(57, 105, 160)",
+   *             "borderColor": "rgb(57, 105, 160)",
+   *             "data": {{as_json(rand_nums(`100`))}}
+   *           }]
+   *       }
+   *       
+   *    }
+   * 
+   **/
   INJECTION_LOOP_BEGIN(MOOSE,VWORLD, RegisterFactories, VNV_CALLBACK {
 
   }, f );

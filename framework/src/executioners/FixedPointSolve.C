@@ -184,11 +184,30 @@ FixedPointSolve::solve()
 {
   TIME_SECTION("PicardSolve", 1); 
 
-  /**
-   * @title Iterative Picard Solve.
+ /** Performing Picard Iteration
+   * ---------------------------
    * 
-   * description
-  */
+   * This text is a VnV placeholder. It plots a random graph. This should be
+   * updated with a description of what is happening inside this injection point
+   * and/or test. 
+   * 
+   * .. vnv-chart::
+   * 
+   *    {
+   *       "type" : "line",
+   *       "data" : {
+   *          "labels" : {{as_json(rand_nums(`100`))}},
+   *          "datasets" : [{
+   *             "label": "Random Data",
+   *             "backgroundColor": "rgb(57, 105, 160)",
+   *             "borderColor": "rgb(57, 105, 160)",
+   *             "data": {{as_json(rand_nums(`100`))}}
+   *           }]
+   *       }
+   *       
+   *    }
+   * 
+   **/
   INJECTION_LOOP_BEGIN(MOOSE,VWORLD, PicardSolve,VNV_NOCALLBACK, *this);
 
 
@@ -351,6 +370,33 @@ FixedPointSolve::solveStep(Real & begin_norm,
                            const std::set<dof_id_type> & transformed_dofs)
 {
   bool auto_advance = autoAdvance(); 
+
+
+   /** 
+   * Performing a Fixed Point Step
+   * -------------------------------
+   * 
+   * This text is a VnV placeholder. It plots a random graph. This should be
+   * updated with a description of what is happening inside this injection point
+   * and/or test. 
+   * 
+   * .. vnv-chart::
+   * 
+   *    {
+   *       "type" : "line",
+   *       "data" : {
+   *          "labels" : {{as_json(rand_nums(`100`))}},
+   *          "datasets" : [{
+   *             "label": "Random Data",
+   *             "backgroundColor": "rgb(57, 105, 160)",
+   *             "borderColor": "rgb(57, 105, 160)",
+   *             "data": {{as_json(rand_nums(`100`))}}
+   *           }]
+   *       }
+   *       
+   *    }
+   * 
+   **/
   INJECTION_LOOP_BEGIN(MOOSE,VWORLD, FixedPointSolve, VNV_NOCALLBACK, *this, begin_norm, end_norm);
 
   // Compute previous norms for coloring the norm output

@@ -800,11 +800,32 @@ NonlinearSystemBase::setInitialSolution()
 {
   deactiveAllMatrixTags();
 
-  /**
-   * @title Set the Initial Solution
+  
+   /** 
+   * Setting Initial Solution
+   * ------------------------
    * 
-   * description goes here. 
-  */
+   * This text is a VnV placeholder. It plots a random graph. This should be
+   * updated with a description of what is happening inside this injection point
+   * and/or test. 
+   * 
+   * .. vnv-chart::
+   * 
+   *    {
+   *       "type" : "line",
+   *       "data" : {
+   *          "labels" : {{as_json(rand_nums(`100`))}},
+   *          "datasets" : [{
+   *             "label": "Random Data",
+   *             "backgroundColor": "rgb(57, 105, 160)",
+   *             "borderColor": "rgb(57, 105, 160)",
+   *             "data": {{as_json(rand_nums(`100`))}}
+   *           }]
+   *       }
+   *       
+   *    }
+   * 
+   **/
   INJECTION_LOOP_BEGIN(MOOSE,VWORLD,SetInitialSolution, VNV_NOCALLBACK, *this);
 
   NumericVector<Number> & initial_solution(solution());

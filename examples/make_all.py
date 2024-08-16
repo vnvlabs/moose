@@ -1,14 +1,14 @@
 import os
 import sys
 
-direct = sys.argv[1]
+direct = os.path.dirname(os.path.realpath(__file__))
 command = " ".join(sys.argv[1:])
 
 def run_make_vnv(directory):
     try:
         os.chdir(directory)
-        print(f"Running 'make vnv' in {directory}")
-        os.system("make vnv")
+        print(f"Running {command} in {directory}")
+        os.system(command)
     except Exception as e:
         print(f"Error in {directory}: {e}")
     finally:

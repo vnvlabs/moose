@@ -21,6 +21,22 @@
 #include "MooseApp.h"
 #include "AppFactory.h"
 
+#include "VnV.h"
+
+
+/**
+ * Example 5: Adaptive Mesh Refinement:
+ * ====================================
+ * 
+ * 
+ * This example shows how to enable AMR in the input file.
+ * 
+ * 
+ */
+INJECTION_EXECUTABLE(VNV_APP_NAME,"{}") 
+INJECTION_SUBPACKAGE(VNV_APP_NAME,MOOSE)
+
+
 // Create a performance log
 PerfLog Moose::perf_log("Example");
 
@@ -30,6 +46,7 @@ main(int argc, char * argv[])
 {
   // Initialize MPI, solvers and MOOSE
   MooseInit init(argc, argv);
+  INJECTION_INITIALIZE(VNV_APP_NAME, &argc, &argv);
 
   // Register this application's MooseApp and any it depends on
   ExampleApp::registerApps();
@@ -39,6 +56,8 @@ main(int argc, char * argv[])
 
   // Execute the application
   app->run();
+  
+  INJECTION_FINALIZE(VNV_APP_NAME);
 
   return 0;
 }

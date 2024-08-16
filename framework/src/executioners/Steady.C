@@ -29,11 +29,32 @@ Steady::validParams()
 }
 
 VnVSteadyIP::VnVSteadyIP(Steady* steady) : s(steady) {
-  /**
-   * @title Construct the Steady Executioner object.
+  
+   /** 
+   * Constructing the Steady Executioner
+   * -----------------------------------
    * 
-   * Info about the built steady executioner
-  */
+   * This text is a VnV placeholder. It plots a random graph. This should be
+   * updated with a description of what is happening inside this injection point
+   * and/or test. 
+   * 
+   * .. vnv-chart::
+   * 
+   *    {
+   *       "type" : "line",
+   *       "data" : {
+   *          "labels" : {{as_json(rand_nums(`100`))}},
+   *          "datasets" : [{
+   *             "label": "Random Data",
+   *             "backgroundColor": "rgb(57, 105, 160)",
+   *             "borderColor": "rgb(57, 105, 160)",
+   *             "data": {{as_json(rand_nums(`100`))}}
+   *           }]
+   *       }
+   *       
+   *    }
+   * 
+   **/
   INJECTION_LOOP_BEGIN(MOOSE, VWORLD, ConstructSteadyExecutioner, VNV_CALLBACK{
       // TODO print any required data (happens at the end of the constructor.)
   },*this);
@@ -65,11 +86,31 @@ Steady::init()
     return;
   }
   
-  /**
-   * @title Steady Executioner Setup.
-   *
-   * Setting up the steady Executioner. 
-   *
+  
+   /** 
+   * Initializing Steady Executioner
+   * -------------------------------
+   * 
+   * This text is a VnV placeholder. It plots a random graph. This should be
+   * updated with a description of what is happening inside this injection point
+   * and/or test. 
+   * 
+   * .. vnv-chart::
+   * 
+   *    {
+   *       "type" : "line",
+   *       "data" : {
+   *          "labels" : {{as_json(rand_nums(`100`))}},
+   *          "datasets" : [{
+   *             "label": "Random Data",
+   *             "backgroundColor": "rgb(57, 105, 160)",
+   *             "borderColor": "rgb(57, 105, 160)",
+   *             "data": {{as_json(rand_nums(`100`))}}
+   *           }]
+   *       }
+   *       
+   *    }
+   * 
    **/
   INJECTION_LOOP_BEGIN(MOOSE, VWORLD, SteadyExecutionerSetup, VNV_CALLBACK {
 
@@ -89,11 +130,31 @@ Steady::execute()
   if (_app.isRecovering())
     return;
 
-  /**
-   * @title Steady Executioner Execution.
-   *
-   * Executing the Steady state exuectioner function. . 
-   *
+  
+   /** 
+   * Executing Steady Executioner
+   * ----------------------------
+   * 
+   * This text is a VnV placeholder. It plots a random graph. This should be
+   * updated with a description of what is happening inside this injection point
+   * and/or test. 
+   * 
+   * .. vnv-chart::
+   * 
+   *    {
+   *       "type" : "line",
+   *       "data" : {
+   *          "labels" : {{as_json(rand_nums(`100`))}},
+   *          "datasets" : [{
+   *             "label": "Random Data",
+   *             "backgroundColor": "rgb(57, 105, 160)",
+   *             "borderColor": "rgb(57, 105, 160)",
+   *             "data": {{as_json(rand_nums(`100`))}}
+   *           }]
+   *       }
+   *       
+   *    }
+   * 
    **/
   INJECTION_LOOP_BEGIN(MOOSE, VWORLD, SteadyExecutionerExecute, VNV_CALLBACK {
 

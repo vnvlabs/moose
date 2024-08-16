@@ -54,7 +54,7 @@ int main(int argc, char * argv[])
    * the computed solution to the exact solution using Postprocessors.
    * 
   */ 
-  INJECTION_INITIALIZE(VNV_APP_NAME, &argc, &argv, "./vv-input.json" );
+  INJECTION_INITIALIZE(VNV_APP_NAME, &argc, &argv);
   
 
   // Register this application's MooseApp and any it depends on

@@ -20,8 +20,26 @@
 #include "MooseApp.h"
 #include "AppFactory.h"
 
+#include "VnV.h"
+
+
+/**
+ * Example 2: Kernel - Creating your first custom Kernel
+ * ==============================================================
+ * 
+ * 
+ * This example augments the first example (Input File) by adding a custom kernel
+ * to apply a convection operator to the domain.
+ * 
+ * 
+ */
+INJECTION_EXECUTABLE(VNV_APP_NAME,"{}") 
+INJECTION_SUBPACKAGE(VNV_APP_NAME,MOOSE)
+
 // Create a performance log
 PerfLog Moose::perf_log("Example");
+
+
 
 // Begin the main program.
 int
@@ -29,6 +47,7 @@ main(int argc, char * argv[])
 {
   // Initialize MPI, solvers and MOOSE
   MooseInit init(argc, argv);
+  INJECTION_INITIALIZE(VNV_APP_NAME, &argc, &argv);
 
   // Register this application's MooseApp and any it depends on
   ExampleApp::registerApps();
@@ -38,6 +57,7 @@ main(int argc, char * argv[])
 
   // Execute the application
   app->run();
+  INJECTION_FINALIZE(VNV_APP_NAME);
 
   return 0;
 }

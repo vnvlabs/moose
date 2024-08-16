@@ -31,7 +31,7 @@ main(int argc, char * argv[])
    * This is the introduction.
    *
    */ 
-  INJECTION_INITIALIZE(POROUSFLOW, &argc, &argv, "./vv-input.json" );
+  INJECTION_INITIALIZE(POROUSFLOW, &argc, &argv );
 
   /** 
    * Run a quick function with some injetion points for testing. 

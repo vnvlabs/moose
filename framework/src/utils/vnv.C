@@ -14,7 +14,6 @@ static const char* moose_vnv_schema = "{\"type\": \"object\", \"required\":[]}";
 INJECTION_OPTIONS(MOOSE, moose_vnv_schema,void) {
 	std::string inputfile;
 
-	std::cout << "LOOK AT ME " << std::endl;
 
 	// Look on the command line for an input file. 
 	// If it exists, we are good to go -- use the command line

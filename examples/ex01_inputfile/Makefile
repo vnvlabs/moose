@@ -20,6 +20,7 @@ include $(FRAMEWORK_DIR)/build.mk
 include $(FRAMEWORK_DIR)/moose.mk
 
 APPLICATION_NAME := ex01
+APPLICATION_DESCRIPTION := As Simple As It Gets
 
 # dep apps
 APPLICATION_DIR    := $(shell pwd)

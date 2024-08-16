@@ -1,143 +1,112 @@
 {
-    "logo": {
-        "small": "moose/static/moose.jpeg",
-        "large": "moose/static/moose2.png"
-    },
-    "copyright": {
-        "message": "RNET Technolgies Inc.",
-        "link": "https://rnet-tech.com"
-    },
+
     "exclude_parents": true,
-    "blueprints": {
-        "moose": "moose"
-    },
     "executables": {
         "Input Files": {
             "filename": "${MOOSE_DIR}/examples/ex01_inputfile/ex01-opt",
             "description": "Tutorial 1: Creating an Input File",
             "package": "MOOSE",
-            "make": "make vnv"
-            
         },
         "Kernels": {
             "filename": "${MOOSE_DIR}/examples/ex02_kernel/ex02-opt",
             "description": "Tutorial 2: Adding Kernels",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "Coupling": {
             "filename": "${MOOSE_DIR}/examples/ex03_coupling/ex03-opt",
             "description": "Tutorial 3: Coupling",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "Boundary Conditions": {
             "filename": "${MOOSE_DIR}/examples/ex04_bcs/ex04-opt",
             "description": "Tutorial 4: Boundary Conditions",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "Adaptive Mesh Refinement": {
             "filename": "${MOOSE_DIR}/examples/ex05_amr/ex05-opt",
             "description": "Tutorial 5: Adaptive Mesh Refinement",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "Time Stepping": {
             "filename": "${MOOSE_DIR}/examples/ex06_transient/ex06-opt",
             "description": "Tutorial 6: Solve the Time Dimension",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "Initial Conditions": {
             "filename": "${MOOSE_DIR}/examples/ex07_ics/ex07-opt",
             "description": "Tutorial 7: Setting the Initial Condition",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "Adding Materials": {
             "filename": "${MOOSE_DIR}/examples/ex08_materials/ex08-opt",
             "description": "Tutorial 8: Definfing a Meterial",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "Stateful Materials": {
             "filename": "${MOOSE_DIR}/examples/ex09_stateful_materials/ex09-opt",
             "description": "Tutorial 9: Stateful Materials",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "Auxilary Functions": {
             "filename": "${MOOSE_DIR}/examples/ex10_aux/ex10-opt",
             "description": "Tutorial 10: Auxilary Functions",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "Preconditioning": {
             "filename": "${MOOSE_DIR}/examples/ex11_prec/ex11-opt",
             "description": "Tutorial 11: Setting a Preconditioner",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "Physics Based Preconditioning": {
             "filename": "${MOOSE_DIR}/examples/ex12_pbp/ex12-opt",
             "description": "Tutorial 12: Physics based preconditioning",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "Functions": {
             "filename": "${MOOSE_DIR}/examples/ex13-functions/ex14-opt",
             "description": "Tutorial 13: Functions",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "Post Processing": {
             "filename": "${MOOSE_DIR}/examples/ex14_pps/ex14-opt",
             "description": "Tutorial 14: Post Processing and Code Verification",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "Actions": {
             "filename": "${MOOSE_DIR}/examples/ex15_actions/ex15-opt",
             "description": "Tutorial 15: Actions",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "Time Steppers": {
             "filename": "${MOOSE_DIR}/examples/ex16_timestepper/ex16-opt",
             "description": "Tutorial 16: Creating a Custom Time Stepper",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "Dirac Kernals": {
             "filename": "${MOOSE_DIR}/examples/ex17_dirac/ex17-opt",
             "description": "Tutorial 17: Adding a Dirac Kernel",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "ODE Coupling": {
             "filename": "${MOOSE_DIR}/examples/ex18_scalar_kernel/ex18-opt",
             "description": "Tutorial 18: ODE Coupling",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "Newton Damping": {
             "filename": "${MOOSE_DIR}/examples/ex19_dampers/ex19-opt",
             "description": "Tutorial 19: Adding Newton damping",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "User Objects": {
             "filename": "${MOOSE_DIR}/examples/ex20_user_objects/ex20-opt",
             "description": "Tutorial 20: Defining User objects",
             "package": "MOOSE",
-            "make": "make vnv"
         },
         "Debugging": {
             "filename": "${MOOSE_DIR}/examples/ex21_debugging/ex21-opt",
             "description": "Tutorial 21: Dubgging",
             "package": "MOOSE",
-            "make": "make vnv"
+     
         }
     }
 }

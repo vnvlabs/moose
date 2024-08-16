@@ -13,11 +13,11 @@ RUN cd ${SOFTWARE_DIR}/moose/framework\
                       compile_commands.json \
     && make
 
+RUN cd /gui && git pull && cd python_api && cd build && make 
+
 # Build the VnV example that we created 
 ENV MOOSE_DIR=${SOFTWARE_DIR}/moose
-RUN cd ${SOFTWARE_DIR}/moose/examples/ex01_inputfile && make vnv 
-
-RUN ${VNV_REGISTER} gui moose ${SOFTWARE_DIR}/moose/vnv/gui/vnv.__registration__ 
+RUN cd ${SOFTWARE_DIR}/moose/examples/ && python3 make_all.py make vnv 
 
 
 

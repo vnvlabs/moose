@@ -328,21 +328,33 @@ MooseApp::validParams()
 
 VnVIpConstruction::VnVIpConstruction(MooseApp *app) {
 
-    /**
-     * @title Building the Core Moose Application. 
-     * 
-     * In this stage of the program we build the core moose application.
-     * 
-     * The Application is configured as follows:
-     * 
-     * Name:  :vnv:`name`
-     * 
-     * ..vnv-todo:: Write more application configuration information.
-     *  
-    */
-    INJECTION_LOOP_BEGIN(MOOSE, VWORLD, BuildCoreMooseApp, VNV_CALLBACK {
+ /** Building the Core Moose App
+   * ---------------------------
+   * 
+   * This text is a VnV placeholder. It plots a random graph. This should be
+   * updated with a description of what is happening inside this injection point
+   * and/or test. 
+   * 
+   * .. vnv-chart::
+   * 
+   *    {
+   *       "type" : "line",
+   *       "data" : {
+   *          "labels" : {{as_json(rand_nums(`100`))}},
+   *          "datasets" : [{
+   *             "label": "Random Data",
+   *             "backgroundColor": "rgb(57, 105, 160)",
+   *             "borderColor": "rgb(57, 105, 160)",
+   *             "data": {{as_json(rand_nums(`100`))}}
+   *           }]
+   *       }
+   *       
+   *    }
+   * 
+   **/
+   INJECTION_LOOP_BEGIN(MOOSE, VWORLD, BuildCoreMooseApp, VNV_CALLBACK {
        data.engine->Put("name" , "todo");
-    }, app);  
+   }, app);  
 }
 
 
@@ -651,6 +663,8 @@ MooseApp::setupOptions()
 {
   TIME_SECTION("setupOptions", 5, "Setting Up Options");
 
+  std::string reason = "No options said otherwise";
+
   /**
    * @title Setting Up Moose Options.
    * 
@@ -667,7 +681,6 @@ MooseApp::setupOptions()
    * After this function moose will :vnv:`exit` because :vnv:`reason`
    *    
   */
-  std::string reason = "No options said otherwise";
   INJECTION_LOOP_BEGIN(MOOSE, VWORLD, SetupOptions, VNV_NOCALLBACK , *this);
 
   // MOOSE was updated to have the ability to register execution flags in similar fashion as
@@ -1142,12 +1155,30 @@ MooseApp::executeExecutioner()
   if (_ready_to_exit)
     return;
 
-  /**
-    * @title Running Executioner
-    *
-    * Running the simulation. 
-    *
-    **/
+  /** Running the Executioner
+   * ------------------------
+   * 
+   * This text is a VnV placeholder. It plots a random graph. This should be
+   * updated with a description of what is happening inside this injection point
+   * and/or test. 
+   * 
+   * .. vnv-chart::
+   * 
+   *    {
+   *       "type" : "line",
+   *       "data" : {
+   *          "labels" : {{as_json(rand_nums(`100`))}},
+   *          "datasets" : [{
+   *             "label": "Random Data",
+   *             "backgroundColor": "rgb(57, 105, 160)",
+   *             "borderColor": "rgb(57, 105, 160)",
+   *             "data": {{as_json(rand_nums(`100`))}}
+   *           }]
+   *       }
+   *       
+   *    }
+   * 
+   **/
   INJECTION_LOOP_BEGIN(MOOSE, VWORLD, ExecuteExecutioner, VNV_CALLBACK{
 
   }, *this);
@@ -1474,11 +1505,30 @@ MooseApp::run()
     return;
   }
 
-  /**
-   * @title Running the Moose Application. 
+ /** Building the Application
+   * ------------------------
    * 
-   * MOOSE is now running the Applicaiton. 
-  */
+   * This text is a VnV placeholder. It plots a random graph. This should be
+   * updated with a description of what is happening inside this injection point
+   * and/or test. 
+   * 
+   * .. vnv-chart::
+   * 
+   *    {
+   *       "type" : "line",
+   *       "data" : {
+   *          "labels" : {{as_json(rand_nums(`100`))}},
+   *          "datasets" : [{
+   *             "label": "Random Data",
+   *             "backgroundColor": "rgb(57, 105, 160)",
+   *             "borderColor": "rgb(57, 105, 160)",
+   *             "data": {{as_json(rand_nums(`100`))}}
+   *           }]
+   *       }
+   *       
+   *    }
+   * 
+   **/
   INJECTION_LOOP_BEGIN(MOOSE, VWORLD, RunApplication, VNV_CALLBACK{
 
   }, *this);

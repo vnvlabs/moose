@@ -564,9 +564,32 @@ FEProblemBase::initialSetup() {
   
   TIME_SECTION("initialSetup", 2, "Performing Initial Setup");
 
-  /**
-   * @Title Setting up the FE Problem.
-  */
+  
+   /** 
+   * Setting up the Finite Element Problem
+   * -------------------------------------
+   * 
+   * This text is a VnV placeholder. It plots a random graph. This should be
+   * updated with a description of what is happening inside this injection point
+   * and/or test. 
+   * 
+   * .. vnv-chart::
+   * 
+   *    {
+   *       "type" : "line",
+   *       "data" : {
+   *          "labels" : {{as_json(rand_nums(`100`))}},
+   *          "datasets" : [{
+   *             "label": "Random Data",
+   *             "backgroundColor": "rgb(57, 105, 160)",
+   *             "borderColor": "rgb(57, 105, 160)",
+   *             "data": {{as_json(rand_nums(`100`))}}
+   *           }]
+   *       }
+   *       
+   *    }
+   * 
+   **/
   INJECTION_LOOP_BEGIN(MOOSE,VWORLD, FESetup, VNV_NOCALLBACK, *this);
 
 
@@ -5033,9 +5056,32 @@ FEProblemBase::init()
 void
 FEProblemBase::solve()
 {
-  /**
-   * @title Solving the Finite Element Problem.
-  */
+  
+   /** 
+   * Solving the Finite Element Problem
+   * ----------------------------------
+   * 
+   * This text is a VnV placeholder. It plots a random graph. This should be
+   * updated with a description of what is happening inside this injection point
+   * and/or test. 
+   * 
+   * .. vnv-chart::
+   * 
+   *    {
+   *       "type" : "line",
+   *       "data" : {
+   *          "labels" : {{as_json(rand_nums(`100`))}},
+   *          "datasets" : [{
+   *             "label": "Random Data",
+   *             "backgroundColor": "rgb(57, 105, 160)",
+   *             "borderColor": "rgb(57, 105, 160)",
+   *             "data": {{as_json(rand_nums(`100`))}}
+   *           }]
+   *       }
+   *       
+   *    }
+   * 
+   **/
   INJECTION_LOOP_BEGIN(MOOSE,VWORLD, FESolve, VNV_NOCALLBACK, *this);
 
   TIME_SECTION("solve", 1, "Solving", false); 
@@ -5623,11 +5669,32 @@ FEProblemBase::computeJacobianInternal(const NumericVector<Number> & soln,
 {
   TIME_SECTION("computeJacobianInternal", 1); 
 
-  /**
-   * @title Compute Jacobian
+  
+   /** 
+   * Computing the Jacobian for the RE Problem
+   * -----------------------------------------
    * 
-   * description goes here
-  */
+   * This text is a VnV placeholder. It plots a random graph. This should be
+   * updated with a description of what is happening inside this injection point
+   * and/or test. 
+   * 
+   * .. vnv-chart::
+   * 
+   *    {
+   *       "type" : "line",
+   *       "data" : {
+   *          "labels" : {{as_json(rand_nums(`100`))}},
+   *          "datasets" : [{
+   *             "label": "Random Data",
+   *             "backgroundColor": "rgb(57, 105, 160)",
+   *             "borderColor": "rgb(57, 105, 160)",
+   *             "data": {{as_json(rand_nums(`100`))}}
+   *           }]
+   *       }
+   *       
+   *    }
+   * 
+   **/
   INJECTION_LOOP_BEGIN(MOOSE,VWORLD,ComputeJacobian, VNV_NOCALLBACK, *this, soln, jacobian, tags);
 
   _nl->setSolution(soln);

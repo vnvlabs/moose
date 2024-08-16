@@ -446,7 +446,6 @@ $(copy_input_targets): all
 		echo "app_name = $(APPLICATION_NAME)" > $(share_install_dir)/$(base_dir)/testroot; \
 	fi; \
 
-
 install_lib_%: % all
 	@echo "Installing $<"
 	@mkdir -p $(lib_install_dir)
@@ -509,4 +508,9 @@ vnv-update:
 	@${VNV_DIR}/bin/vnv-matcher --fix-omp --cache vnv.__cache__ --targetFile ${APPLICATION_DIR}/$(APPLICATION_NAME) --package $(APPLICATION_NAME) --output src/vnv.C compile_commands.json
 	@${MAKE}
 
-vnv: vnv-init vnv-update
+
+vnv-register:
+	@touch ${APPLICATION_DIR}/training_list.txt
+	@${VNV_DIR}/bin/register executablep  "MOOSE Application ${APPLICATION_NAME}" ${app_EXEC} "-i `sed -n '2p' training_list.txt`" `cat ${APPLICATION_DIR}/training_list.txt | head -n1 | cut -f2 -d:` 
+
+vnv: vnv-init vnv-update vnv-register

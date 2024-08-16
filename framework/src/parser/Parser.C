@@ -613,12 +613,32 @@ void
 Parser::parse(const std::vector<std::string> & input_filenames)
 {
 
-  /**
-    * @title Parse Input Files.
-    *
-    * Name of all the input files. 
-    *
-    **/
+  
+   /** 
+   * Parsing the Input Files
+   * -------------------------------
+   * 
+   * This text is a VnV placeholder. It plots a random graph. This should be
+   * updated with a description of what is happening inside this injection point
+   * and/or test. 
+   * 
+   * .. vnv-chart::
+   * 
+   *    {
+   *       "type" : "line",
+   *       "data" : {
+   *          "labels" : {{as_json(rand_nums(`100`))}},
+   *          "datasets" : [{
+   *             "label": "Random Data",
+   *             "backgroundColor": "rgb(57, 105, 160)",
+   *             "borderColor": "rgb(57, 105, 160)",
+   *             "data": {{as_json(rand_nums(`100`))}}
+   *           }]
+   *       }
+   *       
+   *    }
+   * 
+   **/
   INJECTION_LOOP_BEGIN(MOOSE, VWORLD, Parse, VNV_CALLBACK {
     
   }, *this);
